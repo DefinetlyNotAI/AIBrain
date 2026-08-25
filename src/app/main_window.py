@@ -21,7 +21,7 @@ LOG = logging.getLogger(__name__)
 
 STYLESHEET = """
 QMainWindow { background: #09131c; color: #dceaf1; }
-QWidget { font-family: 'Segoe UI'; font-size: 12px; color: #dceaf1; }
+QWidget { font: 10pt 'Segoe UI'; color: #dceaf1; }
 QLabel#title { font-size: 22px; font-weight: 650; color: #f2f8fb; }
 QLabel#muted { color: #88a0ae; }
 QLabel#mode { background: #123849; color: #82e7ff; border-radius: 9px; padding: 4px 8px; font-weight: 700; }

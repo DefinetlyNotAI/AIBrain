@@ -60,6 +60,7 @@ class VisualizerPanel(QWidget):
         self._refresh_overlay()
 
     def _rebuild(self, quality: str) -> None:
+        self.begin_recording()
         old = self.renderer
         index = self.layout.indexOf(old)
         self.layout.takeAt(index)
@@ -110,6 +111,12 @@ class VisualizerPanel(QWidget):
         if not self._playback:
             return
         step = self._playback[index]
+        if step.values.shape != self.field.values.shape:
+            self._playback_timer.stop()
+            self._playback.clear()
+            self._playback_index = -1
+            self.inspector.setText("Replay discarded because the connectome graph changed. Generate a new response to record it.")
+            return
         self._playback_index = index
         self.field.values[:] = step.values
         self.field.peaks[:] = step.peaks

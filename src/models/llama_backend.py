@@ -36,8 +36,11 @@ class LlamaBackend:
         @llama_log_callback
         def native_log(level: int, text: bytes, _user_data: object) -> None:
             message = text.decode("utf-8", errors="replace").strip()
-            if message and level >= 3:
-                LOG.error("llama.cpp: %s", message) if level >= 4 else LOG.warning("llama.cpp: %s", message)
+            if not message or not message.strip("."):
+                return
+            lower = message.lower()
+            if "error" in lower or "failed" in lower or "unknown model architecture" in lower:
+                LOG.error("llama.cpp: %s", message)
         global _NATIVE_LOG_CALLBACK
         _NATIVE_LOG_CALLBACK = native_log
         llama_log_set(_NATIVE_LOG_CALLBACK, None)
