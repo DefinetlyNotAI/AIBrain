@@ -15,14 +15,13 @@ The application does not need the Ollama desktop application or server running a
 
 ## First-time setup
 
-Open PowerShell in this project folder and run:
+Open PowerShell in this project folder and run the installer:
 
 ```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+py -3.11 install.py
 ```
+
+The installer detects NVIDIA hardware and the CUDA capability reported by its driver *before* dependency installation. It creates `.venv`, installs PySide6/NumPy/ModernGL, then installs a compatible official prebuilt `llama-cpp-python` CUDA wheel when one is published. It automatically uses the official CPU wheel if no compatible NVIDIA wheel is available. It never attempts the fragile local C++ source build that caused the prior MinGW/OpenMP linker failure.
 
 If PowerShell blocks activation for your user account, run this once, then activate again:
 
@@ -45,7 +44,7 @@ Activate the environment in every new terminal, then start the program:
 python main.py
 ```
 
-The program exits with clear setup instructions if it is launched with the global Python interpreter. This protects the system Python installation and ensures the application always uses its declared dependencies.
+The program exits with clear setup instructions if it is launched with the global Python interpreter. This protects the system Python installation and ensures the application always uses its declared dependencies. `install.py` is the only exception: it is designed to be run by a system Python specifically to create and populate `.venv`.
 
 ## Ollama model discovery
 
@@ -108,7 +107,7 @@ If GPU offload is unsupported, lower the GPU-layers setting to `0` for CPU infer
 | --- | --- |
 | `AIBrain must run inside a Python virtual environment` | Activate `.venv` before executing `python main.py`. |
 | No models appear | Confirm `%USERPROFILE%\.ollama\models` exists and a GGUF Ollama model was pulled. |
-| `llama-cpp-python is not installed` | Activate `.venv`, then run `python -m pip install -r requirements.txt`. |
+| `llama-cpp-python is not installed` | Re-run `py -3.11 install.py` to repair the managed virtual environment. |
 | Model fails to load | Confirm the selected blob is a standard GGUF and reduce context or GPU layers if memory is limited. |
 | UI opens but rendering is slow | Select **Low** quality and update the graphics driver. |
 

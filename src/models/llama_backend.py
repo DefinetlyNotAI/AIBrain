@@ -29,7 +29,7 @@ class LlamaBackend:
         try:
             from llama_cpp import Llama
         except ImportError as exc:
-            raise RuntimeError("llama-cpp-python is not installed. Run: python -m pip install -r requirements.txt") from exc
+            raise RuntimeError("llama-cpp-python is not installed. Run: py -3.11 install.py") from exc
         LOG.info("Loading GGUF directly: %s (GPU layers: %s)", path, config.gpu_layers)
         self._llm = Llama(model_path=str(path), n_ctx=config.context_length, n_gpu_layers=config.gpu_layers,
                           verbose=False)

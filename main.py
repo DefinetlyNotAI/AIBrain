@@ -11,7 +11,7 @@ def require_virtual_environment() -> None:
             "AIBrain must run inside a Python virtual environment.\n"
             "Create one:  python -m venv .venv\n"
             "Activate it: .\\.venv\\Scripts\\Activate.ps1\n"
-            "Install deps:  python -m pip install -r requirements.txt",
+            "Install deps:  py -3.11 install.py",
             file=sys.stderr,
         )
         raise SystemExit(1)
