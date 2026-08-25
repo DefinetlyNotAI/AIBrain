@@ -22,6 +22,7 @@ class VisualizerPanel(QWidget):
         self.mapper = ActivityMapper(self.field)
         self.renderer = ConnectomeRenderer(self.graph, self.field)
         self.renderer.nodeSelected.connect(self._inspect)
+        self.renderer.backendChanged.connect(self._set_backend)
 
     def _build_ui(self) -> None:
         self.layout = QVBoxLayout(self); self.layout.setContentsMargins(8, 18, 18, 18)
@@ -56,7 +57,12 @@ class VisualizerPanel(QWidget):
         active_edges = int(sum((self.field.values[self.graph.edges[:, 0]] > .1) | (self.field.values[self.graph.edges[:, 1]] > .1)))
         strongest = int(self.field.values.argmax()) if len(self.field.values) else 0
         region = self.graph.region_names[int(self.graph.regions[strongest])]
-        self.overlay.setText(f"Visualization: Simulation (token-driven, not measured activation)  ·  Step {self.field.step}  ·  Active neurons {self.field.active_count:,}  ·  Active pathways {active_edges:,}  ·  Strongest: {region}  ·  Token: {self.field.current_token!r}")
+        backend = getattr(self, "_backend", "ModernGL GPU renderer initializing…")
+        self.overlay.setText(f"{backend}  ·  Visualization: Simulation (token-driven, not measured activation)  ·  Step {self.field.step}  ·  Active neurons {self.field.active_count:,}  ·  Active pathways {active_edges:,}  ·  Strongest: {region}  ·  Token: {self.field.current_token!r}")
+
+    def _set_backend(self, backend: str) -> None:
+        self._backend = backend
+        self._refresh_overlay()
 
     def _inspect(self, index: int) -> None:
         self.inspector.setText(f"Visual node: {index:05d}  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}  ·  Current activity: {self.field.values[index]:.3f}  ·  Peak: {self.field.peaks[index]:.3f}  ·  Data source: Simulation")

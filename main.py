@@ -19,10 +19,17 @@ def require_virtual_environment() -> None:
 
 def main() -> int:
     require_virtual_environment()
+    from PySide6.QtGui import QSurfaceFormat
     from PySide6.QtWidgets import QApplication
     from src.app.main_window import MainWindow
     from src.utils.logging import configure_logging
 
+    surface = QSurfaceFormat()
+    surface.setVersion(3, 3)
+    surface.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    surface.setDepthBufferSize(24)
+    surface.setSamples(4)
+    QSurfaceFormat.setDefaultFormat(surface)
     configure_logging()
     app = QApplication(sys.argv)
     app.setApplicationName("AIBrain")

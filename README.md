@@ -97,7 +97,9 @@ The direct GGUF/llama.cpp path currently uses **Simulation**. The public `llama-
 
 ## GPU acceleration
 
-The UI uses a `QOpenGLWidget` renderer and will use the OpenGL implementation available through Qt. The standard `llama-cpp-python` installation is usually CPU-only. For NVIDIA or other accelerated inference, install a current `llama-cpp-python` wheel or build matching your hardware while `.venv` is active, then set **GPU layers** in AIBrain. `-1` requests all layers where the installed backend supports it.
+The connectome uses a ModernGL pipeline inside Qt's `QOpenGLWidget`: immutable GPU buffers hold node positions, region IDs, and edge topology, while only compact activity arrays are uploaded per frame. Nodes and edges are rendered in two batched draw calls, avoiding Python loops or thousands of Qt draw calls. The overlay reports the actual OpenGL renderer selected at startup and switches to a deliberately reduced fallback only if a 3.3+ GPU context cannot be created.
+
+The standard `llama-cpp-python` installation is usually CPU-only. For NVIDIA or other accelerated inference, install a current `llama-cpp-python` wheel or build matching your hardware while `.venv` is active, then set **GPU layers** in AIBrain. `-1` requests all layers where the installed backend supports it.
 
 If GPU offload is unsupported, lower the GPU-layers setting to `0` for CPU inference. No CUDA-specific dependency is required for the application itself.
 
