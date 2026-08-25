@@ -103,4 +103,4 @@ class ChatPanel(QWidget):
             if item.widget(): item.widget().deleteLater()
 
     def generating(self, running: bool) -> None:
-        self.send.setEnabled(not running); self.stop.setEnabled(running); self.regenerate.setEnabled(not running)
+        self.send.setEnabled(not running); self.stop.setEnabled(running); self.regenerate.setEnabled(not running); self.models.setEnabled(not running)

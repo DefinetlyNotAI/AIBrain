@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ..connectome.activity import ActivityField
 from ..connectome.generator import build_connectome
 from ..connectome.mapper import ActivityMapper
 from ..connectome.renderer import ConnectomeRenderer
 from ..models.instrumented_backend import ActivationFrame, ActivitySource
+from ..utils.gpu import discover_render_adapters
 
 
 class VisualizerPanel(QWidget):
@@ -29,9 +31,12 @@ class VisualizerPanel(QWidget):
         header = QHBoxLayout(); title = QLabel("Live Connectome"); title.setObjectName("title")
         self.mode = QLabel("SIMULATION") ; self.mode.setObjectName("mode")
         self.quality = QComboBox(); self.quality.addItems(["Low", "Medium", "High"]); self.quality.setCurrentText("Medium"); self.quality.currentTextChanged.connect(self._rebuild)
+        self.render_gpu = QComboBox(); self.render_gpu.setToolTip("Preferred Windows graphics adapter for the OpenGL renderer")
+        self._populate_render_adapters()
+        self.render_gpu.currentIndexChanged.connect(self._set_render_preference)
         self.pause = QPushButton("Pause"); self.pause.clicked.connect(self._toggle_pause)
         reset = QPushButton("Reset view"); reset.clicked.connect(lambda: self.renderer.reset_camera())
-        for widget in (title, self.mode, self.quality, self.pause, reset): header.addWidget(widget)
+        for widget in (title, self.mode, self.quality, self.render_gpu, self.pause, reset): header.addWidget(widget)
         header.addStretch(1); self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
         self.overlay = QLabel(); self.overlay.setObjectName("overlay"); self.overlay.setWordWrap(True)
@@ -40,8 +45,14 @@ class VisualizerPanel(QWidget):
         self._refresh_overlay()
 
     def _rebuild(self, quality: str) -> None:
-        old = self.renderer; self.layout.replaceWidget(old, QWidget())
-        old.deleteLater(); self._build_graph(quality); self.layout.insertWidget(1, self.renderer, 1); self._refresh_overlay()
+        old = self.renderer
+        index = self.layout.indexOf(old)
+        self.layout.takeAt(index)
+        old.setParent(None)
+        old.deleteLater()
+        self._build_graph(quality)
+        self.layout.insertWidget(index, self.renderer, 1)
+        self._refresh_overlay()
 
     def _toggle_pause(self) -> None:
         self.renderer.paused = not self.renderer.paused; self.pause.setText("Resume" if self.renderer.paused else "Pause")
@@ -66,3 +77,30 @@ class VisualizerPanel(QWidget):
 
     def _inspect(self, index: int) -> None:
         self.inspector.setText(f"Visual node: {index:05d}  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}  ·  Current activity: {self.field.values[index]:.3f}  ·  Peak: {self.field.peaks[index]:.3f}  ·  Data source: Simulation")
+
+    def _populate_render_adapters(self) -> None:
+        settings = QSettings()
+        selected = str(settings.value("render_adapter", "system"))
+        self.render_gpu.blockSignals(True)
+        self.render_gpu.addItem("GPU: System default", "system")
+        for adapter in discover_render_adapters():
+            self.render_gpu.addItem(f"GPU: {adapter.name}", adapter.identifier)
+        index = self.render_gpu.findData(selected)
+        self.render_gpu.setCurrentIndex(index if index >= 0 else 0)
+        self.render_gpu.blockSignals(False)
+
+    def _set_render_preference(self, _index: int) -> None:
+        identifier = str(self.render_gpu.currentData())
+        QSettings().setValue("render_adapter", identifier)
+        if identifier == "system":
+            self._backend = "ModernGL GPU · Windows system-default adapter"
+            self._refresh_overlay()
+            return
+        self._backend = "ModernGL GPU · preference saved; restart after applying Windows Graphics preference"
+        self._refresh_overlay()
+        QMessageBox.information(
+            self, "Rendering adapter preference",
+            "Windows and Qt own the final OpenGL adapter selection. Your preference was saved. "
+            "Set this project's Python executable to the selected GPU in Windows Settings > System > Display > Graphics, "
+            "then restart AIBrain. The overlay reports the actual renderer after startup.",
+        )

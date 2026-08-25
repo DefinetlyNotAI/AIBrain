@@ -80,6 +80,8 @@ Controls:
 - Use the mouse wheel to zoom.
 - Click a node to inspect its visual ID, region, current activity, and peak.
 - Use **Reset view**, **Pause**, and the **Low / Medium / High** quality selector in the header.
+- Press **Escape** to stop an active generation; `Ctrl+C` in a launch terminal requests a clean application shutdown.
+- Choose a listed Windows display adapter as a rendering preference. Qt reports the adapter actually backing OpenGL in the overlay; on hybrid-GPU laptops, apply the selected adapter to the project Python executable in **Windows Settings > System > Display > Graphics**, then restart AIBrain.
 
 Activity decays smoothly and produces token-driven paths, pulses, and short-lived trails. It is deterministic from observed generation events, rather than meaningless per-frame random flashing.
 

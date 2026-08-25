@@ -1,6 +1,7 @@
 """AIBrain desktop entry point."""
 from __future__ import annotations
 
+import signal
 import sys
 
 
@@ -9,9 +10,9 @@ def require_virtual_environment() -> None:
     if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
         print(
             "AIBrain must run inside a Python virtual environment.\n"
-            "Create one:  python -m venv .venv\n"
-            "Activate it: .\\.venv\\Scripts\\Activate.ps1\n"
-            "Install deps:  py -3.11 install.py",
+            "Create and install: py -3.11 install.py\n"
+            "Activate it:          .\\.venv\\Scripts\\Activate.ps1\n"
+            "Run AIBrain:          python main.py",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -19,6 +20,7 @@ def require_virtual_environment() -> None:
 
 def main() -> int:
     require_virtual_environment()
+    from PySide6.QtCore import QTimer
     from PySide6.QtGui import QSurfaceFormat
     from PySide6.QtWidgets import QApplication
     from src.app.main_window import MainWindow
@@ -36,6 +38,10 @@ def main() -> int:
     app.setOrganizationName("AIBrain")
     window = MainWindow()
     window.show()
+    signal.signal(signal.SIGINT, lambda _signal, _frame: app.quit())
+    interrupt_timer = QTimer(app)
+    interrupt_timer.timeout.connect(lambda: None)
+    interrupt_timer.start(200)
     return app.exec()
 
 

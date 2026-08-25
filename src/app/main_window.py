@@ -4,6 +4,7 @@ import logging
 from time import monotonic
 
 from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QSplitter
 
 from .chat_panel import ChatPanel
@@ -36,6 +37,7 @@ QScrollArea { background: transparent; } QSplitter::handle { background: #1a3440
 
 class MainWindow(QMainWindow):
     startGeneration = Signal(object, object, object)
+    unloadModel = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -58,6 +60,9 @@ class MainWindow(QMainWindow):
         self.chat.regenerateRequested.connect(self.regenerate)
         self.chat.clearRequested.connect(self.clear)
         self.chat.modelChanged.connect(self.select_model)
+        self._escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self._escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self._escape_shortcut.activated.connect(self._handle_escape)
         self._discover()
 
     def _setup_worker(self) -> None:
@@ -66,6 +71,7 @@ class MainWindow(QMainWindow):
         self.worker = GenerationWorker(self.backend)
         self.worker.moveToThread(self.worker_thread)
         self.startGeneration.connect(self.worker.generate)
+        self.unloadModel.connect(self.worker.unload)
         self.worker.token.connect(self._on_token)
         self.worker.finished.connect(self._finished)
         self.worker.failed.connect(self._failed)
@@ -80,10 +86,21 @@ class MainWindow(QMainWindow):
             self.chat.stats.setText("No usable GGUF blob found in %USERPROFILE%\\.ollama\\models. Install a GGUF Ollama model, then reopen AIBrain.")
 
     def select_model(self, model: ModelInfo | None) -> None:
+        if model == self.current_model:
+            return
+        self.unloadModel.emit()
         self.current_model = model
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
-            self.chat.stats.setText("Selected " + model.label + ("" if model.available else f" — {model.error}"))
+            self.history.clear()
+            self.chat.clear_messages()
+            self.chat.stats.setText("Selected " + model.label + ("" if model.available else f" — {model.error}") + " · conversation and connectome refreshed")
+
+    def _handle_escape(self) -> None:
+        if self.chat.stop.isEnabled():
+            self.stop()
+        else:
+            self.chat.stats.setText("Escape interrupts an active generation.")
 
     def send(self, prompt: str) -> None:
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:

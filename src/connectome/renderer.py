@@ -46,6 +46,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._last_pos: QPointF | None = None
         self.paused = False
         self._ctx = self._moderngl = None
+        self._framebuffer = None
         self._point_vao = self._edge_vao = None
         self._node_activity_buffer = self._edge_activity_buffer = None
         self._point_program = self._edge_program = None
@@ -63,6 +64,10 @@ class ConnectomeRenderer(QOpenGLWidget):
             import moderngl
             self._moderngl = moderngl
             self._ctx = moderngl.create_context(require=330)
+            # QOpenGLWidget renders into a Qt-owned FBO, not OpenGL FBO 0.
+            # Capturing this current FBO is essential: otherwise ModernGL draws
+            # successfully but its output never reaches the widget.
+            self._framebuffer = self._ctx.detect_framebuffer()
             self._ctx.enable(moderngl.BLEND | moderngl.DEPTH_TEST | moderngl.PROGRAM_POINT_SIZE)
             self._ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE)
             self._build_gpu_resources()
@@ -118,6 +123,10 @@ class ConnectomeRenderer(QOpenGLWidget):
         if self._ctx is None or self._gpu_error:
             self._paint_fallback(); return
         try:
+            self._framebuffer = self._ctx.detect_framebuffer()
+            self._framebuffer.use()
+            ratio = self.devicePixelRatioF()
+            self._ctx.viewport = (0, 0, max(1, int(self.width() * ratio)), max(1, int(self.height() * ratio)))
             matrix = self._mvp().tobytes()
             self._upload_activity(); self._ctx.clear(.025, .063, .090, 1.0, depth=1.0)
             self._edge_program["u_mvp"].write(matrix); self._point_program["u_mvp"].write(matrix)
