@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from dataclasses import dataclass
 
 
@@ -29,3 +30,28 @@ def discover_render_adapters() -> list[RenderAdapter]:
         return [RenderAdapter(str(index), *[part.strip() for part in line.split(",", maxsplit=1)]) for index, line in enumerate(result.stdout.splitlines()) if line.strip()]
     except (OSError, subprocess.SubprocessError):
         return []
+
+
+def set_windows_gpu_preference(high_performance: bool) -> bool:
+    """Request Windows' high-performance adapter for this Python executable.
+
+    The choice is applied by Windows when the process is created, so it takes
+    effect on the next AIBrain launch. Qt still reports the actual GL adapter.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+
+        key_path = r"Software\Microsoft\DirectX\UserGpuPreferences"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            if high_performance:
+                winreg.SetValueEx(key, sys.executable, 0, winreg.REG_SZ, "GpuPreference=2;")
+            else:
+                try:
+                    winreg.DeleteValue(key, sys.executable)
+                except FileNotFoundError:
+                    pass
+        return True
+    except OSError:
+        return False

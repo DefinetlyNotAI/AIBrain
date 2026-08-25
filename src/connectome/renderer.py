@@ -56,7 +56,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.timer = QTimer(self); self.timer.timeout.connect(self._tick); self.timer.start(16)
 
     def _select_render_edges(self) -> np.ndarray:
-        target = 40_000 if len(self.graph.positions) <= 5_000 else 100_000 if len(self.graph.positions) <= 12_000 else 180_000
+        target = 20_000 if len(self.graph.positions) <= 5_000 else 50_000 if len(self.graph.positions) <= 12_000 else 110_000
         return self.graph.edges[::max(1, len(self.graph.edges) // target)]
 
     def initializeGL(self) -> None:
@@ -71,7 +71,11 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._ctx.enable(moderngl.BLEND | moderngl.DEPTH_TEST | moderngl.PROGRAM_POINT_SIZE)
             self._ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE)
             self._build_gpu_resources()
-            label = f"ModernGL GPU · {self._ctx.info.get('GL_RENDERER', 'OpenGL 3.3')}"
+            renderer_name = str(self._ctx.info.get("GL_RENDERER", "OpenGL 3.3"))
+            if "intel" in renderer_name.lower():
+                self.timer.setInterval(33)
+                renderer_name += " · adaptive 30 FPS"
+            label = f"ModernGL GPU · {renderer_name}"
             LOG.info("Connectome renderer initialized: %s", label)
             self.backendChanged.emit(label)
         except Exception as exc:

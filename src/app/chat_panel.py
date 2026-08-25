@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
-                               QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
@@ -14,10 +14,14 @@ class ChatPanel(QWidget):
     regenerateRequested = Signal()
     clearRequested = Signal()
     modelChanged = Signal(object)
+    playbackRequested = Signal()
+    playbackPreviousRequested = Signal()
+    playbackNextRequested = Signal()
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
         self._build(config)
+        self._playback_controls: QWidget | None = None
 
     def _build(self, config: GenerationConfig) -> None:
         layout = QVBoxLayout(self)
@@ -66,8 +70,11 @@ class ChatPanel(QWidget):
         self.max_tokens = QSpinBox(); self.max_tokens.setRange(1, 8192); self.max_tokens.setValue(config.max_tokens)
         self.context = QSpinBox(); self.context.setRange(512, 32768); self.context.setSingleStep(512); self.context.setValue(config.context_length)
         self.gpu_layers = QSpinBox(); self.gpu_layers.setRange(-1, 200); self.gpu_layers.setValue(config.gpu_layers)
+        self.speed = QSlider(); self.speed.setOrientation(Qt.Orientation.Horizontal); self.speed.setRange(1, 10); self.speed.setValue(round(config.speed * 10))
+        self.speed_value = QLabel(); self.speed.valueChanged.connect(self._update_speed_label); self._update_speed_label(self.speed.value())
+        speed_row = QWidget(); speed_layout = QHBoxLayout(speed_row); speed_layout.setContentsMargins(0, 0, 0, 0); speed_layout.addWidget(self.speed); speed_layout.addWidget(self.speed_value)
         advanced.addRow("Temperature", self.temperature); advanced.addRow("Top-p", self.top_p); advanced.addRow("Max tokens", self.max_tokens)
-        advanced.addRow("Context", self.context); advanced.addRow("GPU layers (-1 auto)", self.gpu_layers)
+        advanced.addRow("Context", self.context); advanced.addRow("GPU layers (-1 auto)", self.gpu_layers); advanced.addRow("Generation speed", speed_row)
         layout.addLayout(advanced)
 
     def _send(self) -> None:
@@ -77,15 +84,25 @@ class ChatPanel(QWidget):
             self.sendRequested.emit(text)
 
     def config(self) -> GenerationConfig:
-        return GenerationConfig(self.temperature.value(), self.top_p.value(), self.max_tokens.value(), self.context.value(), self.gpu_layers.value())
+        return GenerationConfig(self.temperature.value(), self.top_p.value(), self.max_tokens.value(), self.context.value(), self.gpu_layers.value(), self.speed.value() / 10)
+
+    def _update_speed_label(self, value: int) -> None:
+        self.speed_value.setText(f"{value / 10:.1f}×")
 
     def set_models(self, models: list[ModelInfo]) -> None:
         self.models.blockSignals(True)
         self.models.clear()
         if not models: self.models.addItem("No Ollama GGUF models discovered", None)
-        for model in models:
+        for model in (model for model in models if model.available):
             self.models.addItem(model.label, model)
-            if not model.available: self.models.setItemData(self.models.count()-1, "Unavailable: " + (model.error or "unknown"), 3)
+        self.models.blockSignals(False)
+        self.models.setEnabled(bool(models))
+
+    def set_validating_models(self, text: str) -> None:
+        self.models.blockSignals(True)
+        self.models.clear()
+        self.models.addItem(text, None)
+        self.models.setEnabled(False)
         self.models.blockSignals(False)
 
     def add_message(self, role: str, text: str) -> QLabel:
@@ -97,7 +114,29 @@ class ChatPanel(QWidget):
         self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum())
         return bubble
 
+    def clear_latest_playback(self) -> None:
+        if self._playback_controls is None:
+            return
+        self.messages_layout.removeWidget(self._playback_controls)
+        self._playback_controls.deleteLater()
+        self._playback_controls = None
+
+    def show_latest_playback(self) -> None:
+        self.clear_latest_playback()
+        controls = QWidget()
+        layout = QHBoxLayout(controls); layout.setContentsMargins(4, 1, 4, 5)
+        previous = QPushButton("◀ Token")
+        replay = QPushButton("▶ Replay neurons")
+        next_token = QPushButton("Token ▶")
+        previous.clicked.connect(self.playbackPreviousRequested)
+        replay.clicked.connect(self.playbackRequested)
+        next_token.clicked.connect(self.playbackNextRequested)
+        layout.addWidget(previous); layout.addWidget(replay); layout.addWidget(next_token); layout.addStretch(1)
+        self.messages_layout.insertWidget(self.messages_layout.count() - 1, controls)
+        self._playback_controls = controls
+
     def clear_messages(self) -> None:
+        self._playback_controls = None
         while self.messages_layout.count() > 1:
             item = self.messages_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()

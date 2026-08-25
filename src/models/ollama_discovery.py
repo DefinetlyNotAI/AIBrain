@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -25,7 +26,11 @@ class OllamaDiscovery:
             if not manifest.is_file():
                 continue
             try:
-                models.append(self._parse_manifest(manifest, manifest_root))
+                info = self._parse_manifest(manifest, manifest_root)
+                if info.available:
+                    models.append(info)
+                else:
+                    LOG.warning("Skipping unavailable GGUF %s: %s", info.name, info.error)
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 LOG.warning("Skipping invalid Ollama manifest %s: %s", manifest, exc)
         return sorted(models, key=lambda item: (item.name, item.tag))
@@ -43,13 +48,15 @@ class OllamaDiscovery:
         config = data.get("config") or {}
         layers = data.get("layers") or []
         blob: Path | None = None
+        expected_size = 0
         for layer in layers:
             digest = str(layer.get("digest", ""))
             media_type = str(layer.get("mediaType", ""))
             candidate = self.root / "blobs" / digest.replace(":", "-")
             if candidate.exists() and ("model" in media_type or blob is None):
                 blob = candidate
-                if self._is_gguf(candidate):
+                expected_size = int(layer.get("size", 0) or 0)
+                if self._validate_gguf(candidate, expected_size) is None:
                     break
         size = blob.stat().st_size if blob else 0
         # Docker-style Ollama manifests usually contain no descriptive metadata.
@@ -57,12 +64,13 @@ class OllamaDiscovery:
         inferred_family = name.rsplit("/", 1)[-1]
         family = str(config.get("family") or config.get("model_family") or data.get("model") or inferred_family)
         details = config.get("details") or {}
+        validation_error = self._validate_gguf(blob, expected_size) if blob else "Model layer blob is missing"
         return ModelInfo(
             name=name, tag=tag, blob_path=blob, family=family,
             parameter_size=str(details.get("parameter_size") or config.get("parameter_size") or self._size_from_tag(tag)),
             quantization=str(details.get("quantization_level") or config.get("quantization") or "GGUF (manifest does not specify quantization)"),
-            size_bytes=size, available=bool(blob and self._is_gguf(blob)),
-            error=None if blob and self._is_gguf(blob) else "No usable GGUF blob found",
+            size_bytes=size, available=validation_error is None,
+            error=validation_error,
         )
 
     @staticmethod
@@ -73,8 +81,22 @@ class OllamaDiscovery:
         return "Unknown"
 
     @staticmethod
-    def _is_gguf(path: Path) -> bool:
+    def _validate_gguf(path: Path, expected_size: int = 0) -> str | None:
         try:
-            return path.open("rb").read(4) == b"GGUF"
-        except OSError:
-            return False
+            if not path.is_file():
+                return "Model blob is not a regular file"
+            size = path.stat().st_size
+            if expected_size and size != expected_size:
+                return f"Blob size mismatch (expected {expected_size:,}, found {size:,})"
+            with path.open("rb") as handle:
+                header = handle.read(24)
+            if len(header) != 24 or header[:4] != b"GGUF":
+                return "Blob does not have a GGUF header"
+            version, tensor_count, metadata_count = struct.unpack("<IQQ", header[4:])
+            if version not in (2, 3):
+                return f"Unsupported GGUF version {version}"
+            if tensor_count < 1 or metadata_count < 1:
+                return "GGUF header has no tensors or metadata"
+            return None
+        except (OSError, struct.error) as exc:
+            return f"Cannot read GGUF header: {exc}"

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QSettings
+from dataclasses import dataclass
+from time import monotonic
+
+import numpy as np
+from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ..connectome.activity import ActivityField
@@ -8,13 +12,24 @@ from ..connectome.generator import build_connectome
 from ..connectome.mapper import ActivityMapper
 from ..connectome.renderer import ConnectomeRenderer
 from ..models.instrumented_backend import ActivationFrame, ActivitySource
-from ..utils.gpu import discover_render_adapters
+from ..utils.gpu import discover_render_adapters, set_windows_gpu_preference
+
+
+@dataclass(slots=True)
+class PlaybackStep:
+    frame: ActivationFrame
+    values: np.ndarray
+    peaks: np.ndarray
 
 
 class VisualizerPanel(QWidget):
     def __init__(self, model_key: str = "default") -> None:
         super().__init__()
         self._model_key = model_key
+        self._playback: list[PlaybackStep] = []
+        self._playback_index = -1
+        self._playback_timer = QTimer(self)
+        self._playback_timer.timeout.connect(self._advance_playback)
         self._build_graph("Medium")
         self._build_ui()
 
@@ -57,11 +72,56 @@ class VisualizerPanel(QWidget):
     def _toggle_pause(self) -> None:
         self.renderer.paused = not self.renderer.paused; self.pause.setText("Resume" if self.renderer.paused else "Pause")
 
-    def apply_frame(self, frame: ActivationFrame) -> None:
+    def apply_frame(self, frame: ActivationFrame, *, record: bool = True) -> None:
         self.mode.setText(frame.source.value.upper())
-        self.mapper.apply(frame); self._refresh_overlay()
+        self.mapper.apply(frame)
+        if record:
+            self._playback.append(PlaybackStep(frame, self.field.values.copy(), self.field.peaks.copy()))
+        self._refresh_overlay()
+
+    def begin_recording(self) -> None:
+        self._playback_timer.stop()
+        self._playback.clear()
+        self._playback_index = -1
+
+    def start_playback(self, speed: float) -> None:
+        if not self._playback:
+            return
+        self._playback_index = -1
+        self.renderer.paused = True
+        self.pause.setText("Resume")
+        self._playback_timer.start(max(35, round(110 / max(.1, speed))))
+
+    def playback_next(self) -> None:
+        self._playback_timer.stop()
+        self._show_playback_step(min(self._playback_index + 1, len(self._playback) - 1))
+
+    def playback_previous(self) -> None:
+        self._playback_timer.stop()
+        self._show_playback_step(max(0, self._playback_index - 1))
+
+    def _advance_playback(self) -> None:
+        if self._playback_index >= len(self._playback) - 1:
+            self._playback_timer.stop()
+            return
+        self._show_playback_step(self._playback_index + 1)
+
+    def _show_playback_step(self, index: int) -> None:
+        if not self._playback:
+            return
+        step = self._playback[index]
+        self._playback_index = index
+        self.field.values[:] = step.values
+        self.field.peaks[:] = step.peaks
+        self.field.step = step.frame.step
+        self.field.current_token = step.frame.token_text
+        self.field.last_time = monotonic()
+        self.mode.setText(step.frame.source.value.upper())
+        self.renderer.update()
+        self._refresh_overlay()
 
     def set_model(self, key: str) -> None:
+        self.begin_recording()
         self._model_key = key; self._rebuild(self.quality.currentText())
 
     def _refresh_overlay(self) -> None:
@@ -80,27 +140,35 @@ class VisualizerPanel(QWidget):
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()
-        selected = str(settings.value("render_adapter", "system"))
+        selected_value = settings.value("render_adapter")
+        selected = str(selected_value) if selected_value is not None else "system"
         self.render_gpu.blockSignals(True)
         self.render_gpu.addItem("GPU: System default", "system")
         for adapter in discover_render_adapters():
             self.render_gpu.addItem(f"GPU: {adapter.name}", adapter.identifier)
+            if selected_value is None and "nvidia" in adapter.name.lower():
+                selected = adapter.identifier
         index = self.render_gpu.findData(selected)
         self.render_gpu.setCurrentIndex(index if index >= 0 else 0)
         self.render_gpu.blockSignals(False)
+        if selected != "system":
+            set_windows_gpu_preference(True)
+            self._backend = "NVIDIA high-performance GPU requested for next launch"
 
     def _set_render_preference(self, _index: int) -> None:
         identifier = str(self.render_gpu.currentData())
         QSettings().setValue("render_adapter", identifier)
         if identifier == "system":
+            set_windows_gpu_preference(False)
             self._backend = "ModernGL GPU · Windows system-default adapter"
             self._refresh_overlay()
             return
-        self._backend = "ModernGL GPU · preference saved; restart after applying Windows Graphics preference"
+        applied = set_windows_gpu_preference(True)
+        self._backend = "High-performance GPU requested; restart AIBrain" if applied else "GPU preference saved; configure Windows Graphics Settings"
         self._refresh_overlay()
         QMessageBox.information(
             self, "Rendering adapter preference",
-            "Windows and Qt own the final OpenGL adapter selection. Your preference was saved. "
-            "Set this project's Python executable to the selected GPU in Windows Settings > System > Display > Graphics, "
-            "then restart AIBrain. The overlay reports the actual renderer after startup.",
+            "AIBrain requested Windows' high-performance GPU for its virtual-environment Python executable. "
+            "Restart AIBrain for Windows to apply it. If the overlay still reports another adapter, choose that executable "
+            "in Windows Settings > System > Display > Graphics. The overlay always reports the actual renderer.",
         )

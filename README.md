@@ -57,7 +57,7 @@ At startup AIBrain recursively reads:
 
 For every manifest, it resolves the content-addressed blob named by the model layer, checks for the `GGUF` file header, and shows a human-readable model entry. Missing blobs, invalid JSON, and non-GGUF layers are treated as unavailable models with an actionable error instead of crashing the application.
 
-Nothing is hardcoded to a specific username or model path. The selected GGUF stays loaded between messages and is unloaded when a different model is selected.
+Nothing is hardcoded to a specific username or model path. The selected GGUF stays loaded between messages and is unloaded when a different model is selected. Before populating the selector, AIBrain validates every discovered blob's GGUF header, manifest file size, and compatibility with the installed `llama-cpp-python` backend in a background thread. A model that cannot actually load is not offered for chat.
 
 ## Chat controls
 
@@ -67,6 +67,8 @@ Nothing is hardcoded to a specific username or model path. The selected GGUF sta
 - **Regenerate** — removes the latest assistant response and generates again from the prior user prompt.
 - **Clear** — clears the in-memory conversation context and visible messages.
 - **Generation settings** — temperature, top-p, maximum generated tokens, context length, and GPU layers are persisted with Windows application settings.
+- **Generation speed** — pace visible generation from `0.1×` to `1.0×` normal speed. Lower settings add interruptible delay between tokens without changing model sampling.
+- **Latest-response replay** — replay saved visual activity token by token, or use the adjacent previous/next controls. Starting a new response replaces this one-message replay buffer.
 
 Inference happens in a worker thread. Chat tokens are streamed to the UI so inference does not freeze the interface.
 

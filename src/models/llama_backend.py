@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 LOG = logging.getLogger(__name__)
+_NATIVE_LOG_CALLBACK: object | None = None
 
 
 @dataclass(slots=True)
@@ -15,6 +16,7 @@ class GenerationConfig:
     max_tokens: int = 256
     context_length: int = 4096
     gpu_layers: int = -1
+    speed: float = 1.0
 
 
 class LlamaBackend:
@@ -27,10 +29,18 @@ class LlamaBackend:
             return
         self.unload()
         try:
-            from llama_cpp import Llama
+            from llama_cpp import Llama, llama_log_callback, llama_log_set
         except ImportError as exc:
             raise RuntimeError("llama-cpp-python is not installed. Run: py -3.11 install.py") from exc
         LOG.info("Loading GGUF directly: %s (GPU layers: %s)", path, config.gpu_layers)
+        @llama_log_callback
+        def native_log(level: int, text: bytes, _user_data: object) -> None:
+            message = text.decode("utf-8", errors="replace").strip()
+            if message and level >= 3:
+                LOG.error("llama.cpp: %s", message) if level >= 4 else LOG.warning("llama.cpp: %s", message)
+        global _NATIVE_LOG_CALLBACK
+        _NATIVE_LOG_CALLBACK = native_log
+        llama_log_set(_NATIVE_LOG_CALLBACK, None)
         self._llm = Llama(model_path=str(path), n_ctx=config.context_length, n_gpu_layers=config.gpu_layers,
                           verbose=False)
         self.loaded_path = path
