@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
+from pathlib import Path
 from dataclasses import dataclass
 
 
@@ -11,6 +13,9 @@ class RenderAdapter:
     identifier: str
     name: str
     driver: str = "Unknown driver"
+
+
+LOG = logging.getLogger(__name__)
 
 
 def discover_render_adapters() -> list[RenderAdapter]:
@@ -45,13 +50,17 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
 
         key_path = r"Software\Microsoft\DirectX\UserGpuPreferences"
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
-            if high_performance:
-                winreg.SetValueEx(key, sys.executable, 0, winreg.REG_SZ, "GpuPreference=2;")
-            else:
-                try:
-                    winreg.DeleteValue(key, sys.executable)
-                except FileNotFoundError:
-                    pass
+            executables = (sys.executable, str(Path(sys.executable).with_name("pythonw.exe")))
+            for executable in executables:
+                if high_performance:
+                    winreg.SetValueEx(key, executable, 0, winreg.REG_SZ, "GpuPreference=2;")
+                    LOG.info("Requested Windows high-performance GPU for %s", executable)
+                else:
+                    try:
+                        winreg.DeleteValue(key, executable)
+                    except FileNotFoundError:
+                        pass
         return True
-    except OSError:
+    except OSError as exc:
+        LOG.warning("Could not set Windows GPU preference: %s", exc)
         return False

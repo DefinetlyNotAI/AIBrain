@@ -167,7 +167,9 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._last_pos = None
 
     def wheelEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        self.zoom = float(np.clip(self.zoom * (.88 if event.angleDelta().y() > 0 else 1.14), .45, 3.5)); self.update()
+        # Smaller zoom is closer. 0.025 gives ~40x closer inspection than
+        # the default view while retaining a finite, numerically stable scale.
+        self.zoom = float(np.clip(self.zoom * (.82 if event.angleDelta().y() > 0 else 1.22), .025, 6.0)); self.update()
 
     def reset_camera(self) -> None:
         self.yaw, self.pitch, self.zoom = .25, -.2, 1.0; self.update()
