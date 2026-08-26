@@ -74,9 +74,11 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE)
             self._build_gpu_resources()
             renderer_name = str(self._ctx.info.get("GL_RENDERER", "OpenGL 3.3"))
-            if "intel" in renderer_name.lower():
-                self.timer.setInterval(33)
-                renderer_name += " · adaptive 30 FPS"
+            vendor = str(self._ctx.info.get("GL_VENDOR", "unknown vendor"))
+            is_nvidia = "nvidia" in f"{vendor} {renderer_name}".lower()
+            if not is_nvidia:
+                renderer_name += " · GPU mismatch (expected NVIDIA); check Windows Graphics settings"
+                LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
             label = f"ModernGL GPU · {renderer_name}"
             LOG.info("Connectome renderer initialized: %s", label)
             self.backendChanged.emit(label)

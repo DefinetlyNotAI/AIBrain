@@ -33,7 +33,7 @@ To repair dependencies, run `py installer.py` again. The installer repairs the m
 
 ## The renderer uses an integrated GPU
 
-Choose the NVIDIA/high-performance adapter in AIBrain and restart the entire application. Adapter choice happens when Windows creates the native OpenGL context and cannot migrate an existing context.
+Choose the NVIDIA/high-performance adapter in AIBrain and restart the entire application. AIBrain starts a fresh process after applying this preference because an existing OpenGL context cannot migrate adapters.
 
 If the overlay still identifies the integrated renderer, open **Windows Settings > System > Display > Graphics**, add the project `.venv\Scripts\python.exe`, select **Options**, choose **High performance**, and restart AIBrain. The overlay reports the actual selected renderer.
 

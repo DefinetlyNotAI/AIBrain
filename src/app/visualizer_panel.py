@@ -52,7 +52,7 @@ class VisualizerPanel(QWidget):
         header = QHBoxLayout(); title = QLabel("Live Connectome"); title.setObjectName("title")
         self.mode = QLabel("SIMULATION") ; self.mode.setObjectName("mode")
         self.quality = QComboBox(); self.quality.addItems(["Low", "Medium", "High"]); self.quality.setCurrentText("Medium"); self.quality.currentTextChanged.connect(self._rebuild)
-        self.render_gpu = QComboBox(); self.render_gpu.setToolTip("Preferred Windows graphics adapter for the OpenGL renderer")
+        self.render_gpu = QComboBox(); self.render_gpu.setToolTip("AIBrain starts a fresh process after saving the Windows high-performance GPU preference.")
         self._populate_render_adapters()
         self.render_gpu.currentIndexChanged.connect(self._set_render_preference)
         self.spacing = QSlider(Qt.Orientation.Horizontal); self.spacing.setRange(60, 200); self.spacing.setValue(100); self.spacing.setToolTip("Cluster spacing")
@@ -207,7 +207,7 @@ class VisualizerPanel(QWidget):
         self.render_gpu.blockSignals(False)
         if selected != "system":
             set_windows_gpu_preference(True)
-            self._backend = "NVIDIA high-performance GPU requested for next launch"
+            self._backend = "NVIDIA high-performance GPU enforced at launch; verifying OpenGL context…"
 
     def _set_render_preference(self, _index: int) -> None:
         identifier = str(self.render_gpu.currentData())
@@ -218,11 +218,11 @@ class VisualizerPanel(QWidget):
             self._refresh_overlay()
             return
         applied = set_windows_gpu_preference(True)
-        self._backend = "High-performance GPU requested; restart AIBrain" if applied else "GPU preference saved; configure Windows Graphics Settings"
+        self._backend = "High-performance GPU saved; AIBrain will relaunch on the next start" if applied else "GPU preference could not be saved; configure Windows Graphics Settings"
         self._refresh_overlay()
         QMessageBox.information(
             self, "Rendering adapter preference",
-            "AIBrain requested Windows' high-performance GPU for its virtual-environment Python executable. "
+            "AIBrain writes the Windows high-performance setting for both virtual-environment Python hosts and starts the app in a fresh process. "
             "Restart AIBrain for Windows to apply it. If the overlay still reports another adapter, choose that executable "
             "in Windows Settings > System > Display > Graphics. The overlay always reports the actual renderer.",
         )
