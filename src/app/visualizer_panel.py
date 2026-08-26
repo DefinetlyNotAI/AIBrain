@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from time import monotonic
 
 import numpy as np
-from PySide6.QtCore import QSettings, QTimer
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QSettings, QTimer, Qt
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from ..connectome.activity import ActivityField
 from ..connectome.generator import build_connectome
@@ -26,6 +26,8 @@ class VisualizerPanel(QWidget):
     def __init__(self, model_key: str = "default") -> None:
         super().__init__()
         self._model_key = model_key
+        self._cluster_spacing = 1.0
+        self._selected_node: int | None = None
         self._playback: list[PlaybackStep] = []
         self._playback_index = -1
         self._playback_timer = QTimer(self)
@@ -34,7 +36,7 @@ class VisualizerPanel(QWidget):
         self._build_ui()
 
     def _build_graph(self, quality: str) -> None:
-        self.graph = build_connectome(self._model_key, quality)
+        self.graph = build_connectome(self._model_key, quality, self._cluster_spacing)
         self.field = ActivityField(self.graph)
         self.mapper = ActivityMapper(self.field)
         self.renderer = ConnectomeRenderer(self.graph, self.field)
@@ -49,14 +51,19 @@ class VisualizerPanel(QWidget):
         self.render_gpu = QComboBox(); self.render_gpu.setToolTip("Preferred Windows graphics adapter for the OpenGL renderer")
         self._populate_render_adapters()
         self.render_gpu.currentIndexChanged.connect(self._set_render_preference)
+        self.spacing = QSlider(Qt.Orientation.Horizontal); self.spacing.setRange(60, 200); self.spacing.setValue(100); self.spacing.setToolTip("Cluster spacing")
+        self.spacing.valueChanged.connect(self._set_cluster_spacing)
         self.pause = QPushButton("Pause"); self.pause.clicked.connect(self._toggle_pause)
         reset = QPushButton("Reset view"); reset.clicked.connect(lambda: self.renderer.reset_camera())
-        for widget in (title, self.mode, self.quality, self.render_gpu, self.pause, reset): header.addWidget(widget)
+        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.pause, reset): header.addWidget(widget)
         header.addStretch(1); self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
         self.overlay = QLabel(); self.overlay.setObjectName("overlay"); self.overlay.setWordWrap(True)
         self.inspector = QLabel("Click a visual neuron to inspect its mapped visual data."); self.inspector.setObjectName("muted")
-        self.layout.addWidget(self.overlay); self.layout.addWidget(self.inspector)
+        self.silence = QPushButton("Silence selected neuron"); self.silence.clicked.connect(self._toggle_selected_node); self.silence.setEnabled(False)
+        self.importance = QDoubleSpinBox(); self.importance.setRange(0, 3); self.importance.setSingleStep(.1); self.importance.setValue(1); self.importance.valueChanged.connect(self._change_importance); self.importance.setEnabled(False)
+        inspect_controls = QHBoxLayout(); inspect_controls.addWidget(self.silence); inspect_controls.addWidget(QLabel("Importance")); inspect_controls.addWidget(self.importance); inspect_controls.addStretch(1)
+        self.layout.addWidget(self.overlay); self.layout.addWidget(self.inspector); self.layout.addLayout(inspect_controls)
         self._refresh_overlay()
 
     def _rebuild(self, quality: str) -> None:
@@ -143,7 +150,20 @@ class VisualizerPanel(QWidget):
         self._refresh_overlay()
 
     def _inspect(self, index: int) -> None:
+        self._selected_node = index; self.silence.setEnabled(True); self.importance.setEnabled(True); self.importance.setValue(float(self.field.importance[index]))
         self.inspector.setText(f"Visual node: {index:05d}  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}  ·  Current activity: {self.field.values[index]:.3f}  ·  Peak: {self.field.peaks[index]:.3f}  ·  Data source: Simulation")
+
+    def _toggle_selected_node(self) -> None:
+        if self._selected_node is None: return
+        index = self._selected_node; disabled = not bool(self.field.disabled[index]); self.field.set_disabled(index, disabled)
+        self.silence.setText("Restore selected neuron" if disabled else "Silence selected neuron"); self.renderer.update()
+
+    def _change_importance(self, value: float) -> None:
+        if self._selected_node is not None: self.field.set_importance(self._selected_node, value)
+
+    def _set_cluster_spacing(self, value: int) -> None:
+        self._cluster_spacing = value / 100
+        if hasattr(self, "renderer"): self._rebuild(self.quality.currentText())
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()

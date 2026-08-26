@@ -15,7 +15,7 @@ def _seed(key: str) -> int:
     return int.from_bytes(hashlib.blake2b(key.encode(), digest_size=8).digest(), "little")
 
 
-def build_connectome(model_key: str, quality: str = "Medium") -> ConnectomeGraph:
+def build_connectome(model_key: str, quality: str = "Medium", cluster_spacing: float = 1.0) -> ConnectomeGraph:
     counts = {"Low": 5000, "Medium": 11000, "High": 22000}
     n = counts.get(quality, 11000)
     rng = np.random.default_rng(_seed(model_key + quality))
@@ -25,6 +25,7 @@ def build_connectome(model_key: str, quality: str = "Medium") -> ConnectomeGraph
     phase = np.linspace(0, np.pi * 2.1, len(REGIONS))
     centers[:, 0] += np.cos(phase) * 8
     centers[:, 1] += np.sin(phase) * 5
+    centers *= cluster_spacing
     positions = centers[region_ids] + rng.normal(0, 1.35, size=(n, 3))
     positions += rng.normal(0, .25, size=(n, 1)) * np.array([1, -.4, .6])
     edges_per_node = {"Low": 5, "Medium": 7, "High": 9}.get(quality, 7)
