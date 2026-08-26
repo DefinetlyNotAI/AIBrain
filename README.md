@@ -46,6 +46,18 @@ python main.py
 
 The program exits with clear setup instructions if it is launched with the global Python interpreter. This protects the system Python installation and ensures the application always uses its declared dependencies. `install.py` is the only exception: it is designed to be run by a system Python specifically to create and populate `.venv`.
 
+## Native acceleration build
+
+AIBrain is a native PySide6/Qt Windows application. It uses a real Windows window and OpenGL context; it contains no React, Electron, browser, or webview UI.
+
+The connectome's CPU activity hot paths are supplied by a compiled Windows DLL. Rebuild it after changing `src/native/connectome_native.c`:
+
+```powershell
+py -3.11 scripts\build_native.py
+```
+
+The color-coded build tool discovers GCC, Clang, or Visual Studio's C compiler, compiles an optimized DLL, validates its PE header, and verifies exported native functions. Use `--debug` for a debug build or `--clean` to force a clean rebuild.
+
 ## Ollama model discovery
 
 At startup AIBrain recursively reads:
