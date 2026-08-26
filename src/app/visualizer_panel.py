@@ -80,92 +80,146 @@ class VisualizerPanel(QWidget):
     def _build_ui(self) -> None:
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(8, 18, 18, 18)
+
         header = QGridLayout()
         header.setHorizontalSpacing(8)
         header.setVerticalSpacing(6)
+
         title = QLabel("Live Connectome")
         title.setObjectName("title")
+
         self.mode = QLabel("SIMULATION")
         self.mode.setObjectName("mode")
+
         self.quality = QComboBox()
         self.quality.addItems(["Low", "Medium", "High"])
         self.quality.setCurrentText("Medium")
         self.quality.currentTextChanged.connect(self._rebuild)
+
         self.render_gpu = QComboBox()
         self.render_gpu.setToolTip(
-            "AIBrain starts a fresh process after saving the Windows high-performance GPU preference.")
+            "AIBrain starts a fresh process after saving the Windows high-performance GPU preference."
+        )
         self._populate_render_adapters()
         self.render_gpu.currentIndexChanged.connect(self._set_render_preference)
+
         self.spacing = QSlider(Qt.Orientation.Horizontal)
         self.spacing.setRange(60, 200)
         self.spacing.setValue(100)
         self.spacing.setToolTip("Cluster spacing")
+
         self.spacing_value = QLabel("1.00×")
         self.spacing_value.setObjectName("muted")
         self.spacing.valueChanged.connect(self._preview_cluster_spacing)
+
         settings = QSettings()
+
         self.neuron_borders = QCheckBox("Neuron borders")
-        self.neuron_borders.setToolTip("Outline each visual neuron for clearer separation")
-        self.neuron_borders.setChecked(settings.value("neuron_borders", True, type=bool))
+        self.neuron_borders.setToolTip(
+            "Outline each visual neuron for clearer separation"
+        )
+
+        neuron_borders_value = settings.value("neuron_borders", True)
+        self.neuron_borders.setChecked(
+            neuron_borders_value
+            if isinstance(neuron_borders_value, bool)
+            else True
+        )
+
         self.neuron_borders.toggled.connect(self._set_neuron_borders)
+
         self.border_width = QDoubleSpinBox()
         self.border_width.setRange(.01, .45)
         self.border_width.setSingleStep(.01)
         self.border_width.setDecimals(2)
-        self.border_width.setValue(float(settings.value("neuron_border_width", .12)))
+
+        border_width_value = settings.value("neuron_border_width", .12)
+        self.border_width.setValue(
+            float(border_width_value)
+            if isinstance(border_width_value, (int, float, str))
+            else .12
+        )
+
         self.border_width.setToolTip("Neuron outline width")
-        self.border_width.valueChanged.connect(lambda _: self._set_neuron_borders(self.neuron_borders.isChecked()))
+        self.border_width.valueChanged.connect(
+            lambda _: self._set_neuron_borders(
+                self.neuron_borders.isChecked()
+            )
+        )
+
         self.pause = QPushButton("Pause")
         self.pause.clicked.connect(self._toggle_pause)
+
         self.analysis = QPushButton("NN Analysis+")
-        self.analysis.setToolTip("Analyze every recorded visual frame and export compact neural-network findings")
+        self.analysis.setToolTip(
+            "Analyze every recorded visual frame and export compact neural-network findings"
+        )
         self.analysis.clicked.connect(self._run_nn_analysis_plus)
+
         reset = QPushButton("Reset view")
         reset.clicked.connect(lambda: self.renderer.reset_camera())
+
         spacing_label = QLabel("Spacing")
         importance_label = QLabel("Importance")
+
         header.addWidget(title, 0, 0)
         header.addWidget(self.mode, 0, 1)
         header.addWidget(self.quality, 0, 2)
         header.addWidget(self.render_gpu, 0, 3, 1, 3)
+
         header.addWidget(spacing_label, 1, 0)
         header.addWidget(self.spacing, 1, 1, 1, 2)
         header.addWidget(self.spacing_value, 1, 3)
         header.addWidget(self.neuron_borders, 1, 4)
         header.addWidget(self.border_width, 1, 5)
+
         header.addWidget(self.analysis, 2, 0, 1, 2)
         header.addWidget(self.pause, 2, 2)
         header.addWidget(reset, 2, 3)
+
         header.setColumnStretch(3, 1)
+
         self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
+
+        selectable_text_flags = Qt.TextInteractionFlag(
+            Qt.TextInteractionFlag.TextSelectableByMouse.value
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard.value
+        )
+
         self.overlay = QLabel()
         self.overlay.setObjectName("overlay")
         self.overlay.setWordWrap(True)
-        self.overlay.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
-        self.inspector = NeuronInspectorLabel("Click a visual neuron to inspect its mapped visual data.")
+        self.overlay.setTextInteractionFlags(selectable_text_flags)
+
+        self.inspector = NeuronInspectorLabel(
+            "Click a visual neuron to inspect its mapped visual data."
+        )
         self.inspector.setObjectName("muted")
-        self.inspector.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.inspector.setTextInteractionFlags(selectable_text_flags)
         self.inspector.neuronNumberClicked.connect(self._prompt_for_neuron)
+
         self.silence = QPushButton("Silence selected neuron")
         self.silence.clicked.connect(self._toggle_selected_node)
         self.silence.setEnabled(False)
+
         self.importance = QDoubleSpinBox()
         self.importance.setRange(0, 3)
         self.importance.setSingleStep(.1)
         self.importance.setValue(1)
         self.importance.valueChanged.connect(self._change_importance)
         self.importance.setEnabled(False)
+
         inspect_controls = QHBoxLayout()
         inspect_controls.addWidget(self.silence)
         inspect_controls.addWidget(importance_label)
         inspect_controls.addWidget(self.importance)
         inspect_controls.addStretch(1)
+
         self.layout.addWidget(self.overlay)
         self.layout.addWidget(self.inspector)
         self.layout.addLayout(inspect_controls)
+
         self._set_neuron_borders(self.neuron_borders.isChecked())
         self._refresh_overlay()
 
