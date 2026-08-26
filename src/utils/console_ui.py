@@ -9,9 +9,17 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-for _stream in (sys.stdout, sys.stderr):
-    if hasattr(_stream, "reconfigure"):
-        _stream.reconfigure(encoding="utf-8", errors="replace")
+_ASCII_GLYPHS = str.maketrans({"╭": "+", "╮": "+", "╰": "+", "╯": "+", "├": "+", "┤": "+", "│": "|", "─": "-", "●": "*", "✓": "OK", "✗": "X", "›": ">"})
+
+
+def _console_text(text: str) -> str:
+    """Avoid UTF-8 mojibake in legacy CMD/PowerShell code pages."""
+    encoding = sys.stdout.encoding or "ascii"
+    try:
+        text.encode(encoding)
+    except UnicodeEncodeError:
+        return text.translate(_ASCII_GLYPHS)
+    return text
 DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
 MAX_WIDTH = 110
@@ -40,7 +48,7 @@ class Color:
 
 
 def color(text: str, *styles: str) -> str:
-    return "".join(styles) + text + Color.RESET
+    return "".join(styles) + _console_text(text) + Color.RESET
 
 
 def terminal_width() -> int:
