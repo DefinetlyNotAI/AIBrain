@@ -36,8 +36,12 @@ class NativeConnectome:
         if not self.dll:
             values *= factor
             return int(np.count_nonzero(values > threshold))
-        return int(self.dll.decay_and_count(values.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), len(values), factor,
-                                            threshold))
+        return int(
+            self.dll.decay_and_count(
+                values.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+                len(values), factor, threshold
+            )
+        )
 
     def edges(self, values: np.ndarray, edges: np.ndarray, output: np.ndarray) -> None:
         if not self.dll:
@@ -47,15 +51,20 @@ class NativeConnectome:
                                edges.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)), len(edges),
                                output.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
 
-    def regions(self, values: np.ndarray, region_ids: np.ndarray, region_count: int, threshold: float = .1) -> tuple[
-        np.ndarray, int]:
+    def regions(
+            self, values: np.ndarray,
+            region_ids: np.ndarray,
+            region_count: int, threshold: float = .1
+    ) -> tuple[np.ndarray, int]:
         sums = np.zeros(region_count, dtype=np.float32)
         if not self.dll:
             return np.bincount(region_ids, weights=values, minlength=region_count).astype("f4"), int(
                 np.count_nonzero(values > threshold))
-        active = self.dll.region_activity(values.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
-                                          region_ids.ctypes.data_as(ctypes.POINTER(ctypes.c_int16)), len(values),
-                                          region_count, threshold, sums.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
+        active = self.dll.region_activity(
+            values.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+            region_ids.ctypes.data_as(ctypes.POINTER(ctypes.c_int16)), len(values),
+            region_count, threshold, sums.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+        )
         return sums, int(active)
 
 

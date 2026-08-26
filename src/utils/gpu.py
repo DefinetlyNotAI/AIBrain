@@ -70,7 +70,10 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
                 executables.add(str(launched_program.resolve()))
             for executable in executables:
                 if high_performance:
-                    winreg.SetValueEx(key, executable, 0, winreg.REG_SZ, "GpuPreference=2;")
+                    winreg.SetValueEx(
+                        key, executable,
+                        0, winreg.REG_SZ, "GpuPreference=2;"
+                    )
                     persisted, _ = winreg.QueryValueEx(key, executable)
                     if persisted != "GpuPreference=2;":
                         raise OSError(f"Windows did not persist the high-performance preference for {executable}")

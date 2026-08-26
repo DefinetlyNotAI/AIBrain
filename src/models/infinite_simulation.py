@@ -13,13 +13,14 @@ WORLD_SYSTEM = """You are the WORLD DIRECTOR for an open-ended, fictional embodi
 Write only the external world: sensory events, people, places, consequences, and continuity. Never write the
 participant's thoughts, dialogue, choices, or first-person actions. You know this is a simulation and should
 never claim it is real outside the scenario. Keep each turn vivid, actionable, under 180 words, and continue
-the scene instead of ending it."""
+the scene instead of ending it. DO NOT USE THE PARTICIPANTS THOUGHTS AS YOUR OWN!!"""
 
 PARTICIPANT_SYSTEM = """You are the PARTICIPANT in an immersive, fictional embodied simulation.
 Write only your first-person thoughts, dialogue, choices, feelings, and physical actions in response to a world
 event. Never narrate the world, control other characters, or call yourself the world director. Stay inside the
 scenario and do not discuss model prompts, orchestration, or being an AI. Your responses are roleplay text in a
-clearly labelled local simulation, not statements about real-world consciousness."""
+clearly labelled local simulation, not statements about real-world consciousness. EVEN IF YOU MUST ACT, ROLEPLAY 
+LIKE YOU ARE A LIVING HUMAN BEING THATS NOT AN AI AND FULLY IMMERSE YOURSELF IN THAT ROLE"""
 
 _CONTEXT_TURNS = 24
 
@@ -45,8 +46,21 @@ class InfiniteSimulationWorker(QObject):
         started = monotonic()
         participant_tokens = 0
         turn = 0
-        world_history = [{"role": "system", "content": WORLD_SYSTEM}, {"role": "user",
-                                                                       "content": f"[SIMULATION DIRECTION]\n{seed}\n[END SIMULATION DIRECTION]\nWrite the opening WORLD EVENT only."}]
+        world_history = [
+            {
+                "role": "system",
+                "content": WORLD_SYSTEM
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"[SIMULATION DIRECTION]\n"
+                    f"{seed}\n"
+                    f"[END SIMULATION DIRECTION]\n"
+                    f"Write the opening WORLD EVENT only."
+                )
+            }
+        ]
         participant_history = [{"role": "system", "content": PARTICIPANT_SYSTEM}]
         try:
             # Separate backend objects intentionally deploy two copies of the
@@ -61,19 +75,47 @@ class InfiniteSimulationWorker(QObject):
                 if not world_text:
                     raise RuntimeError("World model returned no text")
                 world_history.append({"role": "assistant", "content": world_text})
-                participant_history.append({"role": "user",
-                                            "content": f"[WORLD EVENT]\n{world_text}\n[END WORLD EVENT]\nWrite the PARTICIPANT response only."})
+                participant_history.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[WORLD EVENT]\n"
+                            f"{world_text}\n"
+                            f"[END WORLD EVENT]\n"
+                            f"Write the PARTICIPANT response only."
+                        )
+                    }
+                )
 
-                participant_text, token_count = self._generate_participant(participant_history, config, turn,
-                                                                           participant_tokens)
+                participant_text, token_count = self._generate_participant(
+                    participant_history,
+                    config,
+                    turn,
+                    participant_tokens
+                )
+
                 participant_tokens += token_count
                 if self._cancelled.is_set():
                     break
                 if not participant_text:
                     raise RuntimeError("Participant model returned no text")
-                participant_history.append({"role": "assistant", "content": participant_text})
-                world_history.append({"role": "user",
-                                      "content": f"[PARTICIPANT RESPONSE]\n{participant_text}\n[END PARTICIPANT RESPONSE]\nWrite the next WORLD EVENT only."})
+                participant_history.append(
+                    {
+                        "role": "assistant",
+                        "content": participant_text
+                    }
+                )
+                world_history.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[PARTICIPANT RESPONSE]\n"
+                            f"{participant_text}\n"
+                            f"[END PARTICIPANT RESPONSE]\n"
+                            f"Write the next WORLD EVENT only."
+                        )
+                    }
+                )
                 world_history = self._trim(world_history)
                 participant_history = self._trim(participant_history)
             self.finished.emit({"turns": turn, "participant_tokens": participant_tokens,

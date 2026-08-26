@@ -6,8 +6,8 @@ from time import monotonic
 
 import numpy as np
 from PySide6.QtCore import QSettings, QTimer, Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog, \
-    QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, \
+    QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget, QInputDialog
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
@@ -38,7 +38,10 @@ class NeuronInspectorLabel(QLabel):
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         prefix_width = self.fontMetrics().horizontalAdvance(self._prefix)
         number_width = self.fontMetrics().horizontalAdvance("00000")
-        if event.button() == Qt.MouseButton.LeftButton and prefix_width <= event.position().x() <= prefix_width + number_width:
+        if (
+                event.button() == Qt.MouseButton.LeftButton and
+                prefix_width <= event.position().x() <= prefix_width + number_width
+        ):
             self.neuronNumberClicked.emit()
             event.accept()
             return
@@ -75,49 +78,49 @@ class VisualizerPanel(QWidget):
         self.renderer.backendChanged.connect(self._set_backend)
 
     def _build_ui(self) -> None:
-        self.layout = QVBoxLayout(self);
+        self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(8, 18, 18, 18)
-        header = QGridLayout();
-        header.setHorizontalSpacing(8);
+        header = QGridLayout()
+        header.setHorizontalSpacing(8)
         header.setVerticalSpacing(6)
-        title = QLabel("Live Connectome");
+        title = QLabel("Live Connectome")
         title.setObjectName("title")
-        self.mode = QLabel("SIMULATION");
+        self.mode = QLabel("SIMULATION")
         self.mode.setObjectName("mode")
-        self.quality = QComboBox();
-        self.quality.addItems(["Low", "Medium", "High"]);
-        self.quality.setCurrentText("Medium");
+        self.quality = QComboBox()
+        self.quality.addItems(["Low", "Medium", "High"])
+        self.quality.setCurrentText("Medium")
         self.quality.currentTextChanged.connect(self._rebuild)
-        self.render_gpu = QComboBox();
+        self.render_gpu = QComboBox()
         self.render_gpu.setToolTip(
             "AIBrain starts a fresh process after saving the Windows high-performance GPU preference.")
         self._populate_render_adapters()
         self.render_gpu.currentIndexChanged.connect(self._set_render_preference)
-        self.spacing = QSlider(Qt.Orientation.Horizontal);
-        self.spacing.setRange(60, 200);
-        self.spacing.setValue(100);
+        self.spacing = QSlider(Qt.Orientation.Horizontal)
+        self.spacing.setRange(60, 200)
+        self.spacing.setValue(100)
         self.spacing.setToolTip("Cluster spacing")
-        self.spacing_value = QLabel("1.00×");
+        self.spacing_value = QLabel("1.00×")
         self.spacing_value.setObjectName("muted")
         self.spacing.valueChanged.connect(self._preview_cluster_spacing)
         settings = QSettings()
-        self.neuron_borders = QCheckBox("Neuron borders");
+        self.neuron_borders = QCheckBox("Neuron borders")
         self.neuron_borders.setToolTip("Outline each visual neuron for clearer separation")
-        self.neuron_borders.setChecked(settings.value("neuron_borders", True, type=bool));
+        self.neuron_borders.setChecked(settings.value("neuron_borders", True, type=bool))
         self.neuron_borders.toggled.connect(self._set_neuron_borders)
-        self.border_width = QDoubleSpinBox();
-        self.border_width.setRange(.01, .45);
-        self.border_width.setSingleStep(.01);
+        self.border_width = QDoubleSpinBox()
+        self.border_width.setRange(.01, .45)
+        self.border_width.setSingleStep(.01)
         self.border_width.setDecimals(2)
-        self.border_width.setValue(float(settings.value("neuron_border_width", .12)));
+        self.border_width.setValue(float(settings.value("neuron_border_width", .12)))
         self.border_width.setToolTip("Neuron outline width")
         self.border_width.valueChanged.connect(lambda _: self._set_neuron_borders(self.neuron_borders.isChecked()))
-        self.pause = QPushButton("Pause");
+        self.pause = QPushButton("Pause")
         self.pause.clicked.connect(self._toggle_pause)
-        self.analysis = QPushButton("NN Analysis+");
+        self.analysis = QPushButton("NN Analysis+")
         self.analysis.setToolTip("Analyze every recorded visual frame and export compact neural-network findings")
         self.analysis.clicked.connect(self._run_nn_analysis_plus)
-        reset = QPushButton("Reset view");
+        reset = QPushButton("Reset view")
         reset.clicked.connect(lambda: self.renderer.reset_camera())
         spacing_label = QLabel("Spacing")
         importance_label = QLabel("Importance")
@@ -136,32 +139,32 @@ class VisualizerPanel(QWidget):
         header.setColumnStretch(3, 1)
         self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
-        self.overlay = QLabel();
-        self.overlay.setObjectName("overlay");
+        self.overlay = QLabel()
+        self.overlay.setObjectName("overlay")
         self.overlay.setWordWrap(True)
         self.overlay.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
-        self.inspector = NeuronInspectorLabel("Click a visual neuron to inspect its mapped visual data.");
+        self.inspector = NeuronInspectorLabel("Click a visual neuron to inspect its mapped visual data.")
         self.inspector.setObjectName("muted")
         self.inspector.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         self.inspector.neuronNumberClicked.connect(self._prompt_for_neuron)
-        self.silence = QPushButton("Silence selected neuron");
-        self.silence.clicked.connect(self._toggle_selected_node);
+        self.silence = QPushButton("Silence selected neuron")
+        self.silence.clicked.connect(self._toggle_selected_node)
         self.silence.setEnabled(False)
-        self.importance = QDoubleSpinBox();
-        self.importance.setRange(0, 3);
-        self.importance.setSingleStep(.1);
-        self.importance.setValue(1);
-        self.importance.valueChanged.connect(self._change_importance);
+        self.importance = QDoubleSpinBox()
+        self.importance.setRange(0, 3)
+        self.importance.setSingleStep(.1)
+        self.importance.setValue(1)
+        self.importance.valueChanged.connect(self._change_importance)
         self.importance.setEnabled(False)
-        inspect_controls = QHBoxLayout();
-        inspect_controls.addWidget(self.silence);
-        inspect_controls.addWidget(importance_label);
-        inspect_controls.addWidget(self.importance);
+        inspect_controls = QHBoxLayout()
+        inspect_controls.addWidget(self.silence)
+        inspect_controls.addWidget(importance_label)
+        inspect_controls.addWidget(self.importance)
         inspect_controls.addStretch(1)
-        self.layout.addWidget(self.overlay);
-        self.layout.addWidget(self.inspector);
+        self.layout.addWidget(self.overlay)
+        self.layout.addWidget(self.inspector)
         self.layout.addLayout(inspect_controls)
         self._set_neuron_borders(self.neuron_borders.isChecked())
         self._refresh_overlay()
@@ -181,7 +184,7 @@ class VisualizerPanel(QWidget):
         self._refresh_overlay()
 
     def _toggle_pause(self) -> None:
-        self.renderer.paused = not self.renderer.paused;
+        self.renderer.paused = not self.renderer.paused
         self.pause.setText("Resume" if self.renderer.paused else "Pause")
 
     def apply_frame(self, frame: ActivationFrame, *, record: bool = True) -> None:
@@ -255,7 +258,7 @@ class VisualizerPanel(QWidget):
 
     def set_model(self, key: str) -> None:
         self.begin_recording()
-        self._model_key = key;
+        self._model_key = key
         self._rebuild(self.quality.currentText())
 
     def _refresh_overlay(self) -> None:
@@ -265,19 +268,30 @@ class VisualizerPanel(QWidget):
         region = self.graph.region_names[int(self.graph.regions[strongest])]
         backend = getattr(self, "_backend", "ModernGL GPU renderer initializing…")
         self.overlay.setText(
-            f"{backend}  ·  Visualization: Simulation (token-driven, not measured activation)  ·  Step {self.field.step}  ·  Active neurons {self.field.active_count:,}  ·  Active pathways {active_edges:,}  ·  Strongest: {region}  ·  Token: {self.field.current_token!r}")
+            f"{backend}"
+            f"  ·  Visualization: Simulation (token-driven)"
+            f"  ·  Step {self.field.step}"
+            f"  ·  Active neurons {self.field.active_count:,}"
+            f"  ·  Active pathways {active_edges:,}"
+            f"  ·  Strongest: {region}"
+            f"  ·  Token: {self.field.current_token!r}")
 
     def _set_backend(self, backend: str) -> None:
         self._backend = backend
         self._refresh_overlay()
 
     def _inspect(self, index: int) -> None:
-        self._selected_node = index;
-        self.silence.setEnabled(True);
-        self.importance.setEnabled(True);
+        self._selected_node = index
+        self.silence.setEnabled(True)
+        self.importance.setEnabled(True)
         self.importance.setValue(float(self.field.importance[index]))
-        self.inspector.set_neuron_details(index,
-                                          f"  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}  ·  Current activity: {self.field.values[index]:.3f}  ·  Peak: {self.field.peaks[index]:.3f}  ·  Data source: Simulation")
+        self.inspector.set_neuron_details(
+            index,
+            f"  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}"
+            f"  ·  Current activity: {self.field.values[index]:.3f}"
+            f"  ·  Peak: {self.field.peaks[index]:.3f}"
+            f"  ·  Data source: Simulation"
+        )
 
     def _prompt_for_neuron(self) -> None:
         current = self._selected_node if self._selected_node is not None else 0
@@ -287,15 +301,17 @@ class VisualizerPanel(QWidget):
             self._inspect(index)
 
     def _toggle_selected_node(self) -> None:
-        if self._selected_node is None: return
-        index = self._selected_node;
-        disabled = not bool(self.field.disabled[index]);
+        if self._selected_node is None:
+            return
+        index = self._selected_node
+        disabled = not bool(self.field.disabled[index])
         self.field.set_disabled(index, disabled)
-        self.silence.setText("Restore selected neuron" if disabled else "Silence selected neuron");
+        self.silence.setText("Restore selected neuron" if disabled else "Silence selected neuron")
         self.renderer.update()
 
     def _change_importance(self, value: float) -> None:
-        if self._selected_node is not None: self.field.set_importance(self._selected_node, value)
+        if self._selected_node is not None:
+            self.field.set_importance(self._selected_node, value)
 
     def _preview_cluster_spacing(self, value: int) -> None:
         self._pending_cluster_spacing = value / 100
@@ -316,11 +332,17 @@ class VisualizerPanel(QWidget):
 
     def _run_nn_analysis_plus(self) -> None:
         if not self.analyzer.records:
-            QMessageBox.information(self, "NN Analysis+",
-                                    "Generate a response or start an infinite simulation before creating an analysis file.")
+            QMessageBox.information(
+                self,
+                "NN Analysis+",
+                "Generate a response or start an infinite simulation before creating an analysis file."
+            )
             return
-        filename, _ = QFileDialog.getSaveFileName(self, "Create NN Analysis+ data file", "nn-analysis-plus.json",
-                                                  "JSON data (*.json);;Compressed JSON data (*.json.gz)")
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Create NN Analysis+ data file",
+            "nn-analysis-plus.json",
+            "JSON data (*.json);;Compressed JSON data (*.json.gz)")
         if not filename:
             return
         try:
@@ -328,8 +350,13 @@ class VisualizerPanel(QWidget):
         except OSError as exc:
             QMessageBox.critical(self, "NN Analysis+ export failed", str(exc))
             return
-        QMessageBox.information(self, "NN Analysis+ complete",
-                                f"Created {Path(filename).name}\n\nConversation turns: {len(self._conversation)}\nVisual brain-signal frames analyzed: {len(self.analyzer.records)}\n\nThe JSON contains compact neural-network findings, not a raw frame dump.")
+        QMessageBox.information(
+            self,
+            "NN Analysis+ complete",
+            f"Created {Path(filename).name}\n\n"
+            f"Conversation turns: {len(self._conversation)}\n"
+            f"Visual brain-signal frames analyzed: {len(self.analyzer.records)}\n\n"
+            f"The JSON contains compact neural-network findings, not a raw frame dump.")
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()
@@ -357,11 +384,16 @@ class VisualizerPanel(QWidget):
             self._refresh_overlay()
             return
         applied = set_windows_gpu_preference(True)
-        self._backend = "High-performance GPU saved; AIBrain will relaunch on the next start" if applied else "GPU preference could not be saved; configure Windows Graphics Settings"
+        self._backend = "High-performance GPU saved; AIBrain will relaunch on the next start" if applied else \
+            "GPU preference could not be saved; configure Windows Graphics Settings"
         self._refresh_overlay()
         QMessageBox.information(
-            self, "Rendering adapter preference",
-            "AIBrain writes the Windows high-performance setting for both virtual-environment Python hosts and starts the app in a fresh process. "
-            "Restart AIBrain for Windows to apply it. If the overlay still reports another adapter, choose that executable "
-            "in Windows Settings > System > Display > Graphics. The overlay always reports the actual renderer.",
+            self,
+            "Rendering adapter preference",
+            "AIBrain writes the Windows high-performance setting "
+            "for both virtual-environment Python hosts and starts the app in a fresh process.\n"
+            "Restart AIBrain for Windows to apply it.\n"
+            "If the overlay still reports another adapter, "
+            "choose that executable in Windows Settings > System > Display > Graphics.\n"
+            "The overlay always reports the actual renderer.",
         )

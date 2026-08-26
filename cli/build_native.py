@@ -86,10 +86,10 @@ def main() -> int:
     arguments = parser.parse_args()
     header("AIBrain", "Native connectome build tool · x64 Windows")
     if not SOURCE.is_file():
-        line("ERROR", f"Missing source: {SOURCE}", Colour.RED);
+        line("ERROR", f"Missing source: {SOURCE}", Colour.RED)
         return 1
     if arguments.clean and OUTPUT.exists():
-        OUTPUT.unlink();
+        OUTPUT.unlink()
         line("CLEAN", f"Removed {OUTPUT.name}", Colour.YELLOW)
     try:
         compiler = discover_compiler(arguments.compiler)
@@ -97,7 +97,7 @@ def main() -> int:
         compile_library(compiler, arguments.debug)
         verify_library()
     except (OSError, RuntimeError) as exc:
-        line("ERROR", str(exc), Colour.RED);
+        line("ERROR", str(exc), Colour.RED)
         return 1
     success("Native acceleration is ready for AIBrain.")
     return 0

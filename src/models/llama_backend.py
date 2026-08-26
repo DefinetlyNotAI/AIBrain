@@ -35,7 +35,7 @@ class LlamaBackend:
         LOG.info("Loading GGUF directly: %s (GPU layers: %s)", path, config.gpu_layers)
 
         @llama_log_callback
-        def native_log(level: int, text: bytes, _user_data: object) -> None:
+        def native_log(text: bytes, _user_data: object) -> None:
             message = text.decode("utf-8", errors="replace").strip()
             if not message or not message.strip("."):
                 return

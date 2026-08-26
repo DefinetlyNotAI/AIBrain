@@ -17,7 +17,7 @@ def markdown_to_html(markdown: str) -> str:
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", escaped)
-    escaped = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', escaped)
+    escaped = re.sub(r"\[([^]]+)]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', escaped)
     escaped = re.sub(r"(?m)^### (.+)$", r"<h3>\1</h3>", escaped)
     escaped = re.sub(r"(?m)^## (.+)$", r"<h2>\1</h2>", escaped)
     escaped = re.sub(r"(?m)^# (.+)$", r"<h1>\1</h1>", escaped)
@@ -101,49 +101,51 @@ class ChatPanel(QWidget):
             "Start an open-ended world/participant roleplay simulation using two local model instances")
         self.clear = QPushButton("Clear")
         self.stop.setEnabled(False)
+        # noinspection DuplicatedCode
         self.send.clicked.connect(self._send)
         self.stop.clicked.connect(self.stopRequested)
         self.regenerate.clicked.connect(self.regenerateRequested)
         self.infinite.clicked.connect(self._start_infinite)
         self.clear.clicked.connect(self.clearRequested)
-        for button in (self.send, self.stop, self.regenerate, self.infinite, self.clear): buttons.addWidget(button)
+        for button in (self.send, self.stop, self.regenerate, self.infinite, self.clear):
+            buttons.addWidget(button)
         layout.addLayout(buttons)
         advanced = QFormLayout()
-        self.temperature = QDoubleSpinBox();
-        self.temperature.setRange(0, 2);
-        self.temperature.setSingleStep(.05);
+        self.temperature = QDoubleSpinBox()
+        self.temperature.setRange(0, 2)
+        self.temperature.setSingleStep(.05)
         self.temperature.setValue(config.temperature)
-        self.top_p = QDoubleSpinBox();
-        self.top_p.setRange(.05, 1);
-        self.top_p.setSingleStep(.05);
+        self.top_p = QDoubleSpinBox()
+        self.top_p.setRange(.05, 1)
+        self.top_p.setSingleStep(.05)
         self.top_p.setValue(config.top_p)
-        self.max_tokens = QSpinBox();
-        self.max_tokens.setRange(1, 8192);
+        self.max_tokens = QSpinBox()
+        self.max_tokens.setRange(1, 8192)
         self.max_tokens.setValue(config.max_tokens)
-        self.context = QSpinBox();
-        self.context.setRange(512, 32768);
-        self.context.setSingleStep(512);
+        self.context = QSpinBox()
+        self.context.setRange(512, 32768)
+        self.context.setSingleStep(512)
         self.context.setValue(config.context_length)
-        self.gpu_layers = QSpinBox();
-        self.gpu_layers.setRange(-1, 200);
+        self.gpu_layers = QSpinBox()
+        self.gpu_layers.setRange(-1, 200)
         self.gpu_layers.setValue(config.gpu_layers)
-        self.speed = QSlider();
-        self.speed.setOrientation(Qt.Orientation.Horizontal);
-        self.speed.setRange(1, 10);
+        self.speed = QSlider()
+        self.speed.setOrientation(Qt.Orientation.Horizontal)
+        self.speed.setRange(1, 10)
         self.speed.setValue(round(config.speed * 10))
-        self.speed_value = QLabel();
-        self.speed.valueChanged.connect(self._update_speed_label);
+        self.speed_value = QLabel()
+        self.speed.valueChanged.connect(self._update_speed_label)
         self._update_speed_label(self.speed.value())
-        speed_row = QWidget();
-        speed_layout = QHBoxLayout(speed_row);
-        speed_layout.setContentsMargins(0, 0, 0, 0);
-        speed_layout.addWidget(self.speed);
+        speed_row = QWidget()
+        speed_layout = QHBoxLayout(speed_row)
+        speed_layout.setContentsMargins(0, 0, 0, 0)
+        speed_layout.addWidget(self.speed)
         speed_layout.addWidget(self.speed_value)
-        advanced.addRow("Temperature", self.temperature);
-        advanced.addRow("Top-p", self.top_p);
+        advanced.addRow("Temperature", self.temperature)
+        advanced.addRow("Top-p", self.top_p)
         advanced.addRow("Max tokens", self.max_tokens)
-        advanced.addRow("Context", self.context);
-        advanced.addRow("GPU layers (-1 auto)", self.gpu_layers);
+        advanced.addRow("Context", self.context)
+        advanced.addRow("GPU layers (-1 auto)", self.gpu_layers)
         advanced.addRow("Generation speed", speed_row)
         layout.addLayout(advanced)
 
@@ -168,7 +170,8 @@ class ChatPanel(QWidget):
     def set_models(self, models: list[ModelInfo]) -> None:
         self.models.blockSignals(True)
         self.models.clear()
-        if not models: self.models.addItem("No Ollama GGUF models discovered", None)
+        if not models:
+            self.models.addItem("No Ollama GGUF models discovered", None)
         for model in (model for model in models if model.available):
             self.models.addItem(model.label, model)
         self.models.blockSignals(False)
@@ -231,7 +234,7 @@ class ChatPanel(QWidget):
     def show_latest_playback(self) -> None:
         self.clear_latest_playback()
         controls = QWidget()
-        layout = QHBoxLayout(controls);
+        layout = QHBoxLayout(controls)
         layout.setContentsMargins(4, 1, 4, 5)
         previous = QPushButton("◀ Token")
         replay = QPushButton("▶ Replay neurons")
@@ -239,9 +242,9 @@ class ChatPanel(QWidget):
         previous.clicked.connect(self.playbackPreviousRequested)
         replay.clicked.connect(self.playbackRequested)
         next_token.clicked.connect(self.playbackNextRequested)
-        layout.addWidget(previous);
-        layout.addWidget(replay);
-        layout.addWidget(next_token);
+        layout.addWidget(previous)
+        layout.addWidget(replay)
+        layout.addWidget(next_token)
         layout.addStretch(1)
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, controls)
         self._playback_controls = controls
@@ -250,11 +253,12 @@ class ChatPanel(QWidget):
         self._playback_controls = None
         while self.messages_layout.count() > 1:
             item = self.messages_layout.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
+            if item.widget():
+                item.widget().deleteLater()
 
     def generating(self, running: bool) -> None:
-        self.send.setEnabled(not running);
-        self.stop.setEnabled(running);
-        self.regenerate.setEnabled(not running);
-        self.infinite.setEnabled(not running);
+        self.send.setEnabled(not running)
+        self.stop.setEnabled(running)
+        self.regenerate.setEnabled(not running)
+        self.infinite.setEnabled(not running)
         self.models.setEnabled(not running)

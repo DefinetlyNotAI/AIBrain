@@ -16,7 +16,8 @@ def export_nn_analysis_plus(path: Path, graph: ConnectomeGraph, analyzer: Connec
     payload = {
         "schema": "aibrain.nn-analysis-plus.v2",
         "created_at": datetime.now(UTC).isoformat(),
-        "integrity": "An online neural network analyzed every recorded simulated visual-connectome frame. Findings are not measured transformer activations.",
+        "integrity": "An online neural network analyzed every recorded simulated visual-connectome frame. "
+                     "Findings are not measured transformer activations.",
         "conversation": conversation,
         "graph": {"nodes": len(graph.positions), "edges": len(graph.edges), "regions": graph.region_names,
                   "cluster_colours": {name: CLUSTER_COLOR_MAP[name] for name in graph.region_names}},

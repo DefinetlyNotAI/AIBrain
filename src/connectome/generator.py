@@ -10,7 +10,7 @@ REGIONS = ("Input / tokens", "Embeddings", "Early processing", "Attention cluste
            "Residual pathways", "Middle processing", "Late processing", "Output / logits")
 
 # Region names are stable, so this map gives every procedural cluster the same
-# distinct colour across launches, qualities, replay, and fallback rendering.
+# distinct color across launches, qualities, replay, and fallback rendering.
 CLUSTER_COLOR_MAP = dict(zip(REGIONS, (
     "#4CC9F0", "#4895EF", "#4361EE", "#3A0CA3", "#7209B7",
     "#B5179E", "#F72585", "#F77F00", "#90BE6D",
@@ -43,7 +43,7 @@ def build_connectome(model_key: str, quality: str = "Medium", cluster_spacing: f
         source = rng.choice(nodes, size=len(nodes) * edges_per_node, replace=True)
         destination = rng.choice(nodes, size=len(source), replace=True)
         edge_parts.append(np.column_stack((source, destination)))
-        # Directed-ish neighbouring region bridges create activity paths.
+        # Directed-ish neighboring region bridges create activity paths.
         target_nodes = np.flatnonzero(region_ids == (region + 1) % len(REGIONS))
         if len(target_nodes):
             edge_parts.append(np.column_stack((rng.choice(nodes, size=max(20, len(nodes) // 18)),

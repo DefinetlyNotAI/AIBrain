@@ -156,9 +156,14 @@ class ConnectomeAnalyzer:
                 "activation": "tanh encoder / sigmoid decoder",
                 "training": "online gradient descent for each visual frame",
                 "learned_parameters": int(
-                    self.encoder_weights.size + self.encoder_bias.size + self.decoder_weights.size + self.decoder_bias.size),
+                    self.encoder_weights.size +
+                    self.encoder_bias.size +
+                    self.decoder_weights.size +
+                    self.decoder_bias.size
+                ),
                 "lifetime_frames_seen": self.frames_seen,
-                "feature_calibration": "Region-density and temporal-change features remove fixed cluster size and global renderer-amplitude bias.",
+                "feature_calibration": "Region-density and temporal-change features remove fixed cluster size and "
+                                       "global renderer-amplitude bias.",
             },
             "session_findings": {
                 **self.summary(), "primary_pattern": f"Highest mean visual activity was in {top_region}.",

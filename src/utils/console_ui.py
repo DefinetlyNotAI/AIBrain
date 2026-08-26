@@ -32,7 +32,7 @@ COMMAND_INDENT = 2
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 if os.name == "nt":
-    os.system("")
+    subprocess.run("", shell=True, check=False)
 
 
 class Color:
@@ -54,6 +54,7 @@ def color(text: str, *styles: str) -> str:
     return "".join(styles) + _console_text(text) + Color.RESET
 
 
+# noinspection unresolved-references
 def terminal_width() -> int:
     """Use the visible CMD/terminal window width rather than a fixed artwork cap."""
     width = shutil.get_terminal_size((DEFAULT_WIDTH, 24)).columns
@@ -72,10 +73,10 @@ def terminal_width() -> int:
                 _fields_ = [("size", _Coord), ("cursor", _Coord), ("attributes", ctypes.c_ushort),
                             ("window", _SmallRect), ("maximum_window_size", _Coord)]
 
-            info = _ConsoleScreenBufferInfo()
+            _info = _ConsoleScreenBufferInfo()
             handle = ctypes.windll.kernel32.GetStdHandle(-11)
-            if handle and ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
-                width = info.window.right - info.window.left + 1
+            if handle and ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(_info)):
+                width = _info.window.right - _info.window.left + 1
         except (AttributeError, OSError):
             pass
     return max(width, MIN_WIDTH)
@@ -128,8 +129,8 @@ def shorten_command_argument(argument: str) -> str:
     return argument
 
 
-def display_command(command: list[str]) -> str:
-    shortened = [shorten_command_argument(part) for part in command]
+def display_command(_command: list[str]) -> str:
+    shortened = [shorten_command_argument(part) for part in _command]
     return subprocess.list2cmdline(shortened)
 
 
@@ -242,9 +243,9 @@ def status(label: str, message: str, tone: str = Color.CYAN) -> None:
     print(f"  {color(label.upper().ljust(8), Color.BOLD, tone)} {message}")
 
 
-def command_preview(command: list[str]) -> None:
+def command_preview(_command: list[str]) -> None:
     """Print only the command line itself, without a surrounding box."""
-    command_text = display_command(command)
+    command_text = display_command(_command)
 
     available = terminal_width() - COMMAND_INDENT - 2
     command_text = visible_trim(command_text, available)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 if os.name == "nt":
-    os.system("")
+    subprocess.run("", shell=True, check=False)
 
 
 class Color:

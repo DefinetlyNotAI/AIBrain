@@ -64,7 +64,8 @@ class OllamaDiscovery:
         inferred_family = name.rsplit("/", 1)[-1]
         family = str(config.get("family") or config.get("model_family") or data.get("model") or inferred_family)
         details = config.get("details") or {}
-        validation_error = self._validate_gguf(blob, expected_size) if blob else "Model layer blob is missing"
+        validation_error = self._validate_gguf(blob, expected_size) if blob else \
+            "Model layer blob is missing"
         return ModelInfo(
             name=name, tag=tag, blob_path=blob, family=family,
             parameter_size=str(
