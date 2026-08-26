@@ -54,15 +54,22 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
         key_path = r"Software\Microsoft\DirectX\UserGpuPreferences"
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
             # Windows matches this setting against the executable that creates
-            # the OpenGL context. Register both console and windowed venv hosts.
+            # the OpenGL context. Register console, windowed, and standalone
+            # hosts so the exact launch mode receives the same request.
             executables = {
                 str(Path(sys.executable).resolve()),
                 str(Path(sys.executable).with_name("pythonw.exe").resolve()),
             }
+            launched_program = Path(sys.argv[0])
+            if launched_program.suffix.lower() == ".exe":
+                executables.add(str(launched_program.resolve()))
             for executable in executables:
                 if high_performance:
                     winreg.SetValueEx(key, executable, 0, winreg.REG_SZ, "GpuPreference=2;")
-                    LOG.info("Requested Windows high-performance GPU for %s", executable)
+                    persisted, _ = winreg.QueryValueEx(key, executable)
+                    if persisted != "GpuPreference=2;":
+                        raise OSError(f"Windows did not persist the high-performance preference for {executable}")
+                    LOG.info("Windows high-performance GPU preference persisted for %s", executable)
                 else:
                     try:
                         winreg.DeleteValue(key, executable)

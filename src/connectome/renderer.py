@@ -11,6 +11,7 @@ from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
 from ..native.wrapper.connectome import native
+from ..utils.gpu import set_windows_gpu_preference, should_prefer_high_performance_gpu
 
 LOG = logging.getLogger(__name__)
 
@@ -33,17 +34,19 @@ in float region; in float activity; uniform float u_border_width; out vec4 f_col
 vec3 cluster_colour(int cluster) {{ {_shader_palette()} }}
 void main() {{ vec2 p = gl_PointCoord * 2.0 - 1.0; float radius = dot(p, p); if (radius > 1.0) discard;
  vec3 base = cluster_colour(int(region + .5)); float glow = 1.0 - smoothstep(.20, 1.0, radius);
- vec3 fill = min(base * (.40 + activity * .55 + glow * .42), 1.0);
+ vec3 fill = min(base * (.72 + activity * .42 + glow * .16), 1.0);
  float rim = smoothstep(1.0 - u_border_width, 1.0, radius); vec3 color = mix(fill, vec3(.015, .045, .065), rim);
- f_color = vec4(color, .42+activity*.58); }}
+ f_color = vec4(color, .78+activity*.22); }}
 """
 EDGE_VERTEX_SHADER = """#version 330
-in vec3 in_position; in float in_activity; uniform mat4 u_mvp; out float activity;
-void main() { gl_Position = u_mvp * vec4(in_position, 1.0); activity = in_activity; }
+in vec3 in_position; in float in_region; in float in_activity; uniform mat4 u_mvp; out float region; out float activity;
+void main() { gl_Position = u_mvp * vec4(in_position, 1.0); region = in_region; activity = in_activity; }
 """
-EDGE_FRAGMENT_SHADER = """#version 330
-in float activity; out vec4 f_color;
-void main() { f_color = vec4(.08+activity*.22, .27+activity*.60, .36+activity*.62, .055+activity*.34); }
+EDGE_FRAGMENT_SHADER = f"""#version 330
+in float region; in float activity; out vec4 f_color;
+vec3 cluster_colour(int cluster) {{ {_shader_palette()} }}
+void main() {{ vec3 base = cluster_colour(int(region + .5));
+ f_color = vec4(min(base * (.28 + activity * .72), 1.0), .09 + activity * .34); }}
 """
 
 
@@ -92,8 +95,14 @@ class ConnectomeRenderer(QOpenGLWidget):
             vendor = str(self._ctx.info.get("GL_VENDOR", "unknown vendor"))
             is_nvidia = "nvidia" in f"{vendor} {renderer_name}".lower()
             if not is_nvidia:
-                renderer_name += " · GPU mismatch (expected NVIDIA); check Windows Graphics settings"
-                LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
+                requested = should_prefer_high_performance_gpu()
+                if requested:
+                    preference_saved = set_windows_gpu_preference(True)
+                    action = "Windows high-performance preference re-applied" if preference_saved else "Windows preference write failed"
+                    renderer_name += f" · GPU mismatch (expected NVIDIA); {action}; restart required"
+                    LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
+                else:
+                    renderer_name += " · Windows system-default GPU"
             label = f"ModernGL GPU · {renderer_name}"
             LOG.info("Connectome renderer initialized: %s", label)
             self.backendChanged.emit(label)
@@ -107,15 +116,17 @@ class ConnectomeRenderer(QOpenGLWidget):
         positions = np.ascontiguousarray(self.graph.positions, dtype="f4")
         regions = np.ascontiguousarray(self.graph.regions.astype("f4"))
         edge_positions = np.ascontiguousarray(positions[self._render_edges].reshape(-1, 3))
+        edge_regions = np.ascontiguousarray(self.graph.regions[self._render_edges].reshape(-1).astype("f4"))
         position_buffer = self._ctx.buffer(positions.tobytes())
         region_buffer = self._ctx.buffer(regions.tobytes())
         self._node_activity_buffer = self._ctx.buffer(reserve=len(positions) * 4, dynamic=True)
         edge_position_buffer = self._ctx.buffer(edge_positions.tobytes())
+        edge_region_buffer = self._ctx.buffer(edge_regions.tobytes())
         self._edge_activity_buffer = self._ctx.buffer(reserve=len(edge_positions) * 4, dynamic=True)
         self._point_program = self._ctx.program(vertex_shader=POINT_VERTEX_SHADER, fragment_shader=POINT_FRAGMENT_SHADER)
         self._edge_program = self._ctx.program(vertex_shader=EDGE_VERTEX_SHADER, fragment_shader=EDGE_FRAGMENT_SHADER)
         self._point_vao = self._ctx.vertex_array(self._point_program, [(position_buffer, "3f", "in_position"), (region_buffer, "1f", "in_region"), (self._node_activity_buffer, "1f", "in_activity")])
-        self._edge_vao = self._ctx.vertex_array(self._edge_program, [(edge_position_buffer, "3f", "in_position"), (self._edge_activity_buffer, "1f", "in_activity")])
+        self._edge_vao = self._ctx.vertex_array(self._edge_program, [(edge_position_buffer, "3f", "in_position"), (edge_region_buffer, "1f", "in_region"), (self._edge_activity_buffer, "1f", "in_activity")])
 
     def resizeGL(self, width: int, height: int) -> None:
         if self._ctx is not None:
@@ -164,7 +175,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         points = self._project_for_pick(); stride = max(1, len(points) // 3000)
         for point, activity, region in zip(points[::stride], self.field.values[::stride], self.graph.regions[::stride]):
             colour = QColor(CLUSTER_COLOR_MAP[self.graph.region_names[int(region)]])
-            colour.setAlpha(int(55 + float(activity) * 190))
+            colour.setAlpha(int(155 + float(activity) * 100))
             painter.setPen(colour); painter.drawPoint(QPointF(*point))
         painter.end()
 
