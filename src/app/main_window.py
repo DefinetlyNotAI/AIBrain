@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 from time import monotonic
+from typing import TypedDict
 
 from PySide6.QtCore import QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QSplitter
+from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSplitter
 
 from .chat_panel import ChatPanel
 from .settings import load_generation_settings, save_generation_settings
@@ -38,6 +39,20 @@ QScrollArea { background: transparent; } QSplitter::handle { background: #1a3440
 """
 
 
+class SimulationStats(TypedDict):
+    seconds: float
+    turns: int
+    participant_tokens: int
+    cancelled: bool
+
+
+class GenerationStats(TypedDict):
+    seconds: float
+    generated_tokens: int
+    prompt_tokens: int
+    cancelled: bool
+
+
 class MainWindow(QMainWindow):
     startGeneration = Signal(object, object, object)
     unloadModel = Signal()
@@ -52,10 +67,10 @@ class MainWindow(QMainWindow):
         self.config = load_generation_settings()
         self.history: list[dict[str, str]] = []
         self.current_model: ModelInfo | None = None
-        self._assistant_bubble = None
+        self._assistant_bubble: QLabel | None = None
         self._awaiting_first_token = False
         self._started = 0.0
-        self._simulation_bubbles: dict[tuple[str, int], object] = {}
+        self._simulation_bubbles: dict[tuple[str, int], QLabel] = {}
         self.simulation_transcript: list[dict[str, object]] = []
         self._setup_worker()
         self.chat = ChatPanel(self.config)
@@ -90,9 +105,6 @@ class MainWindow(QMainWindow):
 
     def _fit_to_display(self) -> None:
         screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is None:
-            self.resize(1500, 900)
-            return
         available = screen.availableGeometry()
         self.setMaximumSize(available.size())
         self.resize(min(1500, available.width()), min(900, available.height()))
@@ -159,8 +171,12 @@ class MainWindow(QMainWindow):
             self.history.clear()
             self.visualizer.set_conversation(self.history)
             self.chat.clear_messages()
-            self.chat.stats.setText("Selected " + model.label + (
-                "" if model.available else f" — {model.error}") + " · conversation and connectome refreshed")
+            self.chat.stats.setText(
+                "Selected "
+                + model.label
+                + ("" if model.available else f" — {model.error or 'Unknown error'}")
+                + " · conversation and connectome refreshed"
+            )
 
     def _handle_escape(self) -> None:
         if self.chat.stop.isEnabled():
@@ -228,13 +244,14 @@ class MainWindow(QMainWindow):
             self.simulation_transcript.append({"role": role, "content": text, "turn": turn})
             self.visualizer.set_conversation(self.simulation_transcript)
 
-    def _simulation_finished(self, stats: dict[str, object]) -> None:
-        seconds = float(stats["seconds"])
-        turns = int(stats["turns"])
-        tokens = int(stats["participant_tokens"])
-        suffix = " (stopped)" if stats.get("cancelled") else ""
+    def _simulation_finished(self, stats: SimulationStats) -> None:
+        seconds = stats["seconds"]
+        turns = stats["turns"]
+        tokens = stats["participant_tokens"]
+        suffix = " (stopped)" if stats["cancelled"] else ""
         self.chat.stats.setText(
-            f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}")
+            f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}"
+        )
         self.chat.generating(False)
 
     def _simulation_failed(self, error: str) -> None:
@@ -266,7 +283,7 @@ class MainWindow(QMainWindow):
             self.chat.append_message_text(self._assistant_bubble, text)
         self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
 
-    def _finished(self, stats: dict[str, object]) -> None:
+    def _finished(self, stats: GenerationStats) -> None:
         text = self._assistant_bubble.text() if self._assistant_bubble is not None else ""
         if text and text != "Thinking…":
             self.history.append({"role": "assistant", "content": text})
@@ -274,14 +291,18 @@ class MainWindow(QMainWindow):
             self.chat.show_latest_playback()
         elif self._assistant_bubble is not None:
             self._assistant_bubble.setText("No response generated.")
-        seconds = float(stats["seconds"])
-        tokens = int(stats["generated_tokens"])
-        rate = tokens / seconds if seconds else 0
-        suffix = " (stopped)" if stats.get("cancelled") else ""
+
+        seconds = stats["seconds"]
+        tokens = stats["generated_tokens"]
+        rate = tokens / seconds if seconds else 0.0
+        suffix = " (stopped)" if stats["cancelled"] else ""
+
         self.chat.stats.setText(
-            f"Prompt {int(stats['prompt_tokens'])} tokens · "
+            f"Prompt {stats['prompt_tokens']} tokens · "
             f"generated {tokens} tokens in {seconds:.2f}s · "
-            f"{rate:.1f} tokens/s{suffix}")
+            f"{rate:.1f} tokens/s{suffix}"
+        )
+
         self.chat.generating(False)
         self._assistant_bubble = None
         self._awaiting_first_token = False
