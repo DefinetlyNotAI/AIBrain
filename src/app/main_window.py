@@ -217,7 +217,7 @@ class MainWindow(QMainWindow):
             self.send(prompt)
 
     def clear(self) -> None:
-        self.history.clear(); self.simulation_transcript.clear(); self.visualizer.set_conversation([]); self.chat.clear_messages(); self.chat.stats.setText("Conversation cleared.")
+        self.history.clear(); self.simulation_transcript.clear(); self.visualizer.begin_recording(); self.visualizer.set_conversation([]); self.chat.clear_messages(); self.chat.stats.setText("Conversation cleared.")
 
     def _on_token(self, text: str, frame: object) -> None:
         if self._assistant_bubble is not None:

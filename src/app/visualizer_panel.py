@@ -248,7 +248,7 @@ class VisualizerPanel(QWidget):
         self.render_gpu.blockSignals(False)
         if selected != "system":
             set_windows_gpu_preference(True)
-            self._backend = "NVIDIA high-performance GPU enforced at launch; verifying OpenGL context…"
+            self._backend = "NVIDIA high-performance GPU requested before launch; verifying OpenGL context…"
 
     def _set_render_preference(self, _index: int) -> None:
         identifier = str(self.render_gpu.currentData())
