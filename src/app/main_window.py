@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
+            self.visualizer.set_conversation(self.history)
             self.chat.clear_messages()
             self.chat.stats.setText("Selected " + model.label + ("" if model.available else f" — {model.error}") + " · conversation and connectome refreshed")
 
@@ -149,8 +150,9 @@ class MainWindow(QMainWindow):
             return
         self.config = self.chat.config(); save_generation_settings(self.config)
         self.history.append({"role": "user", "content": prompt})
+        self.visualizer.set_conversation(self.history)
         self.chat.clear_latest_playback()
-        self.visualizer.begin_recording()
+        self.visualizer.begin_response_recording()
         self.chat.add_message("user", prompt)
         self._assistant_bubble = self.chat.add_message("assistant", "Thinking…")
         self._awaiting_first_token = True
@@ -171,6 +173,7 @@ class MainWindow(QMainWindow):
         self.unloadModel.emit()
         self.visualizer.begin_recording()
         self.simulation_transcript = [{"role": "user", "content": seed, "turn": 0}]
+        self.visualizer.set_conversation(self.simulation_transcript)
         self.chat.clear_latest_playback(); self.chat.add_message("user", seed)
         self._simulation_bubbles.clear(); self.chat.generating(True)
         self.chat.stats.setText("∞ Simulation loading two local model instances; the right pane is the participant brain.")
@@ -192,6 +195,7 @@ class MainWindow(QMainWindow):
     def _simulation_turn_finished(self, role: str, text: str, turn: int) -> None:
         if text:
             self.simulation_transcript.append({"role": role, "content": text, "turn": turn})
+            self.visualizer.set_conversation(self.simulation_transcript)
 
     def _simulation_finished(self, stats: dict[str, object]) -> None:
         seconds = float(stats["seconds"])
@@ -213,7 +217,7 @@ class MainWindow(QMainWindow):
             self.send(prompt)
 
     def clear(self) -> None:
-        self.history.clear(); self.simulation_transcript.clear(); self.chat.clear_messages(); self.chat.stats.setText("Conversation cleared.")
+        self.history.clear(); self.simulation_transcript.clear(); self.visualizer.set_conversation([]); self.chat.clear_messages(); self.chat.stats.setText("Conversation cleared.")
 
     def _on_token(self, text: str, frame: object) -> None:
         if self._assistant_bubble is not None:
@@ -228,6 +232,7 @@ class MainWindow(QMainWindow):
         text = self._assistant_bubble.text() if self._assistant_bubble is not None else ""
         if text and text != "Thinking…":
             self.history.append({"role": "assistant", "content": text})
+            self.visualizer.set_conversation(self.history)
             self.chat.show_latest_playback()
         elif self._assistant_bubble is not None:
             self._assistant_bubble.setText("No response generated.")

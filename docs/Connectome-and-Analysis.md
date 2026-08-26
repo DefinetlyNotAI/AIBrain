@@ -20,22 +20,18 @@ The current llama.cpp GGUF path is **Simulation**. For each generated token it c
 
 ModernGL renders the graph inside Qt's native OpenGL widget. GPU buffers retain node positions, region IDs, and selected edge topology; each frame only updates compact activity data. Nodes and edges are rendered as batched draw calls.
 
-The renderer reports the actual OpenGL renderer in its overlay. Windows GPU preference changes only affect a newly created process/context, so restart AIBrain after choosing a high-performance adapter. If Windows still selects the integrated adapter, set the virtual-environment `python.exe` in **Windows Settings > System > Display > Graphics** and restart.
+The renderer reports the actual OpenGL renderer in its overlay. AIBrain writes its high-performance preference and relaunches before Qt creates an OpenGL context. If the overlay still reports a non-NVIDIA renderer, it explicitly calls out the mismatch; set the virtual-environment `python.exe` in **Windows Settings > System > Display > Graphics** to High performance and restart.
 
 ## Analysis
 
-The **Analysis** action runs a small online adaptive encoder over visual activity. It calculates a regional feature vector, updates a learned prototype, and records a novelty score for each token frame. It reports the number of recorded frames, mean and peak novelty, and the most active visual region.
+**NN Analysis+** runs a small online adaptive encoder over visual activity, then creates a detailed JSON data file. It calculates a regional feature vector, updates a learned prototype, and records a novelty score for each token frame. The export contains the complete session conversation, every captured visual value and peak array, active-neuron indices, regional aggregates, topology, and derived novelty events. Choose the compressed JSON option for large sessions.
 
 This is analysis of AIBrain's visual activity stream. It is not an inspection of model hidden states, attention, weights, or reasoning.
 
-## Export format
+## NN Analysis+ format
 
-Use **Export** after a response to save the latest analysis.
-
-CSV contains one row per recorded frame with: `step`, `token`, `active_nodes`, `mean_activity`, `peak_activity`, `dominant_region`, and `novelty`.
-
-JSON contains an `integrity` statement, a summary, graph counts/region names, and an `events` array. The integrity statement is intentionally part of every JSON export so files remain correctly interpreted after they leave the application:
+Each data file includes an integrity statement so exports remain correctly interpreted after they leave the application:
 
 ```text
-Derived analysis of the visual connectome activity stream; not measured transformer activations.
+Conversation and complete visual-connectome signal capture. Brain signals are simulated visual activity, not measured transformer activations.
 ```

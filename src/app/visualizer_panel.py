@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
-from ..connectome.export import export_analysis
+from ..connectome.export import export_nn_analysis_plus
 from ..connectome.generator import build_connectome
 from ..connectome.mapper import ActivityMapper
 from ..connectome.renderer import ConnectomeRenderer
@@ -32,9 +32,11 @@ class VisualizerPanel(QWidget):
         self._cluster_spacing = 1.0
         self._selected_node: int | None = None
         self._playback: list[PlaybackStep] = []
+        self._all_signals: list[PlaybackStep] = []
         self._playback_index = -1
         self._playback_timer = QTimer(self)
         self._playback_timer.timeout.connect(self._advance_playback)
+        self._conversation: list[dict[str, object]] = []
         self._build_graph("Medium")
         self._build_ui()
 
@@ -64,10 +66,10 @@ class VisualizerPanel(QWidget):
         self.border_width.setValue(float(settings.value("neuron_border_width", .12))); self.border_width.setToolTip("Neuron outline width")
         self.border_width.valueChanged.connect(lambda _: self._set_neuron_borders(self.neuron_borders.isChecked()))
         self.pause = QPushButton("Pause"); self.pause.clicked.connect(self._toggle_pause)
-        self.analysis = QPushButton("Analysis"); self.analysis.clicked.connect(self._show_analysis)
-        self.export = QPushButton("Export"); self.export.clicked.connect(self._export_analysis)
+        self.analysis = QPushButton("NN Analysis+"); self.analysis.setToolTip("Export the full conversation and every recorded visual brain-signal frame")
+        self.analysis.clicked.connect(self._run_nn_analysis_plus)
         reset = QPushButton("Reset view"); reset.clicked.connect(lambda: self.renderer.reset_camera())
-        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.neuron_borders, self.border_width, self.analysis, self.export, self.pause, reset): header.addWidget(widget)
+        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.neuron_borders, self.border_width, self.analysis, self.pause, reset): header.addWidget(widget)
         header.addStretch(1); self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
         self.overlay = QLabel(); self.overlay.setObjectName("overlay"); self.overlay.setWordWrap(True)
@@ -99,15 +101,27 @@ class VisualizerPanel(QWidget):
         self.mode.setText(frame.source.value.upper())
         self.mapper.apply(frame)
         if record:
-            self._playback.append(PlaybackStep(frame, self.field.values.copy(), self.field.peaks.copy()))
+            signal = PlaybackStep(frame, self.field.values.copy(), self.field.peaks.copy())
+            self._playback.append(signal)
+            self._all_signals.append(signal)
             self.analyzer.observe(frame, self.field.values)
         self._refresh_overlay()
 
     def begin_recording(self) -> None:
         self._playback_timer.stop()
         self._playback.clear()
+        self._all_signals.clear()
         self._playback_index = -1
         self.analyzer.records.clear()
+
+    def begin_response_recording(self) -> None:
+        """Start a new replay while retaining session-wide NN Analysis+ data."""
+        self._playback_timer.stop()
+        self._playback.clear()
+        self._playback_index = -1
+
+    def set_conversation(self, conversation: list[dict[str, object]]) -> None:
+        self._conversation = [dict(turn) for turn in conversation]
 
     def start_playback(self, speed: float) -> None:
         if not self._playback:
@@ -188,24 +202,36 @@ class VisualizerPanel(QWidget):
         if hasattr(self, "renderer"):
             self.renderer.set_neuron_borders(visible, self.border_width.value())
 
-    def _show_analysis(self) -> None:
-        summary = self.analyzer.summary()
-        if not summary.get("frames"):
-            QMessageBox.information(self, "Connectome analysis", "Generate a response first. Analysis learns from the visual activity stream of the latest response.")
-            return
-        QMessageBox.information(self, "Connectome analysis (Derived)", f"Frames analysed: {summary['frames']}\nMean novelty: {summary['mean_novelty']:.4f}\nPeak novelty: {summary['peak_novelty']:.4f}\nMost active region: {summary['most_active_region']}\n\nThis adaptive encoder studies the visualization activity stream. It is not measured transformer activation data.")
-
-    def _export_analysis(self) -> None:
+    def _run_nn_analysis_plus(self) -> None:
         if not self.analyzer.records:
-            QMessageBox.information(self, "Export analysis", "Generate a response before exporting analysis.")
+            QMessageBox.information(self, "NN Analysis+", "Generate a response or start an infinite simulation before creating an analysis file.")
             return
-        filename, _ = QFileDialog.getSaveFileName(self, "Export connectome analysis", "connectome-analysis.json", "JSON analysis (*.json);;CSV events (*.csv)")
+        filename, _ = QFileDialog.getSaveFileName(self, "Create NN Analysis+ data file", "nn-analysis-plus.json", "JSON data (*.json);;Compressed JSON data (*.json.gz)")
         if not filename:
             return
         try:
-            export_analysis(Path(filename), self.graph, self.analyzer.records, self.analyzer.summary())
+            signals = self._brain_signal_export()
+            export_nn_analysis_plus(Path(filename), self.graph, self.analyzer.records, self.analyzer.summary(), self._conversation, signals)
         except OSError as exc:
-            QMessageBox.critical(self, "Export failed", str(exc))
+            QMessageBox.critical(self, "NN Analysis+ export failed", str(exc))
+            return
+        QMessageBox.information(self, "NN Analysis+ complete", f"Created {Path(filename).name}\n\nConversation turns: {len(self._conversation)}\nVisual brain-signal frames: {len(signals)}\n\nThe file records simulated visual activity, not hidden model activations.")
+
+    def _brain_signal_export(self) -> list[dict[str, object]]:
+        signals: list[dict[str, object]] = []
+        for item in self._all_signals:
+            frame = item.frame
+            regional = np.bincount(self.graph.regions, weights=item.values, minlength=len(self.graph.region_names))
+            active = np.flatnonzero(item.values > .1)
+            signals.append({
+                "frame": {"step": frame.step, "token_id": frame.token_id, "token_text": frame.token_text,
+                          "source": frame.source.value, "timestamp": frame.timestamp, "regions": dict(frame.regions),
+                          "layers": {str(key): value for key, value in frame.layers.items()}, "logits_entropy": frame.logits_entropy},
+                "values": item.values.astype("f4").tolist(), "peaks": item.peaks.astype("f4").tolist(),
+                "active_neuron_indices": active.astype("i4").tolist(),
+                "regional_activity": {name: float(regional[index]) for index, name in enumerate(self.graph.region_names)},
+            })
+        return signals
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()
