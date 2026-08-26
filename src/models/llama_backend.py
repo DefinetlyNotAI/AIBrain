@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import ctypes
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from llama_cpp import Llama
+    from llama_cpp.llama_types import ChatCompletionRequestMessage
 
 LOG = logging.getLogger(__name__)
-_NATIVE_LOG_CALLBACK: object | None = None
+
+_NATIVE_LOG_CALLBACK: Any = None
 
 
 @dataclass(slots=True)
@@ -21,50 +28,106 @@ class GenerationConfig:
 
 class LlamaBackend:
     def __init__(self) -> None:
-        self._llm: object | None = None
+        self._llm: Llama | None = None
         self.loaded_path: Path | None = None
 
     def load(self, path: Path, config: GenerationConfig) -> None:
         if self.loaded_path == path and self._llm is not None:
             return
+
         self.unload()
+
         try:
             from llama_cpp import Llama, llama_log_callback, llama_log_set
         except ImportError as exc:
-            raise RuntimeError("llama-cpp-python is not installed. Run: py -3.11 install.py") from exc
-        LOG.info("Loading GGUF directly: %s (GPU layers: %s)", path, config.gpu_layers)
+            raise RuntimeError(
+                "llama-cpp-python is not installed. Run: py -3.11 install.py"
+            ) from exc
+
+        LOG.info(
+            "Loading GGUF directly: %s (GPU layers: %s)",
+            path,
+            config.gpu_layers,
+        )
 
         @llama_log_callback
         def native_log(text: bytes, _user_data: object) -> None:
             message = text.decode("utf-8", errors="replace").strip()
+
             if not message or not message.strip("."):
                 return
+
             lower = message.lower()
-            if "error" in lower or "failed" in lower or "unknown model architecture" in lower:
+
+            if (
+                    "error" in lower
+                    or "failed" in lower
+                    or "unknown model architecture" in lower
+            ):
                 LOG.error("llama.cpp: %s", message)
 
         global _NATIVE_LOG_CALLBACK
         _NATIVE_LOG_CALLBACK = native_log
-        llama_log_set(_NATIVE_LOG_CALLBACK, None)
-        self._llm = Llama(model_path=str(path), n_ctx=config.context_length, n_gpu_layers=config.gpu_layers,
-                          verbose=False)
+
+        llama_log_set(
+            _NATIVE_LOG_CALLBACK,
+            ctypes.c_void_p(),
+        )
+
+        self._llm = Llama(
+            model_path=str(path),
+            n_ctx=config.context_length,
+            n_gpu_layers=config.gpu_layers,
+            verbose=False,
+        )
+
         self.loaded_path = path
 
-    def stream_chat(self, messages: list[dict[str, str]], config: GenerationConfig) -> Iterator[str]:
+    def stream_chat(
+            self,
+            messages: list[ChatCompletionRequestMessage],
+            config: GenerationConfig,
+    ) -> Iterator[str]:
         if self._llm is None:
             raise RuntimeError("No model is loaded")
-        response = self._llm.create_chat_completion(messages=messages, temperature=config.temperature,
-                                                    top_p=config.top_p, max_tokens=config.max_tokens, stream=True)
+
+        response = self._llm.create_chat_completion(
+            messages=messages,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            max_tokens=config.max_tokens,
+            stream=True,
+        )
+
         for chunk in response:
-            choice = chunk.get("choices", [{}])[0]
-            token = choice.get("delta", {}).get("content", "")
-            if token:
+            choices = chunk.get("choices")
+
+            if not isinstance(choices, list) or not choices:
+                continue
+
+            choice = choices[0]
+
+            if not isinstance(choice, dict):
+                continue
+
+            delta = choice.get("delta")
+
+            if not isinstance(delta, dict):
+                continue
+
+            token = delta.get("content")
+
+            if isinstance(token, str) and token:
                 yield token
 
     def tokenize(self, text: str) -> list[int]:
         if self._llm is None:
             return []
-        return self._llm.tokenize(text.encode("utf-8"), add_bos=False)
+
+        return self._llm.tokenize(
+            text.encode("utf-8"),
+            add_bos=False,
+        )
 
     def unload(self) -> None:
         self._llm = None
