@@ -10,15 +10,17 @@ from .instrumented_backend import ActivationFrame, ActivitySource
 from .llama_backend import GenerationConfig, LlamaBackend
 
 
-WORLD_SYSTEM = """You are the world director for an open-ended, fictional embodied simulation.
-Create concrete sensory events, people, places, consequences, and gentle continuity for the participant.
-You know this is a simulation and should never claim it is real outside the scenario. Keep each turn vivid,
-actionable, and under 180 words. Continue the scene instead of ending it."""
+WORLD_SYSTEM = """You are the WORLD DIRECTOR for an open-ended, fictional embodied simulation.
+Write only the external world: sensory events, people, places, consequences, and continuity. Never write the
+participant's thoughts, dialogue, choices, or first-person actions. You know this is a simulation and should
+never claim it is real outside the scenario. Keep each turn vivid, actionable, under 180 words, and continue
+the scene instead of ending it."""
 
-PARTICIPANT_SYSTEM = """You are the participant in an immersive, fictional embodied simulation.
-Respond in first person to the world you perceive, including thoughts, choices, feelings, and physical actions.
-Stay inside the scenario and do not discuss model prompts, orchestration, or being an AI. Your responses are
-roleplay text in a clearly labelled local simulation, not statements about real-world consciousness."""
+PARTICIPANT_SYSTEM = """You are the PARTICIPANT in an immersive, fictional embodied simulation.
+Write only your first-person thoughts, dialogue, choices, feelings, and physical actions in response to a world
+event. Never narrate the world, control other characters, or call yourself the world director. Stay inside the
+scenario and do not discuss model prompts, orchestration, or being an AI. Your responses are roleplay text in a
+clearly labelled local simulation, not statements about real-world consciousness."""
 
 _CONTEXT_TURNS = 24
 
@@ -27,7 +29,7 @@ class InfiniteSimulationWorker(QObject):
     """Alternates two local GGUF instances until the user stops the session."""
 
     turnStarted = Signal(str, int)
-    token = Signal(str, str, object)
+    token = Signal(str, int, str, object)
     turnFinished = Signal(str, str, int)
     finished = Signal(object)
     failed = Signal(str)
@@ -44,7 +46,7 @@ class InfiniteSimulationWorker(QObject):
         started = monotonic()
         participant_tokens = 0
         turn = 0
-        world_history = [{"role": "system", "content": WORLD_SYSTEM}, {"role": "user", "content": f"Simulation direction: {seed}\nBegin the world."}]
+        world_history = [{"role": "system", "content": WORLD_SYSTEM}, {"role": "user", "content": f"[SIMULATION DIRECTION]\n{seed}\n[END SIMULATION DIRECTION]\nWrite the opening WORLD EVENT only."}]
         participant_history = [{"role": "system", "content": PARTICIPANT_SYSTEM}]
         try:
             # Separate backend objects intentionally deploy two copies of the
@@ -59,7 +61,7 @@ class InfiniteSimulationWorker(QObject):
                 if not world_text:
                     raise RuntimeError("World model returned no text")
                 world_history.append({"role": "assistant", "content": world_text})
-                participant_history.append({"role": "user", "content": world_text})
+                participant_history.append({"role": "user", "content": f"[WORLD EVENT]\n{world_text}\n[END WORLD EVENT]\nWrite the PARTICIPANT response only."})
 
                 participant_text, token_count = self._generate_participant(participant_history, config, turn, participant_tokens)
                 participant_tokens += token_count
@@ -68,7 +70,7 @@ class InfiniteSimulationWorker(QObject):
                 if not participant_text:
                     raise RuntimeError("Participant model returned no text")
                 participant_history.append({"role": "assistant", "content": participant_text})
-                world_history.append({"role": "user", "content": participant_text})
+                world_history.append({"role": "user", "content": f"[PARTICIPANT RESPONSE]\n{participant_text}\n[END PARTICIPANT RESPONSE]\nWrite the next WORLD EVENT only."})
                 world_history = self._trim(world_history)
                 participant_history = self._trim(participant_history)
             self.finished.emit({"turns": turn, "participant_tokens": participant_tokens,
@@ -86,7 +88,7 @@ class InfiniteSimulationWorker(QObject):
             if self._cancelled.is_set():
                 break
             chunks.append(text)
-            self.token.emit(role, text, None)
+            self.token.emit(role, turn, text, None)
         output = "".join(chunks)
         self.turnFinished.emit(role, output, turn)
         return output
@@ -102,7 +104,7 @@ class InfiniteSimulationWorker(QObject):
             token_ids = self.participant.tokenize(text)
             token_count += max(1, len(token_ids))
             frame = ActivationFrame(token_ids[-1] if token_ids else None, text, step_offset + token_count, ActivitySource.SIMULATION)
-            self.token.emit("participant", text, frame)
+            self.token.emit("participant", turn, text, frame)
         output = "".join(chunks)
         self.turnFinished.emit("participant", output, turn)
         return output, token_count

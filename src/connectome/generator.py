@@ -10,6 +10,13 @@ from .graph import ConnectomeGraph
 REGIONS = ("Input / tokens", "Embeddings", "Early processing", "Attention clusters", "MLP clusters",
            "Residual pathways", "Middle processing", "Late processing", "Output / logits")
 
+# Region names are stable, so this map gives every procedural cluster the same
+# distinct colour across launches, qualities, replay, and fallback rendering.
+CLUSTER_COLOR_MAP = dict(zip(REGIONS, (
+    "#4CC9F0", "#4895EF", "#4361EE", "#3A0CA3", "#7209B7",
+    "#B5179E", "#F72585", "#F77F00", "#90BE6D",
+), strict=True))
+
 
 def _seed(key: str) -> int:
     return int.from_bytes(hashlib.blake2b(key.encode(), digest_size=8).digest(), "little")

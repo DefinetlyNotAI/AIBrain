@@ -55,7 +55,7 @@ class MainWindow(QMainWindow):
         self._assistant_bubble = None
         self._awaiting_first_token = False
         self._started = 0.0
-        self._simulation_bubbles: dict[str, object] = {}
+        self._simulation_bubbles: dict[tuple[str, int], object] = {}
         self.simulation_transcript: list[dict[str, object]] = []
         self._setup_worker()
         self.chat = ChatPanel(self.config)
@@ -182,10 +182,10 @@ class MainWindow(QMainWindow):
     def _simulation_turn_started(self, role: str, turn: int) -> None:
         label = "World" if role == "world" else "Participant"
         bubble = self.chat.add_message(role, f"{label} {turn}: ")
-        self._simulation_bubbles[role] = bubble
+        self._simulation_bubbles[(role, turn)] = bubble
 
-    def _simulation_token(self, role: str, text: str, frame: object) -> None:
-        bubble = self._simulation_bubbles.get(role)
+    def _simulation_token(self, role: str, turn: int, text: str, frame: object) -> None:
+        bubble = self._simulation_bubbles.get((role, turn))
         if bubble is not None:
             bubble.setText(bubble.text() + text)
             self.chat.scroll.verticalScrollBar().setValue(self.chat.scroll.verticalScrollBar().maximum())

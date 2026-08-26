@@ -48,6 +48,7 @@ class ChatPanel(QWidget):
         self.stats = QLabel("Ready · select an installed GGUF model")
         self.stats.setObjectName("muted")
         self.stats.setWordWrap(True)
+        self.stats.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         layout.addWidget(self.stats)
         self.input = QPlainTextEdit()
         self.input.setPlaceholderText("Message your local model…  (Ctrl+Enter to send)")
@@ -117,7 +118,7 @@ class ChatPanel(QWidget):
     def add_message(self, role: str, text: str) -> QLabel:
         bubble = QLabel(text)
         bubble.setWordWrap(True)
-        bubble.setTextInteractionFlags(bubble.textInteractionFlags())
+        bubble.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         bubble.setObjectName("userBubble" if role == "user" else "worldBubble" if role == "world" else "assistantBubble")
         self.messages_layout.insertWidget(self.messages_layout.count()-1, bubble)
         self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum())

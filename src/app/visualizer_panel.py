@@ -5,8 +5,8 @@ from pathlib import Path
 from time import monotonic
 
 import numpy as np
-from PySide6.QtCore import QSettings, QTimer, Qt
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtCore import QSettings, QTimer, Qt, Signal
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
@@ -23,6 +23,25 @@ class PlaybackStep:
     frame: ActivationFrame
     values: np.ndarray
     peaks: np.ndarray
+
+
+class NeuronInspectorLabel(QLabel):
+    """Selectable inspector text with a click target only over the node number."""
+
+    neuronNumberClicked = Signal()
+    _prefix = "Selected neuron: "
+
+    def set_neuron_details(self, index: int, details: str) -> None:
+        self.setText(f"{self._prefix}{index:05d}{details}")
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        prefix_width = self.fontMetrics().horizontalAdvance(self._prefix)
+        number_width = self.fontMetrics().horizontalAdvance("00000")
+        if event.button() == Qt.MouseButton.LeftButton and prefix_width <= event.position().x() <= prefix_width + number_width:
+            self.neuronNumberClicked.emit()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class VisualizerPanel(QWidget):
@@ -73,7 +92,10 @@ class VisualizerPanel(QWidget):
         header.addStretch(1); self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
         self.overlay = QLabel(); self.overlay.setObjectName("overlay"); self.overlay.setWordWrap(True)
-        self.inspector = QLabel("Click a visual neuron to inspect its mapped visual data."); self.inspector.setObjectName("muted")
+        self.overlay.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.inspector = NeuronInspectorLabel("Click a visual neuron to inspect its mapped visual data."); self.inspector.setObjectName("muted")
+        self.inspector.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.inspector.neuronNumberClicked.connect(self._prompt_for_neuron)
         self.silence = QPushButton("Silence selected neuron"); self.silence.clicked.connect(self._toggle_selected_node); self.silence.setEnabled(False)
         self.importance = QDoubleSpinBox(); self.importance.setRange(0, 3); self.importance.setSingleStep(.1); self.importance.setValue(1); self.importance.valueChanged.connect(self._change_importance); self.importance.setEnabled(False)
         inspect_controls = QHBoxLayout(); inspect_controls.addWidget(self.silence); inspect_controls.addWidget(QLabel("Importance")); inspect_controls.addWidget(self.importance); inspect_controls.addStretch(1)
@@ -182,7 +204,13 @@ class VisualizerPanel(QWidget):
 
     def _inspect(self, index: int) -> None:
         self._selected_node = index; self.silence.setEnabled(True); self.importance.setEnabled(True); self.importance.setValue(float(self.field.importance[index]))
-        self.inspector.setText(f"Visual node: {index:05d}  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}  ·  Current activity: {self.field.values[index]:.3f}  ·  Peak: {self.field.peaks[index]:.3f}  ·  Data source: Simulation")
+        self.inspector.set_neuron_details(index, f"  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}  ·  Current activity: {self.field.values[index]:.3f}  ·  Peak: {self.field.peaks[index]:.3f}  ·  Data source: Simulation")
+
+    def _prompt_for_neuron(self) -> None:
+        current = self._selected_node if self._selected_node is not None else 0
+        index, accepted = QInputDialog.getInt(self, "Select visual neuron", "Neuron number:", current, 0, len(self.graph.positions) - 1)
+        if accepted:
+            self._inspect(index)
 
     def _toggle_selected_node(self) -> None:
         if self._selected_node is None: return
@@ -210,28 +238,11 @@ class VisualizerPanel(QWidget):
         if not filename:
             return
         try:
-            signals = self._brain_signal_export()
-            export_nn_analysis_plus(Path(filename), self.graph, self.analyzer.records, self.analyzer.summary(), self._conversation, signals)
+            export_nn_analysis_plus(Path(filename), self.graph, self.analyzer, self._conversation)
         except OSError as exc:
             QMessageBox.critical(self, "NN Analysis+ export failed", str(exc))
             return
-        QMessageBox.information(self, "NN Analysis+ complete", f"Created {Path(filename).name}\n\nConversation turns: {len(self._conversation)}\nVisual brain-signal frames: {len(signals)}\n\nThe file records simulated visual activity, not hidden model activations.")
-
-    def _brain_signal_export(self) -> list[dict[str, object]]:
-        signals: list[dict[str, object]] = []
-        for item in self._all_signals:
-            frame = item.frame
-            regional = np.bincount(self.graph.regions, weights=item.values, minlength=len(self.graph.region_names))
-            active = np.flatnonzero(item.values > .1)
-            signals.append({
-                "frame": {"step": frame.step, "token_id": frame.token_id, "token_text": frame.token_text,
-                          "source": frame.source.value, "timestamp": frame.timestamp, "regions": dict(frame.regions),
-                          "layers": {str(key): value for key, value in frame.layers.items()}, "logits_entropy": frame.logits_entropy},
-                "values": item.values.astype("f4").tolist(), "peaks": item.peaks.astype("f4").tolist(),
-                "active_neuron_indices": active.astype("i4").tolist(),
-                "regional_activity": {name: float(regional[index]) for index, name in enumerate(self.graph.region_names)},
-            })
-        return signals
+        QMessageBox.information(self, "NN Analysis+ complete", f"Created {Path(filename).name}\n\nConversation turns: {len(self._conversation)}\nVisual brain-signal frames analyzed: {len(self.analyzer.records)}\n\nThe JSON contains compact neural-network findings, not a raw frame dump.")
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()

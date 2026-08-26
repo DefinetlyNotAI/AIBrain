@@ -11,12 +11,14 @@ class FakeBackend:
     def __init__(self, chunks: list[str]) -> None:
         self.chunks = chunks
         self.loaded: list[Path] = []
+        self.calls: list[list[dict[str, str]]] = []
         self.unloaded = False
 
     def load(self, path: Path, _config: GenerationConfig) -> None:
         self.loaded.append(path)
 
-    def stream_chat(self, _messages: list[dict[str, str]], _config: GenerationConfig):  # type: ignore[no-untyped-def]
+    def stream_chat(self, messages: list[dict[str, str]], _config: GenerationConfig):  # type: ignore[no-untyped-def]
+        self.calls.append(messages)
         yield from self.chunks
 
     def tokenize(self, text: str) -> list[int]:
@@ -51,7 +53,7 @@ class InfiniteSimulationContextTests(unittest.TestCase):
         frames = []
         finished = []
 
-        def observe(role: str, _text: str, frame: object) -> None:
+        def observe(role: str, _turn: int, _text: str, frame: object) -> None:
             if role == "participant":
                 frames.append(frame)
                 worker.cancel()
@@ -62,6 +64,7 @@ class InfiniteSimulationContextTests(unittest.TestCase):
 
         self.assertEqual(world.loaded, [Path("model.gguf")])
         self.assertEqual(participant.loaded, [Path("model.gguf")])
+        self.assertIn("[WORLD EVENT]", participant.calls[0][-1]["content"])
         self.assertEqual(frames[0].step, 1)
         self.assertTrue(finished[0]["cancelled"])
         self.assertTrue(world.unloaded and participant.unloaded)

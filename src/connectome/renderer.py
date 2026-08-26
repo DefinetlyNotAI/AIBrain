@@ -8,6 +8,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from .activity import ActivityField
+from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
 from .native import native
 
@@ -18,13 +19,23 @@ in vec3 in_position; in float in_region; in float in_activity;
 uniform mat4 u_mvp; out float region; out float activity;
 void main() { gl_Position = u_mvp * vec4(in_position, 1.0); gl_PointSize = 1.6 + in_activity * 8.0; region = in_region; activity = in_activity; }
 """
-POINT_FRAGMENT_SHADER = """#version 330
+def _shader_palette() -> str:
+    colours = tuple(CLUSTER_COLOR_MAP.values())
+    clauses = []
+    for index, colour in enumerate(colours):
+        red, green, blue = (int(colour[offset:offset + 2], 16) / 255 for offset in (1, 3, 5))
+        clauses.append(f"if (cluster == {index}) return vec3({red:.6f}, {green:.6f}, {blue:.6f});")
+    return "\n ".join((*clauses, "return vec3(.35, .65, .85);"))
+
+
+POINT_FRAGMENT_SHADER = f"""#version 330
 in float region; in float activity; uniform float u_border_width; out vec4 f_color;
-void main() { vec2 p = gl_PointCoord * 2.0 - 1.0; float radius = dot(p, p); if (radius > 1.0) discard;
- float r = .18 + region*.025 + activity*.35; float g = .43 + region*.030 + activity*.45; float b = .58 + region*.025 + activity*.35;
- float glow = 1.0 - smoothstep(.20, 1.0, radius); vec3 fill = min(vec3(r,g,b)*(.55+glow*.75),1.0);
+vec3 cluster_colour(int cluster) {{ {_shader_palette()} }}
+void main() {{ vec2 p = gl_PointCoord * 2.0 - 1.0; float radius = dot(p, p); if (radius > 1.0) discard;
+ vec3 base = cluster_colour(int(region + .5)); float glow = 1.0 - smoothstep(.20, 1.0, radius);
+ vec3 fill = min(base * (.40 + activity * .55 + glow * .42), 1.0);
  float rim = smoothstep(1.0 - u_border_width, 1.0, radius); vec3 color = mix(fill, vec3(.015, .045, .065), rim);
- f_color = vec4(color, .34+activity*.66); }
+ f_color = vec4(color, .42+activity*.58); }}
 """
 EDGE_VERTEX_SHADER = """#version 330
 in vec3 in_position; in float in_activity; uniform mat4 u_mvp; out float activity;
@@ -151,8 +162,10 @@ class ConnectomeRenderer(QOpenGLWidget):
     def _paint_fallback(self) -> None:
         painter = QPainter(self); painter.fillRect(self.rect(), QColor("#071018"))
         points = self._project_for_pick(); stride = max(1, len(points) // 3000)
-        for point, activity in zip(points[::stride], self.field.values[::stride]):
-            painter.setPen(QColor(75, 144, 169, int(55 + float(activity) * 190))); painter.drawPoint(QPointF(*point))
+        for point, activity, region in zip(points[::stride], self.field.values[::stride], self.graph.regions[::stride]):
+            colour = QColor(CLUSTER_COLOR_MAP[self.graph.region_names[int(region)]])
+            colour.setAlpha(int(55 + float(activity) * 190))
+            painter.setPen(colour); painter.drawPoint(QPointF(*point))
         painter.end()
 
     def _project_for_pick(self) -> np.ndarray:
