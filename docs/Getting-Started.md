@@ -19,10 +19,10 @@ The Ollama application and server do not need to be running after the model has 
 From the project root, run:
 
 ```powershell
-py -3.11 install.py
+py installer.py
 ```
 
-`install.py` is the sole allowed system-Python entry point. It creates `.venv`, updates pip inside it, installs PySide6, NumPy, and ModernGL, then chooses a prebuilt `llama-cpp-python` wheel. The installer checks `nvidia-smi` first: when a compatible published NVIDIA CUDA wheel is available it uses that; otherwise it installs the official CPU wheel. It does not fall back to a local C/C++ source build.
+`installer.py` is the sole allowed system-Python entry point. It creates `.venv`, updates pip inside it, installs PySide6, NumPy, and ModernGL, then chooses a prebuilt `llama-cpp-python` wheel. The installer checks `nvidia-smi` first: when a compatible published NVIDIA CUDA wheel is available it uses that; otherwise it installs the official CPU wheel. It does not fall back to a local C/C++ source build.
 
 If PowerShell blocks activation, make the current user policy permit local scripts, then open a new terminal:
 
@@ -46,7 +46,7 @@ For Command Prompt use:
 python main.py
 ```
 
-`main.py` exits immediately outside a virtual environment. This is deliberate: it prevents accidental use of global packages and ensures the application runs against the dependency set installed by `install.py`.
+`main.py` exits immediately outside a virtual environment. This is deliberate: it prevents accidental use of global packages and ensures the application runs against the dependency set installed by `installer.py`.
 
 ## First run
 

@@ -11,7 +11,7 @@ The DLL accelerates visual activity bookkeeping. It does not implement the Qt wi
 After changing the C source, run from the project root:
 
 ```powershell
-py -3.11 scripts\build_native.py
+py scripts\build_native.py
 ```
 
 The tool is color-coded in an interactive terminal and:
@@ -25,9 +25,9 @@ The tool is color-coded in an interactive terminal and:
 Useful options:
 
 ```powershell
-py -3.11 scripts\build_native.py --debug
-py -3.11 scripts\build_native.py --clean
-py -3.11 scripts\build_native.py --compiler "C:\path\to\gcc.exe"
+py scripts\build_native.py --debug
+py scripts\build_native.py --clean
+py scripts\build_native.py --compiler "C:\path\to\gcc.exe"
 ```
 
 `--debug` requests an unoptimized debug build. `--clean` deletes the existing DLL before compiling. `--compiler` is useful when more than one supported toolchain is installed.

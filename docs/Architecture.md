@@ -26,7 +26,7 @@ main.py
 
 | Path | Responsibility |
 | --- | --- |
-| `install.py` | Creates and populates the managed Python virtual environment. |
+| `installer.py` | Creates and populates the managed Python virtual environment. |
 | `src/models/ollama_discovery.py` | Finds and performs lightweight validation of local Ollama blobs. |
 | `src/models/model_validator.py` | Validates candidates against the installed llama.cpp backend. |
 | `src/models/llama_backend.py` | Loads, streams, tokenizes, and unloads GGUF models. |
@@ -38,13 +38,13 @@ main.py
 
 ## Development workflow
 
-1. Create dependencies with `py -3.11 install.py`.
+1. Create dependencies with `py installer.py`.
 2. Activate `.venv` before running validation or the application.
 3. Rebuild the DLL after changing C code.
 4. Compile Python modules before handing off a change:
 
    ```powershell
-   python -m compileall -q main.py install.py src
+   python -m compileall -q main.py installer.py src
    ```
 
 5. Start the app manually to validate native-window, model-discovery, and GPU behavior on the target machine. Model loading and graphics adapter selection depend on local hardware and installed models.

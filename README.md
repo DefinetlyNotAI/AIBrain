@@ -9,7 +9,7 @@ It is built with Python and PySide6/Qt. The interface is a real Windows window w
 Requirements: Windows 10/11, Python 3.11+, and at least one locally installed Ollama GGUF model.
 
 ```powershell
-py install.py
+py installer.py
 .\.venv\Scripts\Activate.ps1
 python main.py
 ```
@@ -36,7 +36,7 @@ The `Publish documentation to Wiki` GitHub Actions workflow publishes this folde
 
 ```powershell
 # Rebuild and verify the native DLL after editing its C source.
-py -3.11 scripts\build_native.py
+py scripts\build_native.py --clean
 
 # Verify Python syntax from the managed environment.
 python -m compileall -q main.py install.py src

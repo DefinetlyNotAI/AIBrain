@@ -1,0 +1,940 @@
+"""Windows bootstrapper for AIBrain.
+
+Run this script with an installed Python 3.11+ interpreter. It is the sole
+intentional exception to AIBrain's venv-only runtime rule: its job is to create
+and populate that virtual environment.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+import venv
+from dataclasses import dataclass
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent
+VENV_DIR = ROOT / ".venv"
+
+WHEEL_ROOT = "https://abetlen.github.io/llama-cpp-python/whl"
+
+BASE_PACKAGES = (
+    "PySide6>=6.7,<7",
+    "numpy>=1.26,<3",
+    "moderngl>=5.10",
+)
+
+CUDA_WHEELS = (
+    (13, 2, "cu132"),
+    (13, 0, "cu130"),
+    (12, 5, "cu125"),
+    (12, 4, "cu124"),
+    (12, 3, "cu123"),
+    (12, 2, "cu122"),
+    (12, 1, "cu121"),
+    (11, 8, "cu118"),
+)
+
+DEFAULT_WIDTH = 82
+MIN_WIDTH = 60
+MAX_WIDTH = 110
+COMMAND_INDENT = 2
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+if os.name == "nt":
+    os.system("")
+
+
+class Color:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+
+
+def color(text: str, *styles: str) -> str:
+    return "".join(styles) + text + Color.RESET
+
+
+def terminal_width() -> int:
+    width = shutil.get_terminal_size((DEFAULT_WIDTH, 24)).columns
+    return min(max(width, MIN_WIDTH), MAX_WIDTH)
+
+
+def rule(char: str = "─") -> str:
+    return char * terminal_width()
+
+
+def strip_ansi(text: str) -> str:
+    return ANSI_RE.sub("", text)
+
+
+def visible_trim(text: str, max_length: int) -> str:
+    if max_length <= 0:
+        return ""
+
+    if len(text) <= max_length:
+        return text
+
+    if max_length <= 3:
+        return "." * max_length
+
+    return text[: max_length - 3] + "..."
+
+
+def relative_path(path: str | Path) -> str:
+    path_obj = Path(path)
+
+    try:
+        resolved = path_obj.resolve()
+    except OSError:
+        return str(path_obj)
+
+    try:
+        relative = resolved.relative_to(ROOT.resolve())
+        return str(Path(".") / relative)
+    except ValueError:
+        return str(resolved)
+
+
+def shorten_command_argument(argument: str) -> str:
+    root_text = str(ROOT.resolve())
+    normalized = argument.replace("/", "\\")
+
+    if normalized.lower().startswith(root_text.lower()):
+        relative = normalized[len(root_text):].lstrip("\\/")
+        return rf".\{relative}" if relative else "."
+
+    return argument
+
+
+def display_command(command: list[str]) -> str:
+    shortened = [shorten_command_argument(part) for part in command]
+    return subprocess.list2cmdline(shortened)
+
+
+def shorten_output_paths(text: str) -> str:
+    """Shorten project-local absolute paths inside subprocess output."""
+    root = str(ROOT.resolve())
+
+    variants = (
+        root,
+        root.replace("\\", "/"),
+    )
+
+    for variant in variants:
+        text = re.sub(
+            re.escape(variant),
+            ".",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+    return text
+
+
+def wrap_console_line(text: str, width: int) -> list[str]:
+    """Wrap console text without exceeding the available width."""
+    if width <= 0:
+        return [""]
+
+    if not text:
+        return [""]
+
+    lines: list[str] = []
+
+    while len(text) > width:
+        split_at = text.rfind(" ", 0, width + 1)
+
+        if split_at <= 0:
+            split_at = width
+
+        lines.append(text[:split_at].rstrip())
+        text = text[split_at:].lstrip()
+
+    lines.append(text)
+
+    return lines
+
+
+def header() -> None:
+    width = terminal_width()
+
+    title = " AIBrain "
+    subtitle = "Neural Runtime Installer"
+
+    print()
+    print(color("╭" + "─" * (width - 2) + "╮", Color.CYAN))
+    print(
+        color("│", Color.CYAN)
+        + color(title.center(width - 2), Color.BOLD, Color.WHITE)
+        + color("│", Color.CYAN)
+    )
+    print(
+        color("│", Color.CYAN)
+        + color(subtitle.center(width - 2), Color.DIM, Color.CYAN)
+        + color("│", Color.CYAN)
+    )
+    print(color("╰" + "─" * (width - 2) + "╯", Color.CYAN))
+    print()
+
+
+def section(title: str, number: int) -> None:
+    print()
+    print(
+        color(f" {number:02d} ", Color.BOLD, Color.CYAN)
+        + color(title, Color.BOLD, Color.WHITE)
+    )
+    print(color(rule(), Color.GRAY))
+
+
+def info(message: str) -> None:
+    print(f"  {color('●', Color.CYAN)} {message}")
+
+
+def success(message: str) -> None:
+    print(f"  {color('✓', Color.GREEN, Color.BOLD)} {message}")
+
+
+def warning(message: str) -> None:
+    print(f"  {color('!', Color.YELLOW, Color.BOLD)} {message}")
+
+
+def error(message: str) -> None:
+    print(
+        f"  {color('✗', Color.RED, Color.BOLD)} {message}",
+        file=sys.stderr,
+    )
+
+
+def detail(label: str, value: str) -> None:
+    max_value_width = max(terminal_width() - 20, 10)
+    value = visible_trim(value, max_value_width)
+
+    print(
+        f"     {color(label.ljust(12), Color.GRAY)}"
+        f"{color(value, Color.WHITE)}"
+    )
+
+
+def command_preview(command: list[str]) -> None:
+    """Print only the command line itself, without a surrounding box."""
+    command_text = display_command(command)
+
+    available = terminal_width() - COMMAND_INDENT - 2
+    command_text = visible_trim(command_text, available)
+
+    print()
+    print(
+        (" " * COMMAND_INDENT)
+        + color("›", Color.MAGENTA, Color.BOLD)
+        + " "
+        + color(command_text, Color.DIM, Color.WHITE)
+    )
+
+
+def command_output_box(
+    output: str,
+    *,
+    indent: int = COMMAND_INDENT,
+) -> None:
+    """Render subprocess output in an indented grey box."""
+    output = strip_ansi(output)
+    output = shorten_output_paths(output)
+    output = output.rstrip()
+
+    if not output:
+        return
+
+    prefix = " " * indent
+
+    available_width = max(terminal_width() - indent, 20)
+    inner_width = available_width - 2
+    content_width = inner_width - 2
+
+    rendered_lines: list[str] = []
+
+    for raw_line in output.splitlines():
+        rendered_lines.extend(
+            wrap_console_line(raw_line, content_width)
+        )
+
+    print(
+        prefix
+        + color(
+            "╭" + "─" * inner_width + "╮",
+            Color.GRAY,
+        )
+    )
+
+    for line in rendered_lines:
+        line = visible_trim(line, content_width)
+
+        padding = content_width - len(line)
+
+        print(
+            prefix
+            + color("│", Color.GRAY)
+            + " "
+            + color(line, Color.GRAY)
+            + (" " * max(padding, 0))
+            + " "
+            + color("│", Color.GRAY)
+        )
+
+    print(
+        prefix
+        + color(
+            "╰" + "─" * inner_width + "╯",
+            Color.GRAY,
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class GpuCapability:
+    name: str
+    driver: str
+    cuda_version: tuple[int, int] | None
+
+
+def run(command: list[str]) -> None:
+    command_preview(command)
+
+    process = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    output_parts: list[str] = []
+
+    if process.stdout.strip():
+        output_parts.append(process.stdout.rstrip())
+
+    if process.stderr.strip():
+        output_parts.append(process.stderr.rstrip())
+
+    if output_parts:
+        command_output_box("\n".join(output_parts))
+
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(
+            process.returncode,
+            command,
+            output=process.stdout,
+            stderr=process.stderr,
+        )
+
+
+def detect_nvidia() -> GpuCapability | None:
+    """Return CUDA capability exposed by the installed NVIDIA driver, if any."""
+    try:
+        query = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,driver_version",
+                "--format=csv,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=8,
+        )
+
+        status = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=8,
+        )
+
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+
+    lines = query.stdout.strip().splitlines()
+
+    if not lines:
+        return None
+
+    first_gpu = lines[0].split(",", maxsplit=1)
+
+    match = re.search(
+        r"CUDA Version:\s*(\d+)\.(\d+)",
+        status.stdout,
+    )
+
+    return GpuCapability(
+        name=first_gpu[0].strip(),
+        driver=(
+            first_gpu[1].strip()
+            if len(first_gpu) > 1
+            else "unknown"
+        ),
+        cuda_version=(
+            (
+                int(match.group(1)),
+                int(match.group(2)),
+            )
+            if match
+            else None
+        ),
+    )
+
+
+def available_wheel(tag: str) -> bool:
+    info(f"Checking wheel availability: {color(tag, Color.BOLD)}")
+
+    try:
+        with urllib.request.urlopen(
+            f"{WHEEL_ROOT}/{tag}/",
+            timeout=10,
+        ) as response:
+            return 200 <= response.status < 300
+
+    except (urllib.error.URLError, TimeoutError):
+        return False
+
+
+def select_wheel(
+    gpu: GpuCapability | None,
+) -> tuple[str, str]:
+    if gpu and gpu.cuda_version:
+        for major, minor, tag in CUDA_WHEELS:
+            if (
+                (major, minor) <= gpu.cuda_version
+                and available_wheel(tag)
+            ):
+                return (
+                    tag,
+                    f"NVIDIA CUDA acceleration ({tag})",
+                )
+
+        warning("No compatible published CUDA wheel was found.")
+        warning("Falling back to CPU inference.")
+
+    return "cpu", "CPU inference"
+
+
+def venv_python() -> Path:
+    if sys.platform == "win32":
+        return VENV_DIR / "Scripts" / "python.exe"
+
+    return VENV_DIR / "bin" / "python"
+
+
+def verify_python() -> bool:
+    version = sys.version_info
+    installed = (
+        f"{version.major}."
+        f"{version.minor}."
+        f"{version.micro}"
+    )
+
+    if version < (3, 11):
+        error(
+            f"Python 3.11 or newer is required. "
+            f"Detected Python {installed}."
+        )
+        return False
+
+    success(f"Python {installed}")
+    detail("Executable", relative_path(sys.executable))
+
+    return True
+
+
+def print_gpu(
+    gpu: GpuCapability | None,
+) -> None:
+    if gpu is None:
+        warning("NVIDIA CUDA capability was not detected.")
+        detail("Backend", "CPU")
+        return
+
+    success("NVIDIA GPU detected")
+    detail("GPU", gpu.name)
+    detail("Driver", gpu.driver)
+
+    if gpu.cuda_version:
+        detail(
+            "CUDA",
+            f"{gpu.cuda_version[0]}.{gpu.cuda_version[1]}",
+        )
+    else:
+        detail("CUDA", "Unavailable")
+
+
+def create_environment() -> None:
+    if venv_python().exists():
+        success("Virtual environment already exists")
+        detail("Location", relative_path(VENV_DIR))
+        return
+
+    info("Creating isolated Python environment...")
+    detail("Location", relative_path(VENV_DIR))
+
+    venv.EnvBuilder(
+        with_pip=True,
+    ).create(VENV_DIR)
+
+    success("Virtual environment created")
+
+
+def install_dependencies(
+    python: str,
+) -> None:
+    info("Updating Python package manager")
+
+    run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+        ]
+    )
+
+    success("pip is ready")
+
+    print()
+    info("Installing AIBrain runtime dependencies")
+
+    for package in BASE_PACKAGES:
+        detail("Package", package)
+
+    run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            *BASE_PACKAGES,
+        ]
+    )
+
+    success("Core dependencies installed")
+
+
+def install_llama(
+    python: str,
+    gpu: GpuCapability | None,
+) -> str:
+    wheel_tag, description = select_wheel(gpu)
+
+    print()
+
+    info(
+        "Selected backend: "
+        + color(
+            description,
+            Color.BOLD,
+            Color.CYAN,
+        )
+    )
+
+    detail("Wheel", wheel_tag)
+
+    command = [
+        python,
+        "-m",
+        "pip",
+        "install",
+        "--only-binary=llama-cpp-python",
+        "--extra-index-url",
+        f"{WHEEL_ROOT}/{wheel_tag}",
+        "llama-cpp-python>=0.3.0",
+    ]
+
+    try:
+        run(command)
+
+        success(
+            f"llama-cpp-python installed using {wheel_tag}"
+        )
+
+        return wheel_tag
+
+    except subprocess.CalledProcessError:
+        if wheel_tag == "cpu":
+            error(
+                "The prebuilt CPU wheel could not be installed."
+            )
+            error(
+                "A source compilation was not attempted."
+            )
+            raise
+
+        print()
+        warning(f"{wheel_tag} installation failed.")
+        warning(
+            "Retrying with the official CPU wheel."
+        )
+
+        run(
+            [
+                python,
+                "-m",
+                "pip",
+                "install",
+                "--only-binary=llama-cpp-python",
+                "--extra-index-url",
+                f"{WHEEL_ROOT}/cpu",
+                "llama-cpp-python>=0.3.0",
+            ]
+        )
+
+        success(
+            "CPU fallback installed successfully"
+        )
+
+        return "cpu"
+
+
+def verify_installation(
+    python: str,
+) -> None:
+    info(
+        "Running import and runtime verification"
+    )
+
+    verification = (
+        "import llama_cpp, moderngl; "
+        "from PySide6 import QtCore; "
+        "import numpy; "
+        "print('AIBrain dependency verification passed')"
+    )
+
+    run(
+        [
+            python,
+            "-c",
+            verification,
+        ]
+    )
+
+    success(
+        "All required dependencies are importable"
+    )
+
+
+def completion_screen(
+    gpu: GpuCapability | None,
+    wheel_tag: str,
+) -> None:
+    width = terminal_width()
+
+    print()
+
+    print(
+        color(
+            "╭" + "─" * (width - 2) + "╮",
+            Color.GREEN,
+        )
+    )
+
+    title = " INSTALLATION COMPLETE "
+
+    print(
+        color("│", Color.GREEN)
+        + color(
+            title.center(width - 2),
+            Color.BOLD,
+            Color.GREEN,
+        )
+        + color("│", Color.GREEN)
+    )
+
+    print(
+        color(
+            "├" + "─" * (width - 2) + "┤",
+            Color.GREEN,
+        )
+    )
+
+    backend = (
+        f"CUDA / {wheel_tag}"
+        if wheel_tag != "cpu"
+        else "CPU"
+    )
+
+    lines = [
+        (
+            "Environment",
+            relative_path(VENV_DIR),
+        ),
+        (
+            "Backend",
+            backend,
+        ),
+        (
+            "GPU",
+            gpu.name if gpu else "Not detected",
+        ),
+    ]
+
+    for label, value in lines:
+        content = f"  {label:<12} {value}"
+        content = visible_trim(
+            content,
+            width - 4,
+        )
+
+        padding = width - 2 - len(content)
+
+        print(
+            color("│", Color.GREEN)
+            + content
+            + (" " * max(padding, 0))
+            + color("│", Color.GREEN)
+        )
+
+    print(
+        color(
+            "├" + "─" * (width - 2) + "┤",
+            Color.GREEN,
+        )
+    )
+
+    launch = (
+        "  Launch AIBrain with:  python main.py"
+    )
+
+    launch = visible_trim(
+        launch,
+        width - 4,
+    )
+
+    padding = width - 2 - len(launch)
+
+    print(
+        color("│", Color.GREEN)
+        + color(
+            launch,
+            Color.BOLD,
+            Color.WHITE,
+        )
+        + (" " * max(padding, 0))
+        + color("│", Color.GREEN)
+    )
+
+    print(
+        color(
+            "╰" + "─" * (width - 2) + "╯",
+            Color.GREEN,
+        )
+    )
+
+    print()
+
+
+def print_help_banner() -> None:
+    width = terminal_width()
+    inner = width - 2
+
+    print()
+
+    print(
+        color(
+            "╭" + "─" * inner + "╮",
+            Color.CYAN,
+        )
+    )
+
+    print(
+        color("│", Color.CYAN)
+        + color(
+            " AIBrain Installer ".center(inner),
+            Color.BOLD,
+            Color.WHITE,
+        )
+        + color("│", Color.CYAN)
+    )
+
+    print(
+        color("│", Color.CYAN)
+        + color(
+            "Available Runtime Flags".center(inner),
+            Color.DIM,
+            Color.CYAN,
+        )
+        + color("│", Color.CYAN)
+    )
+
+    print(
+        color(
+            "├" + "─" * inner + "┤",
+            Color.CYAN,
+        )
+    )
+
+    entries = (
+        (
+            "-h, --help",
+            "Show this help screen and exit.",
+        ),
+    )
+
+    for flag, description in entries:
+        content = f"  {flag:<20} {description}"
+        content = visible_trim(
+            content,
+            inner - 2,
+        )
+
+        print(
+            color("│", Color.CYAN)
+            + content.ljust(inner)
+            + color("│", Color.CYAN)
+        )
+
+    print(
+        color(
+            "├" + "─" * inner + "┤",
+            Color.CYAN,
+        )
+    )
+
+    usage = (
+        f"  Usage: python {Path(__file__).name} [options]"
+    )
+
+    usage = visible_trim(
+        usage,
+        inner - 2,
+    )
+
+    print(
+        color("│", Color.CYAN)
+        + color(
+            usage.ljust(inner),
+            Color.WHITE,
+        )
+        + color("│", Color.CYAN)
+    )
+
+    print(
+        color(
+            "╰" + "─" * inner + "╯",
+            Color.CYAN,
+        )
+    )
+
+    print()
+
+
+class BannerArgumentParser(
+    argparse.ArgumentParser
+):
+    def print_help(
+        self,
+        file=None,
+    ) -> None:
+        print_help_banner()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = BannerArgumentParser(
+        description=(
+            "Install and configure the AIBrain runtime."
+        ),
+        add_help=True,
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    parse_args()
+
+    header()
+
+    section("System check", 1)
+
+    if not verify_python():
+        return 1
+
+    gpu = detect_nvidia()
+    print_gpu(gpu)
+
+    section("Virtual environment", 2)
+
+    try:
+        create_environment()
+    except Exception as exc:
+        error(
+            f"Unable to create the virtual environment: {exc}"
+        )
+        return 1
+
+    python = str(venv_python())
+
+    section("Core dependencies", 3)
+
+    try:
+        install_dependencies(python)
+    except subprocess.CalledProcessError as exc:
+        error(
+            "Dependency installation failed with "
+            f"exit code {exc.returncode}."
+        )
+        return 1
+
+    section("Inference backend", 4)
+
+    try:
+        wheel_tag = install_llama(
+            python,
+            gpu,
+        )
+
+    except subprocess.CalledProcessError as exc:
+        error(
+            "llama-cpp-python installation failed "
+            f"with exit code {exc.returncode}."
+        )
+        return 1
+
+    section("Verification", 5)
+
+    try:
+        verify_installation(python)
+
+    except subprocess.CalledProcessError:
+        error(
+            "Dependency verification failed."
+        )
+        return 1
+
+    completion_screen(
+        gpu,
+        wheel_tag,
+    )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
