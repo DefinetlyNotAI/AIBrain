@@ -56,7 +56,7 @@ Build a normal, self-contained directory distribution—never a single-file exec
 .\.venv\Scripts\python.exe cli\build_dist.py
 ```
 
-The result is `dist\AIBrain_YYYYMMDD_HHMMSS\AIBrain.exe` plus Qt, Python, llama.cpp, native connectome, and required Visual C++ runtime files.
+The result is `dist\AIBrain_YYYYMMDD_HHMMSS\AIBrain.exe` plus Qt, Python, llama.cpp, native connectome, and required Visual C++ runtime files. It runs from that folder without activating the development `.venv`.
 
 ## First run
 
