@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -32,7 +33,7 @@ class ConnectomeAnalyzer:
     connectome signals, never hidden LLM states.
     """
 
-    def __init__(self, graph: ConnectomeGraph, hidden_width: int = 12) -> None:
+    def __init__(self, graph: ConnectomeGraph, hidden_width: int = 12, model_path: Path | None = None) -> None:
         self.graph = graph
         self.region_count = len(graph.region_names)
         self.input_width = self.region_count + 4
@@ -45,14 +46,25 @@ class ConnectomeAnalyzer:
         self.embedding_centroid = np.zeros(hidden_width, dtype="f4")
         self.records: list[AnalysisRecord] = []
         self._learning_rate = .025
+        self._previous_mean = 0.0
+        self.frames_seen = 0
+        self._unsaved_frames = 0
+        self.model_path = model_path or Path(__file__).resolve().parents[2] / "analysis_model" / "connectome_autoencoder_v1.npz"
+        self._load_model()
 
     def observe(self, frame: ActivationFrame, values: np.ndarray) -> AnalysisRecord:
         regional, active_nodes = native.regions(values, self.graph.regions, self.region_count)
         counts = np.bincount(self.graph.regions, minlength=self.region_count).clip(1).astype("f4")
         regional_mean = regional / counts
-        distribution = regional / max(float(regional.sum()), 1e-6)
+        # Remove static cluster population/topology bias: each region is
+        # compared with the current graph-wide activity, not raw node totals.
+        global_mean = max(float(values.mean()), 1e-6)
+        relative_regional_density = regional_mean / global_mean
+        distribution = relative_regional_density / (1.0 + relative_regional_density)
         active_ratio = float(np.count_nonzero(values > .1) / len(values))
-        features = np.concatenate((distribution, np.array((active_ratio, float(values.mean()), float(values.max()), float(values.std())), dtype="f4")))
+        mean_delta = abs(float(values.mean()) - self._previous_mean)
+        self._previous_mean = float(values.mean())
+        features = np.concatenate((distribution, np.array((active_ratio, mean_delta, float(values.max()), float(values.std())), dtype="f4")))
         encoded_pre = features @ self.encoder_weights + self.encoder_bias
         embedding = np.tanh(encoded_pre)
         decoded_pre = embedding @ self.decoder_weights + self.decoder_bias
@@ -70,7 +82,36 @@ class ConnectomeAnalyzer:
             tuple(float(value) for value in embedding), tuple(float(value) for value in regional_mean),
         )
         self.records.append(record)
+        self.frames_seen += 1
+        self._unsaved_frames += 1
+        if self._unsaved_frames >= 32:
+            self.save_model()
         return record
+
+    def _load_model(self) -> None:
+        try:
+            with np.load(self.model_path, allow_pickle=False) as stored:
+                if tuple(stored["encoder_weights"].shape) != self.encoder_weights.shape:
+                    return
+                self.encoder_weights[:] = stored["encoder_weights"]
+                self.encoder_bias[:] = stored["encoder_bias"]
+                self.decoder_weights[:] = stored["decoder_weights"]
+                self.decoder_bias[:] = stored["decoder_bias"]
+                self.embedding_centroid[:] = stored["embedding_centroid"]
+                self.frames_seen = int(stored["frames_seen"])
+        except (OSError, KeyError, ValueError):
+            return
+
+    def save_model(self) -> None:
+        """Atomically persist learned weights for future analysis sessions."""
+        self.model_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.model_path.with_suffix(".tmp")
+        with temporary.open("wb") as handle:
+            np.savez_compressed(handle, encoder_weights=self.encoder_weights, encoder_bias=self.encoder_bias,
+                                decoder_weights=self.decoder_weights, decoder_bias=self.decoder_bias,
+                                embedding_centroid=self.embedding_centroid, frames_seen=np.array(self.frames_seen))
+        temporary.replace(self.model_path)
+        self._unsaved_frames = 0
 
     def _train(self, features: np.ndarray, embedding: np.ndarray, reconstruction: np.ndarray) -> None:
         """One gradient-descent step for tanh encoder + sigmoid decoder."""
@@ -111,6 +152,8 @@ class ConnectomeAnalyzer:
                 "architecture": f"{self.input_width} → {self.hidden_width} → {self.input_width} autoencoder",
                 "activation": "tanh encoder / sigmoid decoder", "training": "online gradient descent for each visual frame",
                 "learned_parameters": int(self.encoder_weights.size + self.encoder_bias.size + self.decoder_weights.size + self.decoder_bias.size),
+                "lifetime_frames_seen": self.frames_seen,
+                "feature_calibration": "Region-density and temporal-change features remove fixed cluster size and global renderer-amplitude bias.",
             },
             "session_findings": {
                 **self.summary(), "primary_pattern": f"Highest mean visual activity was in {top_region}.",

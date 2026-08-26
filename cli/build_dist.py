@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from cli.ui import command, error, header, section, success
+from src.utils.console_ui import command, error, header, section, success
 from src.utils.gpu import set_windows_executable_gpu_preference
 
 

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from cli.ui import Color, command, detail, error, header, info, section, success, warning
+from src.utils.console_ui import Color, command, detail, error, header, info, section, success, warning
 
 
 VENV_DIR = ROOT / ".venv"

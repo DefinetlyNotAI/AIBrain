@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from cli.ui import Color as Colour, command, error, header, section, status, success
+from src.utils.console_ui import Color as Colour, command, error, header, section, status, success
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_native.c"
 OUTPUT = ROOT / "dll" / "aibrain_connectome.dll"

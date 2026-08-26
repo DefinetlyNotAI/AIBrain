@@ -48,6 +48,17 @@ class NNAnalysisExportTests(unittest.TestCase):
 
         self.assertEqual(payload["smart_analysis"]["key_events"][0]["step"], 1)
 
+    def test_learned_model_persists_between_analysis_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "learned.npz"
+            first = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
+            first.observe(ActivationFrame(2, "learn", 2, ActivitySource.SIMULATION), np.array([.3, .2], dtype=np.float32))
+            first.save_model()
+            second = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
+
+        self.assertEqual(second.frames_seen, 1)
+        self.assertTrue(np.array_equal(second.encoder_weights, first.encoder_weights))
+
 
 if __name__ == "__main__":
     unittest.main()
