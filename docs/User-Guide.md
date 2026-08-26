@@ -31,7 +31,7 @@ The right pane is a native `QOpenGLWidget` renderer. It supports left-drag to or
 
 The GPU selector asks Windows to use the high-performance adapter for the project Python executable on the next launch. The overlay always identifies the renderer actually selected by OpenGL.
 
-Click a visual neuron to inspect its region, current value, and peak. You can silence it (zeroing its visual activity) or change its importance from 0 to 3. These controls affect the visual simulation only; they never modify model weights or inference.
+Click a visual neuron to inspect its region, current value, and peak. You can silence it (zeroing its visual activity) or change its importance from 0 to 3. **Neuron borders** outlines every visual neuron for clearer separation; use the adjacent numeric control to tune the outline width. These controls affect the visual simulation only; they never modify model weights or inference.
 
 ## Analysis and export
 

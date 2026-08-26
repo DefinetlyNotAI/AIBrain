@@ -6,7 +6,7 @@ from time import monotonic
 
 import numpy as np
 from PySide6.QtCore import QSettings, QTimer, Qt
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
@@ -57,11 +57,17 @@ class VisualizerPanel(QWidget):
         self.render_gpu.currentIndexChanged.connect(self._set_render_preference)
         self.spacing = QSlider(Qt.Orientation.Horizontal); self.spacing.setRange(60, 200); self.spacing.setValue(100); self.spacing.setToolTip("Cluster spacing")
         self.spacing.valueChanged.connect(self._set_cluster_spacing)
+        settings = QSettings()
+        self.neuron_borders = QCheckBox("Neuron borders"); self.neuron_borders.setToolTip("Outline each visual neuron for clearer separation")
+        self.neuron_borders.setChecked(settings.value("neuron_borders", True, type=bool)); self.neuron_borders.toggled.connect(self._set_neuron_borders)
+        self.border_width = QDoubleSpinBox(); self.border_width.setRange(.01, .45); self.border_width.setSingleStep(.01); self.border_width.setDecimals(2)
+        self.border_width.setValue(float(settings.value("neuron_border_width", .12))); self.border_width.setToolTip("Neuron outline width")
+        self.border_width.valueChanged.connect(lambda _: self._set_neuron_borders(self.neuron_borders.isChecked()))
         self.pause = QPushButton("Pause"); self.pause.clicked.connect(self._toggle_pause)
         self.analysis = QPushButton("Analysis"); self.analysis.clicked.connect(self._show_analysis)
         self.export = QPushButton("Export"); self.export.clicked.connect(self._export_analysis)
         reset = QPushButton("Reset view"); reset.clicked.connect(lambda: self.renderer.reset_camera())
-        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.analysis, self.export, self.pause, reset): header.addWidget(widget)
+        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.neuron_borders, self.border_width, self.analysis, self.export, self.pause, reset): header.addWidget(widget)
         header.addStretch(1); self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
         self.overlay = QLabel(); self.overlay.setObjectName("overlay"); self.overlay.setWordWrap(True)
@@ -70,6 +76,7 @@ class VisualizerPanel(QWidget):
         self.importance = QDoubleSpinBox(); self.importance.setRange(0, 3); self.importance.setSingleStep(.1); self.importance.setValue(1); self.importance.valueChanged.connect(self._change_importance); self.importance.setEnabled(False)
         inspect_controls = QHBoxLayout(); inspect_controls.addWidget(self.silence); inspect_controls.addWidget(QLabel("Importance")); inspect_controls.addWidget(self.importance); inspect_controls.addStretch(1)
         self.layout.addWidget(self.overlay); self.layout.addWidget(self.inspector); self.layout.addLayout(inspect_controls)
+        self._set_neuron_borders(self.neuron_borders.isChecked())
         self._refresh_overlay()
 
     def _rebuild(self, quality: str) -> None:
@@ -80,6 +87,8 @@ class VisualizerPanel(QWidget):
         old.setParent(None)
         old.deleteLater()
         self._build_graph(quality)
+        if hasattr(self, "neuron_borders"):
+            self.renderer.set_neuron_borders(self.neuron_borders.isChecked(), self.border_width.value())
         self.layout.insertWidget(index, self.renderer, 1)
         self._refresh_overlay()
 
@@ -172,6 +181,12 @@ class VisualizerPanel(QWidget):
     def _set_cluster_spacing(self, value: int) -> None:
         self._cluster_spacing = value / 100
         if hasattr(self, "renderer"): self._rebuild(self.quality.currentText())
+
+    def _set_neuron_borders(self, visible: bool) -> None:
+        QSettings().setValue("neuron_borders", visible)
+        QSettings().setValue("neuron_border_width", self.border_width.value())
+        if hasattr(self, "renderer"):
+            self.renderer.set_neuron_borders(visible, self.border_width.value())
 
     def _show_analysis(self) -> None:
         summary = self.analyzer.summary()

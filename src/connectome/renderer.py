@@ -19,10 +19,12 @@ uniform mat4 u_mvp; out float region; out float activity;
 void main() { gl_Position = u_mvp * vec4(in_position, 1.0); gl_PointSize = 1.6 + in_activity * 8.0; region = in_region; activity = in_activity; }
 """
 POINT_FRAGMENT_SHADER = """#version 330
-in float region; in float activity; out vec4 f_color;
+in float region; in float activity; uniform float u_border_width; out vec4 f_color;
 void main() { vec2 p = gl_PointCoord * 2.0 - 1.0; float radius = dot(p, p); if (radius > 1.0) discard;
  float r = .18 + region*.025 + activity*.35; float g = .43 + region*.030 + activity*.45; float b = .58 + region*.025 + activity*.35;
- float glow = 1.0 - smoothstep(.20, 1.0, radius); f_color = vec4(min(vec3(r,g,b)*(.55+glow*.75),1.0), .34+activity*.66); }
+ float glow = 1.0 - smoothstep(.20, 1.0, radius); vec3 fill = min(vec3(r,g,b)*(.55+glow*.75),1.0);
+ float rim = smoothstep(1.0 - u_border_width, 1.0, radius); vec3 color = mix(fill, vec3(.015, .045, .065), rim);
+ f_color = vec4(color, .34+activity*.66); }
 """
 EDGE_VERTEX_SHADER = """#version 330
 in vec3 in_position; in float in_activity; uniform mat4 u_mvp; out float activity;
@@ -54,6 +56,8 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._render_edges = self._select_render_edges()
         self._edge_activity_values = np.zeros(len(self._render_edges) * 2, dtype="f4")
         self._gpu_error: str | None = None
+        self.show_neuron_borders = True
+        self.neuron_border_width = .12
         self.setMinimumSize(420, 350)
         self.timer = QTimer(self); self.timer.timeout.connect(self._tick); self.timer.start(16)
 
@@ -138,6 +142,7 @@ class ConnectomeRenderer(QOpenGLWidget):
             matrix = self._mvp().tobytes()
             self._upload_activity(); self._ctx.clear(.025, .063, .090, 1.0, depth=1.0)
             self._edge_program["u_mvp"].write(matrix); self._point_program["u_mvp"].write(matrix)
+            self._point_program["u_border_width"].value = self.neuron_border_width if self.show_neuron_borders else 0.0
             self._edge_vao.render(self._moderngl.LINES); self._point_vao.render(self._moderngl.POINTS)
         except Exception as exc:
             self._gpu_error = str(exc); LOG.exception("ModernGL frame failed; using fallback")
@@ -177,3 +182,8 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def reset_camera(self) -> None:
         self.yaw, self.pitch, self.zoom = .25, -.2, 1.0; self.update()
+
+    def set_neuron_borders(self, visible: bool, width: float) -> None:
+        self.show_neuron_borders = visible
+        self.neuron_border_width = float(np.clip(width, .01, .45))
+        self.update()
