@@ -11,6 +11,12 @@ from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
 
 
+_SELECTABLE_TEXT_FLAGS = Qt.TextInteractionFlag(
+    Qt.TextInteractionFlag.TextSelectableByMouse.value
+    | Qt.TextInteractionFlag.TextSelectableByKeyboard.value
+)
+
+
 def markdown_to_html(markdown: str) -> str:
     """Render the useful Markdown subset safely inside selectable Qt labels."""
     escaped = html.escape(markdown)
@@ -85,8 +91,7 @@ class ChatPanel(QWidget):
         self.stats = QLabel("Ready · select an installed GGUF model")
         self.stats.setObjectName("muted")
         self.stats.setWordWrap(True)
-        self.stats.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.stats.setTextInteractionFlags(_SELECTABLE_TEXT_FLAGS)
         layout.addWidget(self.stats)
         self.input = QPlainTextEdit()
         self.input.setPlaceholderText("Message your local model…  (Ctrl+Enter to send)")
@@ -188,8 +193,7 @@ class ChatPanel(QWidget):
         follow_output = self._follow_output
         bubble = MarkdownLabel(text)
         bubble.setWordWrap(True)
-        bubble.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        bubble.setTextInteractionFlags(_SELECTABLE_TEXT_FLAGS)
         bubble.setObjectName(
             "userBubble" if role == "user" else "worldBubble" if role == "world" else "assistantBubble")
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, bubble)
@@ -251,10 +255,15 @@ class ChatPanel(QWidget):
 
     def clear_messages(self) -> None:
         self._playback_controls = None
+
         while self.messages_layout.count() > 1:
             item = self.messages_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is None:
+                continue
+
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
     def generating(self, running: bool) -> None:
         self.send.setEnabled(not running)
