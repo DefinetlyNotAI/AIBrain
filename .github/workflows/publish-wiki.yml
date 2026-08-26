@@ -31,6 +31,16 @@ jobs:
           git clone "$WIKI_REMOTE" wiki
           rsync -a --delete --exclude '.git' docs/ wiki/
           cd wiki
+          
+          # Fix internal links: strip .md and change %20 to hyphens
+          find . -type f -name "*.md" | while read -r file; do
+            # 1. Matches text like [Name](Some%20File.md) and makes it [Name](Some%20File)
+            sed -i -E 's/(\]\([^)]+)\.md\)/\1)/g' "$file"
+          
+            # 2. Replaces %20 with a hyphen ONLY inside the markdown links destination parenthesis
+            sed -i -E ':loop; s/(\]\([^)]*)%20([^)]*\))/\1-\2/g; t loop' "$file"
+          done
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if git diff --quiet; then
