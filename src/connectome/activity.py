@@ -5,6 +5,7 @@ from time import monotonic
 import numpy as np
 
 from .graph import ConnectomeGraph
+from .native import native
 from ..models.instrumented_backend import ActivationFrame
 
 
@@ -16,6 +17,9 @@ class ActivityField:
         self.last_time = monotonic()
         self.step = 0
         self.current_token = ""
+        self.active_count_cached = 0
+        self.disabled = np.zeros(len(graph.positions), dtype=bool)
+        self.importance = np.ones(len(graph.positions), dtype=np.float32)
 
     def update(self, frame: ActivationFrame) -> None:
         self.decay()
@@ -31,15 +35,24 @@ class ActivityField:
             if len(candidates):
                 selected = rng.choice(candidates, size=min(len(candidates), 40 + depth * 30), replace=False)
                 amount = 1.0 / (1 + depth * .55)
-                self.values[selected] = np.maximum(self.values[selected], amount)
+                self.values[selected] = np.maximum(self.values[selected], amount * self.importance[selected])
         self.peaks = np.maximum(self.peaks * .995, self.values)
+        self.values[self.disabled] = 0.0
 
     def decay(self) -> None:
         now = monotonic()
         delta = min(now - self.last_time, 1.0)
         self.last_time = now
-        self.values *= np.exp(-delta / .30).astype(np.float32) if isinstance(delta, np.ndarray) else float(np.exp(-delta / .30))
+        self.active_count_cached = native.decay(self.values, float(np.exp(-delta / .30)), .10)
+
+    def set_disabled(self, index: int, disabled: bool) -> None:
+        self.disabled[index] = disabled
+        if disabled:
+            self.values[index] = 0.0
+
+    def set_importance(self, index: int, importance: float) -> None:
+        self.importance[index] = np.clip(importance, 0.0, 3.0)
 
     @property
     def active_count(self) -> int:
-        return int(np.count_nonzero(self.values > .10))
+        return self.active_count_cached

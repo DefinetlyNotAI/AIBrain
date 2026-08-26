@@ -9,6 +9,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from .activity import ActivityField
 from .graph import ConnectomeGraph
+from .native import native
 
 LOG = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._node_activity_buffer = self._edge_activity_buffer = None
         self._point_program = self._edge_program = None
         self._render_edges = self._select_render_edges()
+        self._edge_activity_values = np.zeros(len(self._render_edges) * 2, dtype="f4")
         self._gpu_error: str | None = None
         self.setMinimumSize(420, 350)
         self.timer = QTimer(self); self.timer.timeout.connect(self._tick); self.timer.start(16)
@@ -119,9 +121,9 @@ class ConnectomeRenderer(QOpenGLWidget):
     def _upload_activity(self) -> None:
         assert self._node_activity_buffer is not None and self._edge_activity_buffer is not None
         values = np.ascontiguousarray(self.field.values, dtype="f4")
-        edge_values = np.maximum(values[self._render_edges[:, 0]], values[self._render_edges[:, 1]])
+        native.edges(values, self._render_edges, self._edge_activity_values)
         self._node_activity_buffer.write(values.tobytes())
-        self._edge_activity_buffer.write(np.repeat(edge_values, 2).astype("f4", copy=False).tobytes())
+        self._edge_activity_buffer.write(self._edge_activity_values.tobytes())
 
     def paintGL(self) -> None:
         if self._ctx is None or self._gpu_error:
