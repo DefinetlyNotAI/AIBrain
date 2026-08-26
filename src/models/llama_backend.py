@@ -33,6 +33,7 @@ class LlamaBackend:
         except ImportError as exc:
             raise RuntimeError("llama-cpp-python is not installed. Run: py -3.11 install.py") from exc
         LOG.info("Loading GGUF directly: %s (GPU layers: %s)", path, config.gpu_layers)
+
         @llama_log_callback
         def native_log(level: int, text: bytes, _user_data: object) -> None:
             message = text.decode("utf-8", errors="replace").strip()
@@ -41,6 +42,7 @@ class LlamaBackend:
             lower = message.lower()
             if "error" in lower or "failed" in lower or "unknown model architecture" in lower:
                 LOG.error("llama.cpp: %s", message)
+
         global _NATIVE_LOG_CALLBACK
         _NATIVE_LOG_CALLBACK = native_log
         llama_log_set(_NATIVE_LOG_CALLBACK, None)

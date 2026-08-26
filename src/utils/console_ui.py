@@ -9,7 +9,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-_ASCII_GLYPHS = str.maketrans({"╭": "+", "╮": "+", "╰": "+", "╯": "+", "├": "+", "┤": "+", "│": "|", "─": "-", "●": "*", "✓": "OK", "✗": "X", "›": ">"})
+_ASCII_GLYPHS = str.maketrans(
+    {"╭": "+", "╮": "+", "╰": "+", "╯": "+", "├": "+", "┤": "+", "│": "|", "─": "-", "●": "*", "✓": "OK", "✗": "X",
+     "›": ">"})
 
 
 def _console_text(text: str) -> str:
@@ -20,13 +22,14 @@ def _console_text(text: str) -> str:
     except UnicodeEncodeError:
         return text.translate(_ASCII_GLYPHS)
     return text
+
+
 DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
 MAX_WIDTH = 110
 COMMAND_INDENT = 2
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
 
 if os.name == "nt":
     os.system("")
@@ -62,10 +65,12 @@ def terminal_width() -> int:
                 _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
 
             class _SmallRect(ctypes.Structure):
-                _fields_ = [("left", ctypes.c_short), ("top", ctypes.c_short), ("right", ctypes.c_short), ("bottom", ctypes.c_short)]
+                _fields_ = [("left", ctypes.c_short), ("top", ctypes.c_short), ("right", ctypes.c_short),
+                            ("bottom", ctypes.c_short)]
 
             class _ConsoleScreenBufferInfo(ctypes.Structure):
-                _fields_ = [("size", _Coord), ("cursor", _Coord), ("attributes", ctypes.c_ushort), ("window", _SmallRect), ("maximum_window_size", _Coord)]
+                _fields_ = [("size", _Coord), ("cursor", _Coord), ("attributes", ctypes.c_ushort),
+                            ("window", _SmallRect), ("maximum_window_size", _Coord)]
 
             info = _ConsoleScreenBufferInfo()
             handle = ctypes.windll.kernel32.GetStdHandle(-11)
@@ -254,9 +259,9 @@ def command_preview(command: list[str]) -> None:
 
 
 def command_output_box(
-    output: str,
-    *,
-    indent: int = COMMAND_INDENT,
+        output: str,
+        *,
+        indent: int = COMMAND_INDENT,
 ) -> None:
     """Render subprocess output in an indented grey box."""
     output = strip_ansi(output)
@@ -309,7 +314,6 @@ def command_output_box(
             Color.GRAY,
         )
     )
-
 
 
 def command(command_line: list[str]) -> None:

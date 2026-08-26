@@ -14,11 +14,10 @@ from ..models.generation_worker import GenerationWorker
 from ..models.infinite_simulation import InfiniteSimulationWorker
 from ..models.llama_backend import LlamaBackend
 from ..models.model_info import ModelInfo
-from ..models.ollama_discovery import OllamaDiscovery
 from ..models.model_validator import ModelValidator
+from ..models.ollama_discovery import OllamaDiscovery
 
 LOG = logging.getLogger(__name__)
-
 
 STYLESHEET = """
 QMainWindow { background: #09131c; color: #dceaf1; }
@@ -62,8 +61,11 @@ class MainWindow(QMainWindow):
         self.visualizer = VisualizerPanel()
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self.chat); splitter.addWidget(self.visualizer); splitter.setSizes([560, 940])
-        splitter.setStretchFactor(0, 1); splitter.setStretchFactor(1, 2)
+        splitter.addWidget(self.chat);
+        splitter.addWidget(self.visualizer);
+        splitter.setSizes([560, 940])
+        splitter.setStretchFactor(0, 1);
+        splitter.setStretchFactor(1, 2)
         self.setCentralWidget(splitter)
         self.chat.sendRequested.connect(self.send)
         self.chat.stopRequested.connect(self.stop)
@@ -119,7 +121,8 @@ class MainWindow(QMainWindow):
     def _discover(self) -> None:
         models = OllamaDiscovery().discover()
         if not models:
-            self.chat.stats.setText("No usable GGUF blob found in %USERPROFILE%\\.ollama\\models. Install a GGUF Ollama model, then reopen AIBrain.")
+            self.chat.stats.setText(
+                "No usable GGUF blob found in %USERPROFILE%\\.ollama\\models. Install a GGUF Ollama model, then reopen AIBrain.")
             return
         self.chat.set_validating_models("Validating installed GGUF models…")
         self.chat.stats.setText(f"Validating {len(models)} installed GGUF models with the local backend…")
@@ -153,7 +156,8 @@ class MainWindow(QMainWindow):
             self.history.clear()
             self.visualizer.set_conversation(self.history)
             self.chat.clear_messages()
-            self.chat.stats.setText("Selected " + model.label + ("" if model.available else f" — {model.error}") + " · conversation and connectome refreshed")
+            self.chat.stats.setText("Selected " + model.label + (
+                "" if model.available else f" — {model.error}") + " · conversation and connectome refreshed")
 
     def _handle_escape(self) -> None:
         if self.chat.stop.isEnabled():
@@ -163,9 +167,11 @@ class MainWindow(QMainWindow):
 
     def send(self, prompt: str) -> None:
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
-            QMessageBox.warning(self, "Model unavailable", "Choose an available GGUF model discovered from Ollama first.")
+            QMessageBox.warning(self, "Model unavailable",
+                                "Choose an available GGUF model discovered from Ollama first.")
             return
-        self.config = self.chat.config(); save_generation_settings(self.config)
+        self.config = self.chat.config();
+        save_generation_settings(self.config)
         self.history.append({"role": "user", "content": prompt})
         self.visualizer.set_conversation(self.history)
         self.chat.clear_latest_playback()
@@ -173,7 +179,8 @@ class MainWindow(QMainWindow):
         self.chat.add_message("user", prompt)
         self._assistant_bubble = self.chat.add_message("assistant", "Thinking…")
         self._awaiting_first_token = True
-        self._started = monotonic(); self.chat.generating(True)
+        self._started = monotonic();
+        self.chat.generating(True)
         self.startGeneration.emit(self.history.copy(), self.config, self.current_model.blob_path)
 
     def stop(self) -> None:
@@ -184,16 +191,21 @@ class MainWindow(QMainWindow):
 
     def start_infinite_simulation(self, seed: str) -> None:
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
-            QMessageBox.warning(self, "Model unavailable", "Choose an available GGUF model discovered from Ollama first.")
+            QMessageBox.warning(self, "Model unavailable",
+                                "Choose an available GGUF model discovered from Ollama first.")
             return
-        self.config = self.chat.config(); save_generation_settings(self.config)
+        self.config = self.chat.config();
+        save_generation_settings(self.config)
         self.unloadModel.emit()
         self.visualizer.begin_recording()
         self.simulation_transcript = [{"role": "user", "content": seed, "turn": 0}]
         self.visualizer.set_conversation(self.simulation_transcript)
-        self.chat.clear_latest_playback(); self.chat.add_message("user", seed)
-        self._simulation_bubbles.clear(); self.chat.generating(True)
-        self.chat.stats.setText("∞ Simulation loading two local model instances; the right pane is the participant brain.")
+        self.chat.clear_latest_playback();
+        self.chat.add_message("user", seed)
+        self._simulation_bubbles.clear();
+        self.chat.generating(True)
+        self.chat.stats.setText(
+            "∞ Simulation loading two local model instances; the right pane is the participant brain.")
         self.startInfiniteSimulation.emit(seed, self.config, self.current_model.blob_path)
 
     def _simulation_turn_started(self, role: str, turn: int) -> None:
@@ -218,12 +230,14 @@ class MainWindow(QMainWindow):
         turns = int(stats["turns"])
         tokens = int(stats["participant_tokens"])
         suffix = " (stopped)" if stats.get("cancelled") else ""
-        self.chat.stats.setText(f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}")
+        self.chat.stats.setText(
+            f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}")
         self.chat.generating(False)
 
     def _simulation_failed(self, error: str) -> None:
         LOG.error("%s", error)
-        self.chat.stats.setText(error); self.chat.generating(False)
+        self.chat.stats.setText(error);
+        self.chat.generating(False)
         QMessageBox.critical(self, "Infinite simulation error", error)
 
     def regenerate(self) -> None:
@@ -233,7 +247,12 @@ class MainWindow(QMainWindow):
             self.send(prompt)
 
     def clear(self) -> None:
-        self.history.clear(); self.simulation_transcript.clear(); self.visualizer.begin_recording(); self.visualizer.set_conversation([]); self.chat.clear_messages(); self.chat.stats.setText("Conversation cleared.")
+        self.history.clear();
+        self.simulation_transcript.clear();
+        self.visualizer.begin_recording();
+        self.visualizer.set_conversation([]);
+        self.chat.clear_messages();
+        self.chat.stats.setText("Conversation cleared.")
 
     def _on_token(self, text: str, frame: object) -> None:
         if self._assistant_bubble is not None:
@@ -251,15 +270,22 @@ class MainWindow(QMainWindow):
             self.chat.show_latest_playback()
         elif self._assistant_bubble is not None:
             self._assistant_bubble.setText("No response generated.")
-        seconds = float(stats["seconds"]); tokens = int(stats["generated_tokens"])
+        seconds = float(stats["seconds"]);
+        tokens = int(stats["generated_tokens"])
         rate = tokens / seconds if seconds else 0
         suffix = " (stopped)" if stats.get("cancelled") else ""
-        self.chat.stats.setText(f"Prompt {int(stats['prompt_tokens'])} tokens · generated {tokens} tokens in {seconds:.2f}s · {rate:.1f} tokens/s{suffix}")
-        self.chat.generating(False); self._assistant_bubble = None; self._awaiting_first_token = False
+        self.chat.stats.setText(
+            f"Prompt {int(stats['prompt_tokens'])} tokens · generated {tokens} tokens in {seconds:.2f}s · {rate:.1f} tokens/s{suffix}")
+        self.chat.generating(False);
+        self._assistant_bubble = None;
+        self._awaiting_first_token = False
 
     def _failed(self, error: str) -> None:
         LOG.error("%s", error)
-        self.chat.stats.setText(error); self.chat.generating(False); self._assistant_bubble = None; self._awaiting_first_token = False
+        self.chat.stats.setText(error);
+        self.chat.generating(False);
+        self._assistant_bubble = None;
+        self._awaiting_first_token = False
         QMessageBox.critical(self, "Generation error", error)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -270,7 +296,11 @@ class MainWindow(QMainWindow):
             self.validation_thread.quit()
             self.validation_thread.wait(3000)
         if self.worker_thread.isRunning():
-            self.worker.cancel(); self.worker_thread.quit(); self.worker_thread.wait(3000)
+            self.worker.cancel();
+            self.worker_thread.quit();
+            self.worker_thread.wait(3000)
         if self.simulation_thread.isRunning():
-            self.simulation_worker.cancel(); self.simulation_thread.quit(); self.simulation_thread.wait(3000)
+            self.simulation_worker.cancel();
+            self.simulation_thread.quit();
+            self.simulation_thread.wait(3000)
         super().closeEvent(event)

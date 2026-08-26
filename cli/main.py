@@ -6,12 +6,9 @@ import signal
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-
 
 if os.name == "nt":
     os.system("")
@@ -103,7 +100,8 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
     from src.app.main_window import MainWindow
     from src.utils.logging import configure_logging
-    from src.utils.gpu import relaunch_for_gpu_preference, set_windows_gpu_preference, should_prefer_high_performance_gpu
+    from src.utils.gpu import relaunch_for_gpu_preference, set_windows_gpu_preference, \
+        should_prefer_high_performance_gpu
 
     prefer_high_performance = should_prefer_high_performance_gpu()
     if prefer_high_performance and set_windows_gpu_preference(True) and relaunch_for_gpu_preference():

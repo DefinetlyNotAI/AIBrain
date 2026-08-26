@@ -6,6 +6,7 @@ from ..models.instrumented_backend import ActivationFrame
 
 class ActivityMapper:
     """Maps normalized frames onto a visual graph; no claim of physical topology."""
+
     def __init__(self, field: ActivityField) -> None:
         self.field = field
 

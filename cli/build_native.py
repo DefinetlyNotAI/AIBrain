@@ -15,15 +15,15 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import Color as Colour, command, error, header, section, status, success
+from src.utils.console_ui import Color as Colour, command, error, header, status, success
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_native.c"
 OUTPUT = ROOT / "dll" / "aibrain_connectome.dll"
+
 
 @dataclass(frozen=True, slots=True)
 class Compiler:
@@ -33,7 +33,8 @@ class Compiler:
 
 def discover_compiler(explicit: str | None) -> Compiler:
     candidates = [explicit] if explicit else []
-    candidates += [os.environ.get("CC"), shutil.which("gcc"), shutil.which("clang"), shutil.which("cl"), r"C:\Program Files\msys64\mingw64\bin\gcc.exe"]
+    candidates += [os.environ.get("CC"), shutil.which("gcc"), shutil.which("clang"), shutil.which("cl"),
+                   r"C:\Program Files\msys64\mingw64\bin\gcc.exe"]
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             name = Path(candidate).name.lower()
@@ -85,16 +86,19 @@ def main() -> int:
     arguments = parser.parse_args()
     header("AIBrain", "Native connectome build tool · x64 Windows")
     if not SOURCE.is_file():
-        line("ERROR", f"Missing source: {SOURCE}", Colour.RED); return 1
+        line("ERROR", f"Missing source: {SOURCE}", Colour.RED);
+        return 1
     if arguments.clean and OUTPUT.exists():
-        OUTPUT.unlink(); line("CLEAN", f"Removed {OUTPUT.name}", Colour.YELLOW)
+        OUTPUT.unlink();
+        line("CLEAN", f"Removed {OUTPUT.name}", Colour.YELLOW)
     try:
         compiler = discover_compiler(arguments.compiler)
         line("TOOLCHAIN", f"{compiler.family.upper()} · {compiler.path}", Colour.GREEN)
         compile_library(compiler, arguments.debug)
         verify_library()
     except (OSError, RuntimeError) as exc:
-        line("ERROR", str(exc), Colour.RED); return 1
+        line("ERROR", str(exc), Colour.RED);
+        return 1
     success("Native acceleration is ready for AIBrain.")
     return 0
 

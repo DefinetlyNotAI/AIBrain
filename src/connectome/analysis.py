@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 
 from .graph import ConnectomeGraph
-from ..native.wrapper.connectome import native
 from ..models.instrumented_backend import ActivationFrame
+from ..native.wrapper.connectome import native
 
 
 @dataclass(slots=True)
@@ -49,7 +49,8 @@ class ConnectomeAnalyzer:
         self._previous_mean = 0.0
         self.frames_seen = 0
         self._unsaved_frames = 0
-        self.model_path = model_path or Path(__file__).resolve().parents[2] / "analysis_model" / "connectome_autoencoder_v1.npz"
+        self.model_path = model_path or Path(__file__).resolve().parents[
+            2] / "analysis_model" / "connectome_autoencoder_v1.npz"
         self._load_model()
 
     def observe(self, frame: ActivationFrame, values: np.ndarray) -> AnalysisRecord:
@@ -64,7 +65,8 @@ class ConnectomeAnalyzer:
         active_ratio = float(np.count_nonzero(values > .1) / len(values))
         mean_delta = abs(float(values.mean()) - self._previous_mean)
         self._previous_mean = float(values.mean())
-        features = np.concatenate((distribution, np.array((active_ratio, mean_delta, float(values.max()), float(values.std())), dtype="f4")))
+        features = np.concatenate(
+            (distribution, np.array((active_ratio, mean_delta, float(values.max()), float(values.std())), dtype="f4")))
         encoded_pre = features @ self.encoder_weights + self.encoder_bias
         embedding = np.tanh(encoded_pre)
         decoded_pre = embedding @ self.decoder_weights + self.decoder_bias
@@ -144,14 +146,17 @@ class ConnectomeAnalyzer:
         regional = np.asarray([record.regional_activity for record in self.records], dtype="f4")
         region_means = regional.mean(axis=0)
         region_peaks = regional.max(axis=0)
-        key_events = sorted(self.records, key=lambda item: item.novelty + item.reconstruction_error * 3, reverse=True)[:24]
+        key_events = sorted(self.records, key=lambda item: item.novelty + item.reconstruction_error * 3, reverse=True)[
+            :24]
         top_region = self.graph.region_names[int(region_means.argmax())]
         return {
             "frames_processed": len(self.records),
             "neural_network": {
                 "architecture": f"{self.input_width} → {self.hidden_width} → {self.input_width} autoencoder",
-                "activation": "tanh encoder / sigmoid decoder", "training": "online gradient descent for each visual frame",
-                "learned_parameters": int(self.encoder_weights.size + self.encoder_bias.size + self.decoder_weights.size + self.decoder_bias.size),
+                "activation": "tanh encoder / sigmoid decoder",
+                "training": "online gradient descent for each visual frame",
+                "learned_parameters": int(
+                    self.encoder_weights.size + self.encoder_bias.size + self.decoder_weights.size + self.decoder_bias.size),
                 "lifetime_frames_seen": self.frames_seen,
                 "feature_calibration": "Region-density and temporal-change features remove fixed cluster size and global renderer-amplitude bias.",
             },
@@ -160,7 +165,8 @@ class ConnectomeAnalyzer:
                 "pattern_segments": self._segments(),
             },
             "regional_profile": [
-                {"region": name, "mean_activity": float(region_means[index]), "peak_activity": float(region_peaks[index])}
+                {"region": name, "mean_activity": float(region_means[index]),
+                 "peak_activity": float(region_peaks[index])}
                 for index, name in enumerate(self.graph.region_names)
             ],
             "key_events": [
@@ -175,8 +181,9 @@ class ConnectomeAnalyzer:
         groups: list[dict[str, object]] = []
         for record in self.records:
             if not groups or groups[-1]["dominant_region"] != record.dominant_region:
-                groups.append({"start_step": record.step, "end_step": record.step, "dominant_region": record.dominant_region,
-                               "frames": 1, "mean_novelty": record.novelty})
+                groups.append(
+                    {"start_step": record.step, "end_step": record.step, "dominant_region": record.dominant_region,
+                     "frames": 1, "mean_novelty": record.novelty})
                 continue
             group = groups[-1]
             frame_count = int(group["frames"])

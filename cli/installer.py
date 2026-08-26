@@ -7,9 +7,7 @@ and populate that virtual environment.
 from __future__ import annotations
 
 import argparse
-import os
 import re
-import shutil
 import subprocess
 import sys
 import urllib.error
@@ -22,13 +20,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import Color, color, command_preview, command_output_box, detail, error, header, info, relative_path, section, success, terminal_width, visible_trim, warning
-
+from src.utils.console_ui import Color, color, command_preview, command_output_box, detail, error, header, info, \
+    relative_path, section, success, terminal_width, visible_trim, warning
 
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
-
 
 VENV_DIR = ROOT / ".venv"
 
@@ -51,6 +48,7 @@ CUDA_WHEELS = (
     (12, 1, "cu121"),
     (11, 8, "cu118"),
 )
+
 
 @dataclass(frozen=True, slots=True)
 class GpuCapability:
@@ -163,13 +161,13 @@ def available_wheel(tag: str) -> bool:
 
 
 def select_wheel(
-    gpu: GpuCapability | None,
+        gpu: GpuCapability | None,
 ) -> tuple[str, str]:
     if gpu and gpu.cuda_version:
         for major, minor, tag in CUDA_WHEELS:
             if (
-                (major, minor) <= gpu.cuda_version
-                and available_wheel(tag)
+                    (major, minor) <= gpu.cuda_version
+                    and available_wheel(tag)
             ):
                 return (
                     tag,
@@ -211,7 +209,7 @@ def verify_python() -> bool:
 
 
 def print_gpu(
-    gpu: GpuCapability | None,
+        gpu: GpuCapability | None,
 ) -> None:
     if gpu is None:
         warning("NVIDIA CUDA capability was not detected.")
@@ -248,7 +246,7 @@ def create_environment() -> None:
 
 
 def install_dependencies(
-    python: str,
+        python: str,
 ) -> None:
     info("Updating Python package manager")
 
@@ -285,8 +283,8 @@ def install_dependencies(
 
 
 def install_llama(
-    python: str,
-    gpu: GpuCapability | None,
+        python: str,
+        gpu: GpuCapability | None,
 ) -> str:
     wheel_tag, description = select_wheel(gpu)
 
@@ -360,7 +358,7 @@ def install_llama(
 
 
 def verify_installation(
-    python: str,
+        python: str,
 ) -> None:
     info(
         "Running import and runtime verification"
@@ -387,8 +385,8 @@ def verify_installation(
 
 
 def completion_screen(
-    gpu: GpuCapability | None,
-    wheel_tag: str,
+        gpu: GpuCapability | None,
+        wheel_tag: str,
 ) -> None:
     width = terminal_width()
 
@@ -595,8 +593,8 @@ class BannerArgumentParser(
     argparse.ArgumentParser
 ):
     def print_help(
-        self,
-        file=None,
+            self,
+            file=None,
     ) -> None:
         print_help_banner()
 
@@ -688,4 +686,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         error("Installation cancelled by keyboard interrupt.")
         raise SystemExit(130)
-

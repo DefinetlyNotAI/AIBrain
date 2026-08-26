@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 
 import numpy as np
 
@@ -47,8 +46,8 @@ def build_connectome(model_key: str, quality: str = "Medium", cluster_spacing: f
         # Directed-ish neighbouring region bridges create activity paths.
         target_nodes = np.flatnonzero(region_ids == (region + 1) % len(REGIONS))
         if len(target_nodes):
-            edge_parts.append(np.column_stack((rng.choice(nodes, size=max(20, len(nodes)//18)),
-                                               rng.choice(target_nodes, size=max(20, len(nodes)//18)))))
+            edge_parts.append(np.column_stack((rng.choice(nodes, size=max(20, len(nodes) // 18)),
+                                               rng.choice(target_nodes, size=max(20, len(nodes) // 18)))))
     # Sparse axon-like long-range connections.
     edge_parts.append(rng.integers(0, n, size=(max(100, n // 30), 2)))
     edges = np.vstack(edge_parts).astype(np.int32, copy=False)

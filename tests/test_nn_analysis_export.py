@@ -24,7 +24,8 @@ class NNAnalysisExportTests(unittest.TestCase):
             region_names=REGIONS,
         )
         self.analyzer = ConnectomeAnalyzer(self.graph, hidden_width=4)
-        self.analyzer.observe(ActivationFrame(1, "hello", 1, ActivitySource.SIMULATION), np.array([.5, 0.], dtype=np.float32))
+        self.analyzer.observe(ActivationFrame(1, "hello", 1, ActivitySource.SIMULATION),
+                              np.array([.5, 0.], dtype=np.float32))
 
     def test_json_contains_compact_neural_analysis(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -52,7 +53,8 @@ class NNAnalysisExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "learned.npz"
             first = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
-            first.observe(ActivationFrame(2, "learn", 2, ActivitySource.SIMULATION), np.array([.3, .2], dtype=np.float32))
+            first.observe(ActivationFrame(2, "learn", 2, ActivitySource.SIMULATION),
+                          np.array([.3, .2], dtype=np.float32))
             first.save_model()
             second = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
 

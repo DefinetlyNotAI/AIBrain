@@ -85,7 +85,8 @@ class ChatPanel(QWidget):
         self.stats = QLabel("Ready · select an installed GGUF model")
         self.stats.setObjectName("muted")
         self.stats.setWordWrap(True)
-        self.stats.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self.stats.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         layout.addWidget(self.stats)
         self.input = QPlainTextEdit()
         self.input.setPlaceholderText("Message your local model…  (Ctrl+Enter to send)")
@@ -96,7 +97,8 @@ class ChatPanel(QWidget):
         self.stop = QPushButton("Stop")
         self.regenerate = QPushButton("Regenerate")
         self.infinite = QPushButton("∞ Inf")
-        self.infinite.setToolTip("Start an open-ended world/participant roleplay simulation using two local model instances")
+        self.infinite.setToolTip(
+            "Start an open-ended world/participant roleplay simulation using two local model instances")
         self.clear = QPushButton("Clear")
         self.stop.setEnabled(False)
         self.send.clicked.connect(self._send)
@@ -107,16 +109,42 @@ class ChatPanel(QWidget):
         for button in (self.send, self.stop, self.regenerate, self.infinite, self.clear): buttons.addWidget(button)
         layout.addLayout(buttons)
         advanced = QFormLayout()
-        self.temperature = QDoubleSpinBox(); self.temperature.setRange(0, 2); self.temperature.setSingleStep(.05); self.temperature.setValue(config.temperature)
-        self.top_p = QDoubleSpinBox(); self.top_p.setRange(.05, 1); self.top_p.setSingleStep(.05); self.top_p.setValue(config.top_p)
-        self.max_tokens = QSpinBox(); self.max_tokens.setRange(1, 8192); self.max_tokens.setValue(config.max_tokens)
-        self.context = QSpinBox(); self.context.setRange(512, 32768); self.context.setSingleStep(512); self.context.setValue(config.context_length)
-        self.gpu_layers = QSpinBox(); self.gpu_layers.setRange(-1, 200); self.gpu_layers.setValue(config.gpu_layers)
-        self.speed = QSlider(); self.speed.setOrientation(Qt.Orientation.Horizontal); self.speed.setRange(1, 10); self.speed.setValue(round(config.speed * 10))
-        self.speed_value = QLabel(); self.speed.valueChanged.connect(self._update_speed_label); self._update_speed_label(self.speed.value())
-        speed_row = QWidget(); speed_layout = QHBoxLayout(speed_row); speed_layout.setContentsMargins(0, 0, 0, 0); speed_layout.addWidget(self.speed); speed_layout.addWidget(self.speed_value)
-        advanced.addRow("Temperature", self.temperature); advanced.addRow("Top-p", self.top_p); advanced.addRow("Max tokens", self.max_tokens)
-        advanced.addRow("Context", self.context); advanced.addRow("GPU layers (-1 auto)", self.gpu_layers); advanced.addRow("Generation speed", speed_row)
+        self.temperature = QDoubleSpinBox();
+        self.temperature.setRange(0, 2);
+        self.temperature.setSingleStep(.05);
+        self.temperature.setValue(config.temperature)
+        self.top_p = QDoubleSpinBox();
+        self.top_p.setRange(.05, 1);
+        self.top_p.setSingleStep(.05);
+        self.top_p.setValue(config.top_p)
+        self.max_tokens = QSpinBox();
+        self.max_tokens.setRange(1, 8192);
+        self.max_tokens.setValue(config.max_tokens)
+        self.context = QSpinBox();
+        self.context.setRange(512, 32768);
+        self.context.setSingleStep(512);
+        self.context.setValue(config.context_length)
+        self.gpu_layers = QSpinBox();
+        self.gpu_layers.setRange(-1, 200);
+        self.gpu_layers.setValue(config.gpu_layers)
+        self.speed = QSlider();
+        self.speed.setOrientation(Qt.Orientation.Horizontal);
+        self.speed.setRange(1, 10);
+        self.speed.setValue(round(config.speed * 10))
+        self.speed_value = QLabel();
+        self.speed.valueChanged.connect(self._update_speed_label);
+        self._update_speed_label(self.speed.value())
+        speed_row = QWidget();
+        speed_layout = QHBoxLayout(speed_row);
+        speed_layout.setContentsMargins(0, 0, 0, 0);
+        speed_layout.addWidget(self.speed);
+        speed_layout.addWidget(self.speed_value)
+        advanced.addRow("Temperature", self.temperature);
+        advanced.addRow("Top-p", self.top_p);
+        advanced.addRow("Max tokens", self.max_tokens)
+        advanced.addRow("Context", self.context);
+        advanced.addRow("GPU layers (-1 auto)", self.gpu_layers);
+        advanced.addRow("Generation speed", speed_row)
         layout.addLayout(advanced)
 
     def _send(self) -> None:
@@ -131,7 +159,8 @@ class ChatPanel(QWidget):
         self.infiniteRequested.emit(seed)
 
     def config(self) -> GenerationConfig:
-        return GenerationConfig(self.temperature.value(), self.top_p.value(), self.max_tokens.value(), self.context.value(), self.gpu_layers.value(), self.speed.value() / 10)
+        return GenerationConfig(self.temperature.value(), self.top_p.value(), self.max_tokens.value(),
+                                self.context.value(), self.gpu_layers.value(), self.speed.value() / 10)
 
     def _update_speed_label(self, value: int) -> None:
         self.speed_value.setText(f"{value / 10:.1f}×")
@@ -156,9 +185,11 @@ class ChatPanel(QWidget):
         follow_output = self._follow_output
         bubble = MarkdownLabel(text)
         bubble.setWordWrap(True)
-        bubble.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
-        bubble.setObjectName("userBubble" if role == "user" else "worldBubble" if role == "world" else "assistantBubble")
-        self.messages_layout.insertWidget(self.messages_layout.count()-1, bubble)
+        bubble.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        bubble.setObjectName(
+            "userBubble" if role == "user" else "worldBubble" if role == "world" else "assistantBubble")
+        self.messages_layout.insertWidget(self.messages_layout.count() - 1, bubble)
         self._schedule_scroll_to_bottom(follow_output)
         return bubble
 
@@ -200,14 +231,18 @@ class ChatPanel(QWidget):
     def show_latest_playback(self) -> None:
         self.clear_latest_playback()
         controls = QWidget()
-        layout = QHBoxLayout(controls); layout.setContentsMargins(4, 1, 4, 5)
+        layout = QHBoxLayout(controls);
+        layout.setContentsMargins(4, 1, 4, 5)
         previous = QPushButton("◀ Token")
         replay = QPushButton("▶ Replay neurons")
         next_token = QPushButton("Token ▶")
         previous.clicked.connect(self.playbackPreviousRequested)
         replay.clicked.connect(self.playbackRequested)
         next_token.clicked.connect(self.playbackNextRequested)
-        layout.addWidget(previous); layout.addWidget(replay); layout.addWidget(next_token); layout.addStretch(1)
+        layout.addWidget(previous);
+        layout.addWidget(replay);
+        layout.addWidget(next_token);
+        layout.addStretch(1)
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, controls)
         self._playback_controls = controls
 
@@ -218,4 +253,8 @@ class ChatPanel(QWidget):
             if item.widget(): item.widget().deleteLater()
 
     def generating(self, running: bool) -> None:
-        self.send.setEnabled(not running); self.stop.setEnabled(running); self.regenerate.setEnabled(not running); self.infinite.setEnabled(not running); self.models.setEnabled(not running)
+        self.send.setEnabled(not running);
+        self.stop.setEnabled(running);
+        self.regenerate.setEnabled(not running);
+        self.infinite.setEnabled(not running);
+        self.models.setEnabled(not running)

@@ -9,7 +9,6 @@ from PySide6.QtCore import QObject, Signal, Slot
 from .instrumented_backend import ActivationFrame, ActivitySource
 from .llama_backend import GenerationConfig, LlamaBackend
 
-
 WORLD_SYSTEM = """You are the WORLD DIRECTOR for an open-ended, fictional embodied simulation.
 Write only the external world: sensory events, people, places, consequences, and continuity. Never write the
 participant's thoughts, dialogue, choices, or first-person actions. You know this is a simulation and should
@@ -46,7 +45,8 @@ class InfiniteSimulationWorker(QObject):
         started = monotonic()
         participant_tokens = 0
         turn = 0
-        world_history = [{"role": "system", "content": WORLD_SYSTEM}, {"role": "user", "content": f"[SIMULATION DIRECTION]\n{seed}\n[END SIMULATION DIRECTION]\nWrite the opening WORLD EVENT only."}]
+        world_history = [{"role": "system", "content": WORLD_SYSTEM}, {"role": "user",
+                                                                       "content": f"[SIMULATION DIRECTION]\n{seed}\n[END SIMULATION DIRECTION]\nWrite the opening WORLD EVENT only."}]
         participant_history = [{"role": "system", "content": PARTICIPANT_SYSTEM}]
         try:
             # Separate backend objects intentionally deploy two copies of the
@@ -61,16 +61,19 @@ class InfiniteSimulationWorker(QObject):
                 if not world_text:
                     raise RuntimeError("World model returned no text")
                 world_history.append({"role": "assistant", "content": world_text})
-                participant_history.append({"role": "user", "content": f"[WORLD EVENT]\n{world_text}\n[END WORLD EVENT]\nWrite the PARTICIPANT response only."})
+                participant_history.append({"role": "user",
+                                            "content": f"[WORLD EVENT]\n{world_text}\n[END WORLD EVENT]\nWrite the PARTICIPANT response only."})
 
-                participant_text, token_count = self._generate_participant(participant_history, config, turn, participant_tokens)
+                participant_text, token_count = self._generate_participant(participant_history, config, turn,
+                                                                           participant_tokens)
                 participant_tokens += token_count
                 if self._cancelled.is_set():
                     break
                 if not participant_text:
                     raise RuntimeError("Participant model returned no text")
                 participant_history.append({"role": "assistant", "content": participant_text})
-                world_history.append({"role": "user", "content": f"[PARTICIPANT RESPONSE]\n{participant_text}\n[END PARTICIPANT RESPONSE]\nWrite the next WORLD EVENT only."})
+                world_history.append({"role": "user",
+                                      "content": f"[PARTICIPANT RESPONSE]\n{participant_text}\n[END PARTICIPANT RESPONSE]\nWrite the next WORLD EVENT only."})
                 world_history = self._trim(world_history)
                 participant_history = self._trim(participant_history)
             self.finished.emit({"turns": turn, "participant_tokens": participant_tokens,
@@ -81,7 +84,8 @@ class InfiniteSimulationWorker(QObject):
             self.world.unload()
             self.participant.unload()
 
-    def _generate(self, role: str, backend: LlamaBackend, messages: list[dict[str, str]], config: GenerationConfig, turn: int) -> str:
+    def _generate(self, role: str, backend: LlamaBackend, messages: list[dict[str, str]], config: GenerationConfig,
+                  turn: int) -> str:
         self.turnStarted.emit(role, turn)
         chunks: list[str] = []
         for text in backend.stream_chat(messages, config):
@@ -93,7 +97,8 @@ class InfiniteSimulationWorker(QObject):
         self.turnFinished.emit(role, output, turn)
         return output
 
-    def _generate_participant(self, messages: list[dict[str, str]], config: GenerationConfig, turn: int, step_offset: int) -> tuple[str, int]:
+    def _generate_participant(self, messages: list[dict[str, str]], config: GenerationConfig, turn: int,
+                              step_offset: int) -> tuple[str, int]:
         self.turnStarted.emit("participant", turn)
         chunks: list[str] = []
         token_count = 0
@@ -103,7 +108,8 @@ class InfiniteSimulationWorker(QObject):
             chunks.append(text)
             token_ids = self.participant.tokenize(text)
             token_count += max(1, len(token_ids))
-            frame = ActivationFrame(token_ids[-1] if token_ids else None, text, step_offset + token_count, ActivitySource.SIMULATION)
+            frame = ActivationFrame(token_ids[-1] if token_ids else None, text, step_offset + token_count,
+                                    ActivitySource.SIMULATION)
             self.token.emit("participant", turn, text, frame)
         output = "".join(chunks)
         self.turnFinished.emit("participant", output, turn)

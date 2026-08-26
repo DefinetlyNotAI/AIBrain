@@ -20,6 +20,8 @@ in vec3 in_position; in float in_region; in float in_activity;
 uniform mat4 u_mvp; out float region; out float activity;
 void main() { gl_Position = u_mvp * vec4(in_position, 1.0); gl_PointSize = 1.6 + in_activity * 8.0; region = in_region; activity = in_activity; }
 """
+
+
 def _shader_palette() -> str:
     colours = tuple(CLUSTER_COLOR_MAP.values())
     clauses = []
@@ -73,10 +75,13 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.show_neuron_borders = True
         self.neuron_border_width = .12
         self.setMinimumSize(420, 350)
-        self.timer = QTimer(self); self.timer.timeout.connect(self._tick); self.timer.start(16)
+        self.timer = QTimer(self);
+        self.timer.timeout.connect(self._tick);
+        self.timer.start(16)
 
     def _select_render_edges(self) -> np.ndarray:
-        target = 20_000 if len(self.graph.positions) <= 5_000 else 50_000 if len(self.graph.positions) <= 12_000 else 110_000
+        target = 20_000 if len(self.graph.positions) <= 5_000 else 50_000 if len(
+            self.graph.positions) <= 12_000 else 110_000
         return self.graph.edges[::max(1, len(self.graph.edges) // target)]
 
     def initializeGL(self) -> None:
@@ -123,10 +128,16 @@ class ConnectomeRenderer(QOpenGLWidget):
         edge_position_buffer = self._ctx.buffer(edge_positions.tobytes())
         edge_region_buffer = self._ctx.buffer(edge_regions.tobytes())
         self._edge_activity_buffer = self._ctx.buffer(reserve=len(edge_positions) * 4, dynamic=True)
-        self._point_program = self._ctx.program(vertex_shader=POINT_VERTEX_SHADER, fragment_shader=POINT_FRAGMENT_SHADER)
+        self._point_program = self._ctx.program(vertex_shader=POINT_VERTEX_SHADER,
+                                                fragment_shader=POINT_FRAGMENT_SHADER)
         self._edge_program = self._ctx.program(vertex_shader=EDGE_VERTEX_SHADER, fragment_shader=EDGE_FRAGMENT_SHADER)
-        self._point_vao = self._ctx.vertex_array(self._point_program, [(position_buffer, "3f", "in_position"), (region_buffer, "1f", "in_region"), (self._node_activity_buffer, "1f", "in_activity")])
-        self._edge_vao = self._ctx.vertex_array(self._edge_program, [(edge_position_buffer, "3f", "in_position"), (edge_region_buffer, "1f", "in_region"), (self._edge_activity_buffer, "1f", "in_activity")])
+        self._point_vao = self._ctx.vertex_array(self._point_program, [(position_buffer, "3f", "in_position"),
+                                                                       (region_buffer, "1f", "in_region"),
+                                                                       (self._node_activity_buffer, "1f",
+                                                                        "in_activity")])
+        self._edge_vao = self._ctx.vertex_array(self._edge_program, [(edge_position_buffer, "3f", "in_position"),
+                                                                     (edge_region_buffer, "1f", "in_region"),
+                                                                     (self._edge_activity_buffer, "1f", "in_activity")])
 
     def resizeGL(self, width: int, height: int) -> None:
         if self._ctx is not None:
@@ -135,7 +146,8 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def _tick(self) -> None:
         if not self.paused:
-            self.field.decay(); self.update()
+            self.field.decay();
+            self.update()
 
     def _mvp(self) -> np.ndarray:
         aspect = max(self.width(), 1) / max(self.height(), 1)
@@ -155,33 +167,45 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def paintGL(self) -> None:
         if self._ctx is None or self._gpu_error:
-            self._paint_fallback(); return
+            self._paint_fallback();
+            return
         try:
             self._framebuffer = self._ctx.detect_framebuffer()
             self._framebuffer.use()
             ratio = self.devicePixelRatioF()
             self._ctx.viewport = (0, 0, max(1, int(self.width() * ratio)), max(1, int(self.height() * ratio)))
             matrix = self._mvp().tobytes()
-            self._upload_activity(); self._ctx.clear(.025, .063, .090, 1.0, depth=1.0)
-            self._edge_program["u_mvp"].write(matrix); self._point_program["u_mvp"].write(matrix)
+            self._upload_activity();
+            self._ctx.clear(.025, .063, .090, 1.0, depth=1.0)
+            self._edge_program["u_mvp"].write(matrix);
+            self._point_program["u_mvp"].write(matrix)
             self._point_program["u_border_width"].value = self.neuron_border_width if self.show_neuron_borders else 0.0
-            self._edge_vao.render(self._moderngl.LINES); self._point_vao.render(self._moderngl.POINTS)
+            self._edge_vao.render(self._moderngl.LINES);
+            self._point_vao.render(self._moderngl.POINTS)
         except Exception as exc:
-            self._gpu_error = str(exc); LOG.exception("ModernGL frame failed; using fallback")
-            self.backendChanged.emit("GPU frame failed — reduced fallback renderer"); self._paint_fallback()
+            self._gpu_error = str(exc);
+            LOG.exception("ModernGL frame failed; using fallback")
+            self.backendChanged.emit("GPU frame failed — reduced fallback renderer");
+            self._paint_fallback()
 
     def _paint_fallback(self) -> None:
-        painter = QPainter(self); painter.fillRect(self.rect(), QColor("#071018"))
-        points = self._project_for_pick(); stride = max(1, len(points) // 3000)
+        painter = QPainter(self);
+        painter.fillRect(self.rect(), QColor("#071018"))
+        points = self._project_for_pick();
+        stride = max(1, len(points) // 3000)
         for point, activity, region in zip(points[::stride], self.field.values[::stride], self.graph.regions[::stride]):
             colour = QColor(CLUSTER_COLOR_MAP[self.graph.region_names[int(region)]])
             colour.setAlpha(int(155 + float(activity) * 100))
-            painter.setPen(colour); painter.drawPoint(QPointF(*point))
+            painter.setPen(colour);
+            painter.drawPoint(QPointF(*point))
         painter.end()
 
     def _project_for_pick(self) -> np.ndarray:
-        p = self.graph.positions; cy, sy, cp, sp = np.cos(self.yaw), np.sin(self.yaw), np.cos(self.pitch), np.sin(self.pitch)
-        x = p[:, 0] * cy - p[:, 2] * sy; z = p[:, 0] * sy + p[:, 2] * cy; y = p[:, 1] * cp - z * sp
+        p = self.graph.positions;
+        cy, sy, cp, sp = np.cos(self.yaw), np.sin(self.yaw), np.cos(self.pitch), np.sin(self.pitch)
+        x = p[:, 0] * cy - p[:, 2] * sy;
+        z = p[:, 0] * sy + p[:, 2] * cy;
+        y = p[:, 1] * cp - z * sp
         scale = min(self.width(), self.height()) / (32 * self.zoom)
         return np.column_stack((self.width() / 2 + x * scale, self.height() / 2 - y * scale))
 
@@ -190,22 +214,28 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._last_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            delta = event.position() - self._last_pos; self.yaw += delta.x() * .008
-            self.pitch = float(np.clip(self.pitch + delta.y() * .006, -1.3, 1.3)); self._last_pos = event.position(); self.update()
+            delta = event.position() - self._last_pos;
+            self.yaw += delta.x() * .008
+            self.pitch = float(np.clip(self.pitch + delta.y() * .006, -1.3, 1.3));
+            self._last_pos = event.position();
+            self.update()
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._last_pos is not None and (event.position() - self._last_pos).manhattanLength() < 5:
-            points = self._project_for_pick(); click = np.array((event.position().x(), event.position().y()))
+            points = self._project_for_pick();
+            click = np.array((event.position().x(), event.position().y()))
             self.nodeSelected.emit(int(np.argmin(np.sum((points - click) ** 2, axis=1))))
         self._last_pos = None
 
     def wheelEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         # Smaller zoom is closer. 0.025 gives ~40x closer inspection than
         # the default view while retaining a finite, numerically stable scale.
-        self.zoom = float(np.clip(self.zoom * (.82 if event.angleDelta().y() > 0 else 1.22), .025, 6.0)); self.update()
+        self.zoom = float(np.clip(self.zoom * (.82 if event.angleDelta().y() > 0 else 1.22), .025, 6.0));
+        self.update()
 
     def reset_camera(self) -> None:
-        self.yaw, self.pitch, self.zoom = .25, -.2, 1.0; self.update()
+        self.yaw, self.pitch, self.zoom = .25, -.2, 1.0;
+        self.update()
 
     def set_neuron_borders(self, visible: bool, width: float) -> None:
         self.show_neuron_borders = visible

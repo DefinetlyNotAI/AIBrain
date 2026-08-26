@@ -13,4 +13,3 @@ class MarkdownRenderingTests(unittest.TestCase):
         self.assertIn("<code>code</code>", rendered)
         self.assertIn('href="https://example.com"', rendered)
         self.assertIn("&lt;tag&gt;", rendered)
-

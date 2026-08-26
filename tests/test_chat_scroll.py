@@ -11,4 +11,3 @@ class ChatScrollTests(unittest.TestCase):
         self.assertTrue(ChatPanel._is_at_bottom(100, 100))
         self.assertTrue(ChatPanel._is_at_bottom(98, 100))
         self.assertFalse(ChatPanel._is_at_bottom(97, 100))
-

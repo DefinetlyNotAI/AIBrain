@@ -10,7 +10,8 @@ from pathlib import Path
 class OneLineFormatter(logging.Formatter):
     """Compact structured logs that never wrap or inject terminal control text."""
 
-    _COLOURS = {logging.DEBUG: "\x1b[38;5;245m", logging.INFO: "\x1b[38;5;45m", logging.WARNING: "\x1b[38;5;220m", logging.ERROR: "\x1b[38;5;203m", logging.CRITICAL: "\x1b[1;38;5;196m"}
+    _COLOURS = {logging.DEBUG: "\x1b[38;5;245m", logging.INFO: "\x1b[38;5;45m", logging.WARNING: "\x1b[38;5;220m",
+                logging.ERROR: "\x1b[38;5;203m", logging.CRITICAL: "\x1b[1;38;5;196m"}
     _RESET = "\x1b[0m"
 
     def __init__(self, *, colour: bool, terminal_width: bool) -> None:

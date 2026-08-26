@@ -10,7 +10,8 @@ from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
 
 
-def export_nn_analysis_plus(path: Path, graph: ConnectomeGraph, analyzer: ConnectomeAnalyzer, conversation: list[dict[str, object]]) -> None:
+def export_nn_analysis_plus(path: Path, graph: ConnectomeGraph, analyzer: ConnectomeAnalyzer,
+                            conversation: list[dict[str, object]]) -> None:
     """Export compact neural findings, never massive per-neuron frame dumps."""
     payload = {
         "schema": "aibrain.nn-analysis-plus.v2",

@@ -4,7 +4,7 @@ import json
 import logging
 import struct
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .model_info import ModelInfo
 
@@ -67,8 +67,10 @@ class OllamaDiscovery:
         validation_error = self._validate_gguf(blob, expected_size) if blob else "Model layer blob is missing"
         return ModelInfo(
             name=name, tag=tag, blob_path=blob, family=family,
-            parameter_size=str(details.get("parameter_size") or config.get("parameter_size") or self._size_from_tag(tag)),
-            quantization=str(details.get("quantization_level") or config.get("quantization") or "GGUF (manifest does not specify quantization)"),
+            parameter_size=str(
+                details.get("parameter_size") or config.get("parameter_size") or self._size_from_tag(tag)),
+            quantization=str(details.get("quantization_level") or config.get(
+                "quantization") or "GGUF (manifest does not specify quantization)"),
             size_bytes=size, available=validation_error is None,
             error=validation_error,
         )

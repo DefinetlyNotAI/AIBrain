@@ -37,7 +37,8 @@ class GenerationWorker(QObject):
                 normal_interval = normal_interval * .8 + (now - previous_token_at) * .2
                 token_ids = self.backend.tokenize(text)
                 generated_tokens += max(1, len(token_ids))
-                frame = ActivationFrame(token_ids[-1] if token_ids else None, text, generated_tokens, ActivitySource.SIMULATION)
+                frame = ActivationFrame(token_ids[-1] if token_ids else None, text, generated_tokens,
+                                        ActivitySource.SIMULATION)
                 self.token.emit(text, frame)
                 if config.speed < 1.0:
                     self._cancelled.wait(max(0.0, normal_interval * (1.0 / config.speed - 1.0)))

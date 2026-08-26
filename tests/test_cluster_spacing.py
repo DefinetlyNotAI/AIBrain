@@ -15,5 +15,5 @@ class ClusterSpacingTests(unittest.TestCase):
 
         self.assertTrue(np.array_equal(compact.regions, spread.regions))
         self.assertFalse(np.allclose(compact.positions, spread.positions))
-        self.assertGreater(float(np.linalg.norm(spread.positions.mean(axis=0))), float(np.linalg.norm(compact.positions.mean(axis=0))))
-
+        self.assertGreater(float(np.linalg.norm(spread.positions.mean(axis=0))),
+                           float(np.linalg.norm(compact.positions.mean(axis=0))))

@@ -16,7 +16,6 @@ if str(ROOT) not in sys.path:
 from src.utils.console_ui import command, error, header, section, success
 from src.utils.gpu import set_windows_executable_gpu_preference
 
-
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
 # Nuitka already bundles msvcp140.dll from the Python/PySide dependency graph.
@@ -47,7 +46,8 @@ def build(timestamp: str | None = None) -> Path:
     command_line = [
         str(VENV_PYTHON), "-m", "nuitka", "--standalone", "--assume-yes-for-downloads", "--enable-plugin=pyside6",
         "--windows-console-mode=disable", "--output-filename=AIBrain.exe", f"--output-dir={build_root}",
-        "--include-package=src", f"--include-data-files={ROOT / 'dll' / 'aibrain_connectome.dll'}=dll/aibrain_connectome.dll", str(target),
+        "--include-package=src",
+        f"--include-data-files={ROOT / 'dll' / 'aibrain_connectome.dll'}=dll/aibrain_connectome.dll", str(target),
     ]
     for runtime in runtime_dlls():
         command_line.insert(-1, f"--include-data-files={runtime}={runtime.name}")
