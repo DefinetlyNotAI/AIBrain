@@ -412,10 +412,11 @@ def available_wheel(tag: str) -> bool:
     info(f"Checking wheel availability: {color(tag, Color.BOLD)}")
 
     try:
-        with urllib.request.urlopen(
+        request = urllib.request.Request(
             f"{WHEEL_ROOT}/{tag}/",
-            timeout=10,
-        ) as response:
+            headers={"User-Agent": "AIBrain-installer/1"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
             return 200 <= response.status < 300
 
     except (urllib.error.URLError, TimeoutError):
