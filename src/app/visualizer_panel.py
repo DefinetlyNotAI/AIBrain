@@ -85,7 +85,7 @@ class VisualizerPanel(QWidget):
         self.border_width.setValue(float(settings.value("neuron_border_width", .12))); self.border_width.setToolTip("Neuron outline width")
         self.border_width.valueChanged.connect(lambda _: self._set_neuron_borders(self.neuron_borders.isChecked()))
         self.pause = QPushButton("Pause"); self.pause.clicked.connect(self._toggle_pause)
-        self.analysis = QPushButton("NN Analysis+"); self.analysis.setToolTip("Export the full conversation and every recorded visual brain-signal frame")
+        self.analysis = QPushButton("NN Analysis+"); self.analysis.setToolTip("Analyze every recorded visual frame and export compact neural-network findings")
         self.analysis.clicked.connect(self._run_nn_analysis_plus)
         reset = QPushButton("Reset view"); reset.clicked.connect(lambda: self.renderer.reset_camera())
         for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.neuron_borders, self.border_width, self.analysis, self.pause, reset): header.addWidget(widget)

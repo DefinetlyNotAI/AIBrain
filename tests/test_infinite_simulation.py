@@ -18,7 +18,7 @@ class FakeBackend:
         self.loaded.append(path)
 
     def stream_chat(self, messages: list[dict[str, str]], _config: GenerationConfig):  # type: ignore[no-untyped-def]
-        self.calls.append(messages)
+        self.calls.append([dict(message) for message in messages])
         yield from self.chunks
 
     def tokenize(self, text: str) -> list[int]:
@@ -56,15 +56,21 @@ class InfiniteSimulationContextTests(unittest.TestCase):
         def observe(role: str, _turn: int, _text: str, frame: object) -> None:
             if role == "participant":
                 frames.append(frame)
+
+        def stop_after_first_exchange(role: str, turn: int) -> None:
+            if role == "world" and turn == 2:
                 worker.cancel()
 
         worker.token.connect(observe)
+        worker.turnStarted.connect(stop_after_first_exchange)
         worker.finished.connect(finished.append)
         worker.run("A doorway", GenerationConfig(), Path("model.gguf"))
 
         self.assertEqual(world.loaded, [Path("model.gguf")])
         self.assertEqual(participant.loaded, [Path("model.gguf")])
         self.assertIn("[WORLD EVENT]", participant.calls[0][-1]["content"])
+        self.assertIn("[PARTICIPANT RESPONSE]", world.calls[1][-1]["content"])
+        self.assertNotIn("[WORLD EVENT]", world.calls[1][-1]["content"])
         self.assertEqual(frames[0].step, 1)
         self.assertTrue(finished[0]["cancelled"])
         self.assertTrue(world.unloaded and participant.unloaded)
