@@ -19,6 +19,7 @@ jobs:
   publish:
     name: Publish docs folder
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -26,27 +27,107 @@ jobs:
       - name: Publish Markdown to the repository wiki
         env:
           WIKI_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
+
         run: |
           set -euo pipefail
+
           git clone "$WIKI_REMOTE" wiki
           rsync -a --delete --exclude '.git' docs/ wiki/
           cd wiki
-          
-          # Fix internal links: strip .md and change %20 to hyphens
-          find . -type f -name "*.md" | while read -r file; do
-            # 1. Matches text like [Name](Some%20File.md) and makes it [Name](Some%20File)
-            sed -i -E 's/(\]\([^)]+)\.md\)/\1)/g' "$file"
-          
-            # 2. Replaces %20 with a hyphen ONLY inside the markdown links destination parenthesis
-            sed -i -E ':loop; s/(\]\([^)]*)%20([^)]*\))/\1-\2/g; t loop' "$file"
-          done
+
+          # Convert repository Markdown links into GitHub Wiki links.
+          #
+          # Examples:
+          #   Getting%20Started.md
+          #     -> Getting-Started
+          #
+          #   Getting%20Started.md#GPU%20Acceleration
+          #     -> Getting-Started#gpu-acceleration
+          #
+          #   #Configuration%20Options
+          #     -> #configuration-options
+          #
+          # External links are left untouched.
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import urllib.parse
+
+
+          MARKDOWN_LINK_RE = re.compile(
+              r'(\[[^\]]*\]\()([^)]+)(\))'
+          )
+
+
+          def wiki_anchor(fragment: str) -> str:
+              """Convert a Markdown heading fragment to a GitHub-style anchor."""
+              fragment = urllib.parse.unquote(fragment)
+              fragment = fragment.strip().lower()
+
+              # Remove punctuation while retaining letters, numbers,
+              # whitespace, underscores, and hyphens.
+              fragment = re.sub(r"[^\w\s-]", "", fragment)
+
+              # GitHub-style heading separators.
+              fragment = re.sub(r"[\s_-]+", "-", fragment)
+
+              return fragment.strip("-")
+
+
+          def fix_target(target: str) -> str:
+              """Convert an internal Markdown target to a GitHub Wiki target."""
+              target = target.strip()
+
+              # Do not touch absolute/external URI schemes such as:
+              # https:, http:, mailto:, ftp:, etc.
+              if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target):
+                  return target
+
+              page, separator, fragment = target.partition("#")
+
+              if page:
+                  # Decode %20 and other percent-encoded path characters.
+                  page = urllib.parse.unquote(page)
+
+                  # Wiki page links do not use the .md suffix.
+                  if page.lower().endswith(".md"):
+                      page = page[:-3]
+
+                  # GitHub Wiki page names conventionally use hyphens.
+                  page = page.replace(" ", "-")
+
+              if separator:
+                  return f"{page}#{wiki_anchor(fragment)}"
+
+              return page
+
+
+          for path in Path(".").rglob("*.md"):
+              text = path.read_text(encoding="utf-8")
+
+              fixed = MARKDOWN_LINK_RE.sub(
+                  lambda match: (
+                      match.group(1)
+                      + fix_target(match.group(2))
+                      + match.group(3)
+                  ),
+                  text,
+              )
+
+              if fixed != text:
+                  path.write_text(fixed, encoding="utf-8")
+          PY
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+
+          git add --all
+
+          if git diff --cached --quiet; then
             echo "Wiki already matches docs/."
             exit 0
           fi
-          git add --all
+
           git commit -m "docs: publish repository documentation"
           git push origin HEAD:master
