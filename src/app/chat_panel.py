@@ -17,6 +17,7 @@ class ChatPanel(QWidget):
     playbackRequested = Signal()
     playbackPreviousRequested = Signal()
     playbackNextRequested = Signal()
+    infiniteRequested = Signal(str)
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
@@ -56,13 +57,16 @@ class ChatPanel(QWidget):
         self.send = QPushButton("Send")
         self.stop = QPushButton("Stop")
         self.regenerate = QPushButton("Regenerate")
+        self.infinite = QPushButton("∞ Inf")
+        self.infinite.setToolTip("Start an open-ended world/participant roleplay simulation using two local model instances")
         self.clear = QPushButton("Clear")
         self.stop.setEnabled(False)
         self.send.clicked.connect(self._send)
         self.stop.clicked.connect(self.stopRequested)
         self.regenerate.clicked.connect(self.regenerateRequested)
+        self.infinite.clicked.connect(self._start_infinite)
         self.clear.clicked.connect(self.clearRequested)
-        for button in (self.send, self.stop, self.regenerate, self.clear): buttons.addWidget(button)
+        for button in (self.send, self.stop, self.regenerate, self.infinite, self.clear): buttons.addWidget(button)
         layout.addLayout(buttons)
         advanced = QFormLayout()
         self.temperature = QDoubleSpinBox(); self.temperature.setRange(0, 2); self.temperature.setSingleStep(.05); self.temperature.setValue(config.temperature)
@@ -82,6 +86,11 @@ class ChatPanel(QWidget):
         if text:
             self.input.clear()
             self.sendRequested.emit(text)
+
+    def _start_infinite(self) -> None:
+        seed = self.input.toPlainText().strip() or "Begin an ordinary day in a new embodied world."
+        self.input.clear()
+        self.infiniteRequested.emit(seed)
 
     def config(self) -> GenerationConfig:
         return GenerationConfig(self.temperature.value(), self.top_p.value(), self.max_tokens.value(), self.context.value(), self.gpu_layers.value(), self.speed.value() / 10)
@@ -109,7 +118,7 @@ class ChatPanel(QWidget):
         bubble = QLabel(text)
         bubble.setWordWrap(True)
         bubble.setTextInteractionFlags(bubble.textInteractionFlags())
-        bubble.setObjectName("userBubble" if role == "user" else "assistantBubble")
+        bubble.setObjectName("userBubble" if role == "user" else "worldBubble" if role == "world" else "assistantBubble")
         self.messages_layout.insertWidget(self.messages_layout.count()-1, bubble)
         self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum())
         return bubble
@@ -142,4 +151,4 @@ class ChatPanel(QWidget):
             if item.widget(): item.widget().deleteLater()
 
     def generating(self, running: bool) -> None:
-        self.send.setEnabled(not running); self.stop.setEnabled(running); self.regenerate.setEnabled(not running); self.models.setEnabled(not running)
+        self.send.setEnabled(not running); self.stop.setEnabled(running); self.regenerate.setEnabled(not running); self.infinite.setEnabled(not running); self.models.setEnabled(not running)

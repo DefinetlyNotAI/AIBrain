@@ -4,6 +4,10 @@
 
 Choose a validated model in the selector, write a text prompt, and press **Send**. The model streams its response into the chat pane while the connectome responds to each received token.
 
+### Infinite simulation
+
+Press **∞ Inf** to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the **World** produces the setting and events; the **Participant** responds from inside that fictional setting. The UI clearly labels this as a simulation—the model is generating roleplay text, not a real sentient being. The session continues until **Stop** is pressed, while each model keeps only a bounded recent context window so it can run without unbounded prompt growth. The right-side connectome renders participant tokens only.
+
 - **Stop** requests cancellation after the current native generation step.
 - **Escape** does the same from anywhere in the application.
 - **Regenerate** removes the latest assistant answer and resends its preceding user prompt.

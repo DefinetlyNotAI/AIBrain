@@ -11,6 +11,7 @@ from .chat_panel import ChatPanel
 from .settings import load_generation_settings, save_generation_settings
 from .visualizer_panel import VisualizerPanel
 from ..models.generation_worker import GenerationWorker
+from ..models.infinite_simulation import InfiniteSimulationWorker
 from ..models.llama_backend import LlamaBackend
 from ..models.model_info import ModelInfo
 from ..models.ollama_discovery import OllamaDiscovery
@@ -29,6 +30,7 @@ QLabel#overlay { background: #0c1e2a; border: 1px solid #193746; border-radius: 
 QLabel#userBubble, QLabel#assistantBubble { border-radius: 10px; padding: 10px; margin: 3px 0; }
 QLabel#userBubble { background: #143e50; color: #e4f8ff; }
 QLabel#assistantBubble { background: #10212d; border: 1px solid #1a3645; }
+QLabel#worldBubble { background: #28203b; border: 1px solid #5c4b86; color: #e7ddff; border-radius: 10px; padding: 10px; margin: 3px 0; }
 QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit { background: #0d202b; border: 1px solid #264553; border-radius: 6px; padding: 6px; color: #e1eef3; }
 QPushButton { background: #15536b; border: none; border-radius: 6px; padding: 7px 12px; color: white; font-weight: 600; }
 QPushButton:hover { background: #1b6d8b; } QPushButton:disabled { background: #26353b; color: #82939a; }
@@ -40,6 +42,7 @@ class MainWindow(QMainWindow):
     startGeneration = Signal(object, object, object)
     unloadModel = Signal()
     validateModels = Signal(object)
+    startInfiniteSimulation = Signal(object, object, object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -52,6 +55,8 @@ class MainWindow(QMainWindow):
         self._assistant_bubble = None
         self._awaiting_first_token = False
         self._started = 0.0
+        self._simulation_bubbles: dict[str, object] = {}
+        self.simulation_transcript: list[dict[str, object]] = []
         self._setup_worker()
         self.chat = ChatPanel(self.config)
         self.visualizer = VisualizerPanel()
@@ -62,6 +67,7 @@ class MainWindow(QMainWindow):
         self.chat.stopRequested.connect(self.stop)
         self.chat.regenerateRequested.connect(self.regenerate)
         self.chat.clearRequested.connect(self.clear)
+        self.chat.infiniteRequested.connect(self.start_infinite_simulation)
         self.chat.modelChanged.connect(self.select_model)
         self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
@@ -82,6 +88,16 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self._finished)
         self.worker.failed.connect(self._failed)
         self.worker_thread.start()
+        self.simulation_thread = QThread(self)
+        self.simulation_worker = InfiniteSimulationWorker()
+        self.simulation_worker.moveToThread(self.simulation_thread)
+        self.startInfiniteSimulation.connect(self.simulation_worker.run)
+        self.simulation_worker.turnStarted.connect(self._simulation_turn_started)
+        self.simulation_worker.token.connect(self._simulation_token)
+        self.simulation_worker.turnFinished.connect(self._simulation_turn_finished)
+        self.simulation_worker.finished.connect(self._simulation_finished)
+        self.simulation_worker.failed.connect(self._simulation_failed)
+        self.simulation_thread.start()
 
     def _discover(self) -> None:
         models = OllamaDiscovery().discover()
@@ -113,6 +129,7 @@ class MainWindow(QMainWindow):
         if model == self.current_model:
             return
         self.unloadModel.emit()
+        self.simulation_worker.unload()
         self.current_model = model
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
@@ -143,7 +160,51 @@ class MainWindow(QMainWindow):
     def stop(self) -> None:
         # Direct flag write is safe and necessary while worker is iterating blocking native code.
         self.worker.cancel()
+        self.simulation_worker.cancel()
         self.chat.stats.setText("Stopping after the current generated token…")
+
+    def start_infinite_simulation(self, seed: str) -> None:
+        if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
+            QMessageBox.warning(self, "Model unavailable", "Choose an available GGUF model discovered from Ollama first.")
+            return
+        self.config = self.chat.config(); save_generation_settings(self.config)
+        self.unloadModel.emit()
+        self.visualizer.begin_recording()
+        self.simulation_transcript = [{"role": "user", "content": seed, "turn": 0}]
+        self.chat.clear_latest_playback(); self.chat.add_message("user", seed)
+        self._simulation_bubbles.clear(); self.chat.generating(True)
+        self.chat.stats.setText("∞ Simulation loading two local model instances; the right pane is the participant brain.")
+        self.startInfiniteSimulation.emit(seed, self.config, self.current_model.blob_path)
+
+    def _simulation_turn_started(self, role: str, turn: int) -> None:
+        label = "World" if role == "world" else "Participant"
+        bubble = self.chat.add_message(role, f"{label} {turn}: ")
+        self._simulation_bubbles[role] = bubble
+
+    def _simulation_token(self, role: str, text: str, frame: object) -> None:
+        bubble = self._simulation_bubbles.get(role)
+        if bubble is not None:
+            bubble.setText(bubble.text() + text)
+            self.chat.scroll.verticalScrollBar().setValue(self.chat.scroll.verticalScrollBar().maximum())
+        if role == "participant" and frame is not None:
+            self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
+
+    def _simulation_turn_finished(self, role: str, text: str, turn: int) -> None:
+        if text:
+            self.simulation_transcript.append({"role": role, "content": text, "turn": turn})
+
+    def _simulation_finished(self, stats: dict[str, object]) -> None:
+        seconds = float(stats["seconds"])
+        turns = int(stats["turns"])
+        tokens = int(stats["participant_tokens"])
+        suffix = " (stopped)" if stats.get("cancelled") else ""
+        self.chat.stats.setText(f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}")
+        self.chat.generating(False)
+
+    def _simulation_failed(self, error: str) -> None:
+        LOG.error("%s", error)
+        self.chat.stats.setText(error); self.chat.generating(False)
+        QMessageBox.critical(self, "Infinite simulation error", error)
 
     def regenerate(self) -> None:
         if self.history and self.history[-1]["role"] == "assistant": self.history.pop()
@@ -152,7 +213,7 @@ class MainWindow(QMainWindow):
             self.send(prompt)
 
     def clear(self) -> None:
-        self.history.clear(); self.chat.clear_messages(); self.chat.stats.setText("Conversation cleared.")
+        self.history.clear(); self.simulation_transcript.clear(); self.chat.clear_messages(); self.chat.stats.setText("Conversation cleared.")
 
     def _on_token(self, text: str, frame: object) -> None:
         if self._assistant_bubble is not None:
@@ -189,4 +250,6 @@ class MainWindow(QMainWindow):
             self.validation_thread.wait(3000)
         if self.worker_thread.isRunning():
             self.worker.cancel(); self.worker_thread.quit(); self.worker_thread.wait(3000)
+        if self.simulation_thread.isRunning():
+            self.simulation_worker.cancel(); self.simulation_thread.quit(); self.simulation_thread.wait(3000)
         super().closeEvent(event)
