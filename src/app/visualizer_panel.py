@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from time import monotonic
 
 import numpy as np
 from PySide6.QtCore import QSettings, QTimer, Qt
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from ..connectome.activity import ActivityField
+from ..connectome.analysis import ConnectomeAnalyzer
+from ..connectome.export import export_analysis
 from ..connectome.generator import build_connectome
 from ..connectome.mapper import ActivityMapper
 from ..connectome.renderer import ConnectomeRenderer
@@ -38,6 +41,7 @@ class VisualizerPanel(QWidget):
     def _build_graph(self, quality: str) -> None:
         self.graph = build_connectome(self._model_key, quality, self._cluster_spacing)
         self.field = ActivityField(self.graph)
+        self.analyzer = ConnectomeAnalyzer(self.graph)
         self.mapper = ActivityMapper(self.field)
         self.renderer = ConnectomeRenderer(self.graph, self.field)
         self.renderer.nodeSelected.connect(self._inspect)
@@ -54,8 +58,10 @@ class VisualizerPanel(QWidget):
         self.spacing = QSlider(Qt.Orientation.Horizontal); self.spacing.setRange(60, 200); self.spacing.setValue(100); self.spacing.setToolTip("Cluster spacing")
         self.spacing.valueChanged.connect(self._set_cluster_spacing)
         self.pause = QPushButton("Pause"); self.pause.clicked.connect(self._toggle_pause)
+        self.analysis = QPushButton("Analysis"); self.analysis.clicked.connect(self._show_analysis)
+        self.export = QPushButton("Export"); self.export.clicked.connect(self._export_analysis)
         reset = QPushButton("Reset view"); reset.clicked.connect(lambda: self.renderer.reset_camera())
-        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.pause, reset): header.addWidget(widget)
+        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.analysis, self.export, self.pause, reset): header.addWidget(widget)
         header.addStretch(1); self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
         self.overlay = QLabel(); self.overlay.setObjectName("overlay"); self.overlay.setWordWrap(True)
@@ -85,12 +91,14 @@ class VisualizerPanel(QWidget):
         self.mapper.apply(frame)
         if record:
             self._playback.append(PlaybackStep(frame, self.field.values.copy(), self.field.peaks.copy()))
+            self.analyzer.observe(frame, self.field.values)
         self._refresh_overlay()
 
     def begin_recording(self) -> None:
         self._playback_timer.stop()
         self._playback.clear()
         self._playback_index = -1
+        self.analyzer.records.clear()
 
     def start_playback(self, speed: float) -> None:
         if not self._playback:
@@ -164,6 +172,25 @@ class VisualizerPanel(QWidget):
     def _set_cluster_spacing(self, value: int) -> None:
         self._cluster_spacing = value / 100
         if hasattr(self, "renderer"): self._rebuild(self.quality.currentText())
+
+    def _show_analysis(self) -> None:
+        summary = self.analyzer.summary()
+        if not summary.get("frames"):
+            QMessageBox.information(self, "Connectome analysis", "Generate a response first. Analysis learns from the visual activity stream of the latest response.")
+            return
+        QMessageBox.information(self, "Connectome analysis (Derived)", f"Frames analysed: {summary['frames']}\nMean novelty: {summary['mean_novelty']:.4f}\nPeak novelty: {summary['peak_novelty']:.4f}\nMost active region: {summary['most_active_region']}\n\nThis adaptive encoder studies the visualization activity stream. It is not measured transformer activation data.")
+
+    def _export_analysis(self) -> None:
+        if not self.analyzer.records:
+            QMessageBox.information(self, "Export analysis", "Generate a response before exporting analysis.")
+            return
+        filename, _ = QFileDialog.getSaveFileName(self, "Export connectome analysis", "connectome-analysis.json", "JSON analysis (*.json);;CSV events (*.csv)")
+        if not filename:
+            return
+        try:
+            export_analysis(Path(filename), self.graph, self.analyzer.records, self.analyzer.summary())
+        except OSError as exc:
+            QMessageBox.critical(self, "Export failed", str(exc))
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()
