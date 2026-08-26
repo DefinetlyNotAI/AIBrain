@@ -6,7 +6,7 @@ from time import monotonic
 
 import numpy as np
 from PySide6.QtCore import QSettings, QTimer, Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
@@ -49,6 +49,11 @@ class VisualizerPanel(QWidget):
         super().__init__()
         self._model_key = model_key
         self._cluster_spacing = 1.0
+        self._pending_cluster_spacing = self._cluster_spacing
+        self._spacing_timer = QTimer(self)
+        self._spacing_timer.setSingleShot(True)
+        self._spacing_timer.setInterval(220)
+        self._spacing_timer.timeout.connect(self._commit_cluster_spacing)
         self._selected_node: int | None = None
         self._playback: list[PlaybackStep] = []
         self._all_signals: list[PlaybackStep] = []
@@ -70,14 +75,16 @@ class VisualizerPanel(QWidget):
 
     def _build_ui(self) -> None:
         self.layout = QVBoxLayout(self); self.layout.setContentsMargins(8, 18, 18, 18)
-        header = QHBoxLayout(); title = QLabel("Live Connectome"); title.setObjectName("title")
+        header = QGridLayout(); header.setHorizontalSpacing(8); header.setVerticalSpacing(6)
+        title = QLabel("Live Connectome"); title.setObjectName("title")
         self.mode = QLabel("SIMULATION") ; self.mode.setObjectName("mode")
         self.quality = QComboBox(); self.quality.addItems(["Low", "Medium", "High"]); self.quality.setCurrentText("Medium"); self.quality.currentTextChanged.connect(self._rebuild)
         self.render_gpu = QComboBox(); self.render_gpu.setToolTip("AIBrain starts a fresh process after saving the Windows high-performance GPU preference.")
         self._populate_render_adapters()
         self.render_gpu.currentIndexChanged.connect(self._set_render_preference)
         self.spacing = QSlider(Qt.Orientation.Horizontal); self.spacing.setRange(60, 200); self.spacing.setValue(100); self.spacing.setToolTip("Cluster spacing")
-        self.spacing.valueChanged.connect(self._set_cluster_spacing)
+        self.spacing_value = QLabel("1.00×"); self.spacing_value.setObjectName("muted")
+        self.spacing.valueChanged.connect(self._preview_cluster_spacing)
         settings = QSettings()
         self.neuron_borders = QCheckBox("Neuron borders"); self.neuron_borders.setToolTip("Outline each visual neuron for clearer separation")
         self.neuron_borders.setChecked(settings.value("neuron_borders", True, type=bool)); self.neuron_borders.toggled.connect(self._set_neuron_borders)
@@ -88,8 +95,22 @@ class VisualizerPanel(QWidget):
         self.analysis = QPushButton("NN Analysis+"); self.analysis.setToolTip("Analyze every recorded visual frame and export compact neural-network findings")
         self.analysis.clicked.connect(self._run_nn_analysis_plus)
         reset = QPushButton("Reset view"); reset.clicked.connect(lambda: self.renderer.reset_camera())
-        for widget in (title, self.mode, self.quality, self.render_gpu, QLabel("Spacing"), self.spacing, self.neuron_borders, self.border_width, self.analysis, self.pause, reset): header.addWidget(widget)
-        header.addStretch(1); self.layout.addLayout(header)
+        spacing_label = QLabel("Spacing")
+        importance_label = QLabel("Importance")
+        header.addWidget(title, 0, 0)
+        header.addWidget(self.mode, 0, 1)
+        header.addWidget(self.quality, 0, 2)
+        header.addWidget(self.render_gpu, 0, 3, 1, 3)
+        header.addWidget(spacing_label, 1, 0)
+        header.addWidget(self.spacing, 1, 1, 1, 2)
+        header.addWidget(self.spacing_value, 1, 3)
+        header.addWidget(self.neuron_borders, 1, 4)
+        header.addWidget(self.border_width, 1, 5)
+        header.addWidget(self.analysis, 2, 0, 1, 2)
+        header.addWidget(self.pause, 2, 2)
+        header.addWidget(reset, 2, 3)
+        header.setColumnStretch(3, 1)
+        self.layout.addLayout(header)
         self.layout.addWidget(self.renderer, 1)
         self.overlay = QLabel(); self.overlay.setObjectName("overlay"); self.overlay.setWordWrap(True)
         self.overlay.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
@@ -98,12 +119,13 @@ class VisualizerPanel(QWidget):
         self.inspector.neuronNumberClicked.connect(self._prompt_for_neuron)
         self.silence = QPushButton("Silence selected neuron"); self.silence.clicked.connect(self._toggle_selected_node); self.silence.setEnabled(False)
         self.importance = QDoubleSpinBox(); self.importance.setRange(0, 3); self.importance.setSingleStep(.1); self.importance.setValue(1); self.importance.valueChanged.connect(self._change_importance); self.importance.setEnabled(False)
-        inspect_controls = QHBoxLayout(); inspect_controls.addWidget(self.silence); inspect_controls.addWidget(QLabel("Importance")); inspect_controls.addWidget(self.importance); inspect_controls.addStretch(1)
+        inspect_controls = QHBoxLayout(); inspect_controls.addWidget(self.silence); inspect_controls.addWidget(importance_label); inspect_controls.addWidget(self.importance); inspect_controls.addStretch(1)
         self.layout.addWidget(self.overlay); self.layout.addWidget(self.inspector); self.layout.addLayout(inspect_controls)
         self._set_neuron_borders(self.neuron_borders.isChecked())
         self._refresh_overlay()
 
     def _rebuild(self, quality: str) -> None:
+        self.analyzer.save_model()
         self.begin_recording()
         old = self.renderer
         index = self.layout.indexOf(old)
@@ -220,9 +242,16 @@ class VisualizerPanel(QWidget):
     def _change_importance(self, value: float) -> None:
         if self._selected_node is not None: self.field.set_importance(self._selected_node, value)
 
-    def _set_cluster_spacing(self, value: int) -> None:
-        self._cluster_spacing = value / 100
-        if hasattr(self, "renderer"): self._rebuild(self.quality.currentText())
+    def _preview_cluster_spacing(self, value: int) -> None:
+        self._pending_cluster_spacing = value / 100
+        self.spacing_value.setText(f"{self._pending_cluster_spacing:.2f}×")
+        self._spacing_timer.start()
+
+    def _commit_cluster_spacing(self) -> None:
+        if abs(self._pending_cluster_spacing - self._cluster_spacing) < .001:
+            return
+        self._cluster_spacing = self._pending_cluster_spacing
+        self._rebuild(self.quality.currentText())
 
     def _set_neuron_borders(self, visible: bool) -> None:
         QSettings().setValue("neuron_borders", visible)

@@ -1,11 +1,46 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+import html
+import re
+
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
                                QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
+
+
+def markdown_to_html(markdown: str) -> str:
+    """Render the useful Markdown subset safely inside selectable Qt labels."""
+    escaped = html.escape(markdown)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
+    escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", escaped)
+    escaped = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', escaped)
+    escaped = re.sub(r"(?m)^### (.+)$", r"<h3>\1</h3>", escaped)
+    escaped = re.sub(r"(?m)^## (.+)$", r"<h2>\1</h2>", escaped)
+    escaped = re.sub(r"(?m)^# (.+)$", r"<h1>\1</h1>", escaped)
+    return escaped.replace("\n", "<br>")
+
+
+class MarkdownLabel(QLabel):
+    """A selectable chat label that displays Markdown without losing source text."""
+
+    def __init__(self, text: str = "") -> None:
+        self._markdown = ""
+        super().__init__()
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # type: ignore[override]
+        self._markdown = text
+        super().setText(markdown_to_html(text))
+
+    def text(self) -> str:  # type: ignore[override]
+        return self._markdown
+
+    def append_markdown(self, text: str) -> None:
+        self.setText(self._markdown + text)
 
 
 class ChatPanel(QWidget):
@@ -44,6 +79,8 @@ class ChatPanel(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setWidget(container)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._follow_output = True
+        self.scroll.verticalScrollBar().valueChanged.connect(self._refresh_follow_output)
         layout.addWidget(self.scroll, 1)
         self.stats = QLabel("Ready · select an installed GGUF model")
         self.stats.setObjectName("muted")
@@ -116,13 +153,42 @@ class ChatPanel(QWidget):
         self.models.blockSignals(False)
 
     def add_message(self, role: str, text: str) -> QLabel:
-        bubble = QLabel(text)
+        follow_output = self._follow_output
+        bubble = MarkdownLabel(text)
         bubble.setWordWrap(True)
         bubble.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         bubble.setObjectName("userBubble" if role == "user" else "worldBubble" if role == "world" else "assistantBubble")
         self.messages_layout.insertWidget(self.messages_layout.count()-1, bubble)
-        self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum())
+        self._schedule_scroll_to_bottom(follow_output)
         return bubble
+
+    @staticmethod
+    def _is_at_bottom(value: int, maximum: int) -> bool:
+        """Allow a two-pixel tolerance for scrollbar rounding and style margins."""
+        return maximum - value <= 2
+
+    def _refresh_follow_output(self, value: int) -> None:
+        scrollbar = self.scroll.verticalScrollBar()
+        self._follow_output = self._is_at_bottom(value, scrollbar.maximum())
+
+    def append_message_text(self, bubble: QLabel, text: str) -> None:
+        """Append generated text without stealing the user's reading position."""
+        follow_output = self._follow_output
+        if isinstance(bubble, MarkdownLabel):
+            bubble.append_markdown(text)
+        else:
+            bubble.setText(bubble.text() + text)
+        self._schedule_scroll_to_bottom(follow_output)
+
+    def _schedule_scroll_to_bottom(self, follow_output: bool) -> None:
+        if not follow_output:
+            return
+        QTimer.singleShot(0, self._scroll_to_bottom_if_following)
+
+    def _scroll_to_bottom_if_following(self) -> None:
+        if self._follow_output:
+            scrollbar = self.scroll.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
 
     def clear_latest_playback(self) -> None:
         if self._playback_controls is None:

@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from time import monotonic
 
-from PySide6.QtCore import QThread, Qt, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QThread, QTimer, Qt, Signal
+from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QSplitter
 
 from .chat_panel import ChatPanel
@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("AIBrain — Local LLM Connectome")
-        self.resize(1500, 900)
+        self._display_fitted = False
         self.setStyleSheet(STYLESHEET)
         self.config = load_generation_settings()
         self.history: list[dict[str, str]] = []
@@ -61,7 +61,9 @@ class MainWindow(QMainWindow):
         self.chat = ChatPanel(self.config)
         self.visualizer = VisualizerPanel()
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
         splitter.addWidget(self.chat); splitter.addWidget(self.visualizer); splitter.setSizes([560, 940])
+        splitter.setStretchFactor(0, 1); splitter.setStretchFactor(1, 2)
         self.setCentralWidget(splitter)
         self.chat.sendRequested.connect(self.send)
         self.chat.stopRequested.connect(self.stop)
@@ -76,6 +78,21 @@ class MainWindow(QMainWindow):
         self._escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self._escape_shortcut.activated.connect(self._handle_escape)
         self._discover()
+
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        super().showEvent(event)
+        if not self._display_fitted:
+            self._display_fitted = True
+            QTimer.singleShot(0, self._fit_to_display)
+
+    def _fit_to_display(self) -> None:
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(1500, 900)
+            return
+        available = screen.availableGeometry()
+        self.setMaximumSize(available.size())
+        self.resize(min(1500, available.width()), min(900, available.height()))
 
     def _setup_worker(self) -> None:
         self.backend = LlamaBackend()
@@ -187,8 +204,7 @@ class MainWindow(QMainWindow):
     def _simulation_token(self, role: str, turn: int, text: str, frame: object) -> None:
         bubble = self._simulation_bubbles.get((role, turn))
         if bubble is not None:
-            bubble.setText(bubble.text() + text)
-            self.chat.scroll.verticalScrollBar().setValue(self.chat.scroll.verticalScrollBar().maximum())
+            self.chat.append_message_text(bubble, text)
         if role == "participant" and frame is not None:
             self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
 
@@ -224,8 +240,7 @@ class MainWindow(QMainWindow):
             if self._awaiting_first_token:
                 self._assistant_bubble.setText("")
                 self._awaiting_first_token = False
-            self._assistant_bubble.setText(self._assistant_bubble.text() + text)
-            self.chat.scroll.verticalScrollBar().setValue(self.chat.scroll.verticalScrollBar().maximum())
+            self.chat.append_message_text(self._assistant_bubble, text)
         self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
 
     def _finished(self, stats: dict[str, object]) -> None:
@@ -248,6 +263,7 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Generation error", error)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        self.visualizer.analyzer.save_model()
         if hasattr(self, "validator"):
             self.validator.cancel()
         if hasattr(self, "validation_thread") and self.validation_thread.isRunning():
