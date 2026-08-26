@@ -19,10 +19,10 @@ The Ollama application and server do not need to be running after the model has 
 From the project root, run:
 
 ```powershell
-py installer.py
+py cli\installer.py
 ```
 
-`installer.py` is the sole allowed system-Python entry point. It creates `.venv`, updates pip inside it, installs PySide6, NumPy, and ModernGL, then chooses a prebuilt `llama-cpp-python` wheel. The installer checks `nvidia-smi` first: when a compatible published NVIDIA CUDA wheel is available it uses that; otherwise it installs the official CPU wheel. It does not fall back to a local C/C++ source build.
+`cli/installer.py` is the sole allowed system-Python entry point. It creates `.venv`, updates pip inside it, installs PySide6, NumPy, ModernGL, and Nuitka, then chooses a prebuilt `llama-cpp-python` wheel. The installer checks `nvidia-smi` first: when a compatible published NVIDIA CUDA wheel is available it uses that; otherwise it installs the official CPU wheel. It does not fall back to a local C/C++ source build.
 
 If PowerShell blocks activation, make the current user policy permit local scripts, then open a new terminal:
 
@@ -36,17 +36,27 @@ Activate the environment every time you open a new terminal:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python main.py
+python cli\main.py
 ```
 
 For Command Prompt use:
 
 ```bat
 .venv\Scripts\activate.bat
-python main.py
+python cli\main.py
 ```
 
-`main.py` exits immediately outside a virtual environment. This is deliberate: it prevents accidental use of global packages and ensures the application runs against the dependency set installed by `installer.py`.
+`cli/main.py` exits immediately outside a virtual environment. This is deliberate: it prevents accidental use of global packages and ensures the application runs against the dependency set installed by `cli/installer.py`.
+
+## Standalone distribution
+
+Build a normal, self-contained directory distribution—never a single-file executable—with:
+
+```powershell
+.\.venv\Scripts\python.exe cli\build_dist.py
+```
+
+The result is `dist\AIBrain_YYYYMMDD_HHMMSS\AIBrain.exe` plus Qt, Python, llama.cpp, native connectome, and required Visual C++ runtime files.
 
 ## First run
 

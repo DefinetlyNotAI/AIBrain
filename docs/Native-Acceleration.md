@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The activity-decay and edge-activity hot paths live in `src/native/connectome_native.c`. They compile into `src/native/aibrain_connectome.dll` and are loaded with `ctypes`. If the DLL is missing or cannot be loaded, AIBrain falls back to NumPy implementations so the application remains usable.
+The activity-decay, edge-activity, and regional-aggregation hot paths live in `src/native/c/connectome_native.c`. They compile into `dll/aibrain_connectome.dll` and are loaded through `src/native/wrapper/connectome.py`. If the DLL is missing or cannot be loaded, AIBrain falls back to NumPy implementations so the application remains usable.
 
 The DLL accelerates visual activity bookkeeping. It does not implement the Qt window, OpenGL renderer, or language-model inference.
 
@@ -11,7 +11,7 @@ The DLL accelerates visual activity bookkeeping. It does not implement the Qt wi
 After changing the C source, run from the project root:
 
 ```powershell
-py scripts\build_native.py
+py cli\build_native.py
 ```
 
 The tool is color-coded in an interactive terminal and:
@@ -25,9 +25,9 @@ The tool is color-coded in an interactive terminal and:
 Useful options:
 
 ```powershell
-py scripts\build_native.py --debug
-py scripts\build_native.py --clean
-py scripts\build_native.py --compiler "C:\path\to\gcc.exe"
+py cli\build_native.py --debug
+py cli\build_native.py --clean
+py cli\build_native.py --compiler "C:\path\to\gcc.exe"
 ```
 
 `--debug` requests an unoptimized debug build. `--clean` deletes the existing DLL before compiling. `--compiler` is useful when more than one supported toolchain is installed.

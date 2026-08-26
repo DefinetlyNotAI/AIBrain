@@ -18,13 +18,13 @@ The current llama.cpp GGUF path is **Simulation**. For each generated token it c
 
 ## Rendering
 
-ModernGL renders the graph inside Qt's native OpenGL widget. GPU buffers retain node positions, region IDs, and selected edge topology; each frame only updates compact activity data. Nodes and edges are rendered as batched draw calls.
+ModernGL renders the graph inside Qt's native OpenGL widget. GPU buffers retain node positions, region IDs, and selected edge topology; each frame only updates compact activity data. Nodes are color-coded with a stable named-region palette, so a region retains the exact same color across graph rebuilds, replay, and the fallback renderer. Nodes and edges are rendered as batched draw calls.
 
-The renderer reports the actual OpenGL renderer in its overlay. AIBrain writes its high-performance preference and relaunches before Qt creates an OpenGL context. If the overlay still reports a non-NVIDIA renderer, it explicitly calls out the mismatch; set the virtual-environment `python.exe` in **Windows Settings > System > Display > Graphics** to High performance and restart.
+The renderer reports the actual OpenGL renderer in its overlay. AIBrain writes its high-performance preference and relaunches before Qt creates an OpenGL context; the standalone builder records the same preference for its packaged `AIBrain.exe`. If the overlay still reports a non-NVIDIA renderer, it explicitly calls out the mismatch. On hybrid laptops, set the active `python.exe` or packaged `AIBrain.exe` to **High-performance NVIDIA processor** in **NVIDIA Control Panel > Manage 3D settings > Program Settings**, then restart; Windows Graphics settings are a secondary fallback.
 
 ## Analysis
 
-**NN Analysis+** runs a small online adaptive encoder over visual activity, then creates a detailed JSON data file. It calculates a regional feature vector, updates a learned prototype, and records a novelty score for each token frame. The export contains the complete session conversation, every captured visual value and peak array, active-neuron indices, regional aggregates, topology, and derived novelty events. Choose the compressed JSON option for large sessions.
+**NN Analysis+** runs an actual online NumPy autoencoder over every visual frame, then creates a compact JSON data file. The network uses a regional/statistical feature vector, a tanh encoder, sigmoid decoder, and per-frame gradient-descent reconstruction training. The export contains the complete session conversation, network architecture and fit metrics, regional profile, pattern segments, and a bounded set of high-novelty events. It intentionally excludes massive per-neuron frame dumps.
 
 This is analysis of AIBrain's visual activity stream. It is not an inspection of model hidden states, attention, weights, or reasoning.
 
@@ -33,5 +33,5 @@ This is analysis of AIBrain's visual activity stream. It is not an inspection of
 Each data file includes an integrity statement so exports remain correctly interpreted after they leave the application:
 
 ```text
-Conversation and complete visual-connectome signal capture. Brain signals are simulated visual activity, not measured transformer activations.
+An online neural network analyzed every recorded simulated visual-connectome frame. Findings are not measured transformer activations.
 ```

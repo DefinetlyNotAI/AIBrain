@@ -6,11 +6,11 @@ Choose a validated model in the selector, write a text prompt, and press **Send*
 
 ### Infinite simulation
 
-Press **∞ Inf** to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the **World** produces the setting and events; the **Participant** responds from inside that fictional setting. The UI clearly labels this as a simulation—the model is generating roleplay text, not a real sentient being. The session continues until **Stop** is pressed, while each model keeps only a bounded recent context window so it can run without unbounded prompt growth. The right-side connectome renders participant tokens only.
+Press **∞ Inf** to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the **World** produces only external events; the **Participant** produces only first-person responses. Every stream update is tied to both its role and turn number, so World tokens cannot append to a Participant bubble. The UI clearly labels this as a simulation—the model is generating roleplay text, not a real sentient being. The session continues until **Stop** is pressed, while each model keeps only a bounded recent context window so it can run without unbounded prompt growth. The right-side connectome renders participant tokens only.
 
 ## NN Analysis+
 
-**NN Analysis+** replaces the compact analysis action. It creates a JSON or compressed JSON data file with the full conversation, every recorded visual brain-signal frame (complete node values and peaks), active-neuron and regional summaries, graph topology, and derived novelty events. These signals are the connectome's procedural visualization data; they are not measured model hidden states or transformer activations.
+**NN Analysis+** replaces the compact analysis action. It creates a compact JSON or compressed JSON data file with the full conversation and a trained online autoencoder's findings: reconstruction/coherence metrics, regional patterns, temporal segments, and selected high-novelty events. It processes every recorded visual frame but does not dump every neuron vector. These signals are the connectome's procedural visualization data; they are not measured model hidden states or transformer activations.
 
 - **Stop** requests cancellation after the current native generation step.
 - **Escape** does the same from anywhere in the application.
@@ -39,8 +39,8 @@ The right pane is a native `QOpenGLWidget` renderer. It supports left-drag to or
 
 The GPU selector asks Windows to use the high-performance adapter for the project Python executable on the next launch. The overlay always identifies the renderer actually selected by OpenGL.
 
-Click a visual neuron to inspect its region, current value, and peak. You can silence it (zeroing its visual activity) or change its importance from 0 to 3. **Neuron borders** outlines every visual neuron for clearer separation; use the adjacent numeric control to tune the outline width. These controls affect the visual simulation only; they never modify model weights or inference.
+Click a visual neuron to inspect its region, current value, and peak. You can silence it (zeroing its visual activity) or change its importance from 0 to 3. Click the displayed **Selected neuron** number to enter an exact neuron index. **Neuron borders** outlines every visual neuron for clearer separation; use the adjacent numeric control to tune the outline width. Region clusters use a stable distinct color palette. All message bubbles and status/inspector text can be highlighted and copied. These controls affect the visual simulation only; they never modify model weights or inference.
 
 ## Analysis and export
 
-After generating a response, choose **Analysis** for a compact novelty and activity summary. Choose **Export** to save either JSON or CSV. Full semantics and file layouts are documented in [Connectome and analysis](Connectome-and-Analysis.md).
+After generating a response, choose **NN Analysis+** to create its compact neural-analysis JSON. Full semantics and file layout are documented in [Connectome and analysis](Connectome-and-Analysis.md).

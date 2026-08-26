@@ -6,7 +6,7 @@ Activate the managed environment before launching:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python main.py
+python cli\main.py
 ```
 
 If `.venv` does not exist, create it with `py -3.11 install.py`.
@@ -29,11 +29,11 @@ Confirm that Ollama has installed a compatible GGUF model and that the current u
 
 Lower **Context** and set **GPU layers** to `0`, then try again. This reduces memory requirements and rules out GPU-offload incompatibility. A valid GGUF file may still require a different llama.cpp build or more memory than the machine has available.
 
-To repair dependencies, run `py installer.py` again. The installer repairs the managed environment rather than the system Python.
+To repair dependencies, run `py cli\installer.py` again. The installer repairs the managed environment rather than the system Python.
 
 ## The renderer uses an integrated GPU
 
-Choose the NVIDIA/high-performance adapter in AIBrain and restart the entire application. AIBrain starts a fresh process after applying this preference because an existing OpenGL context cannot migrate adapters.
+Choose the NVIDIA/high-performance adapter in AIBrain and restart the entire application. AIBrain starts a fresh process after applying this preference because an existing OpenGL context cannot migrate adapters. If the overlay still reports `vendor=Intel` while an NVIDIA GPU is installed, this is a Qt/WGL hybrid-GPU driver decision, not a cosmetic label: open **NVIDIA Control Panel > Manage 3D settings > Program Settings**, add the active `python.exe` (or packaged `AIBrain.exe`), choose **High-performance NVIDIA processor**, apply, and restart.
 
 If the overlay still identifies the integrated renderer, open **Windows Settings > System > Display > Graphics**, add the project `.venv\Scripts\python.exe`, select **Options**, choose **High performance**, and restart AIBrain. The overlay reports the actual selected renderer.
 
@@ -46,11 +46,11 @@ Choose **Low** quality, reduce model GPU layers if inference competes for the sa
 Run the build tool from a terminal with a supported C compiler available:
 
 ```powershell
-py scripts\build_native.py --compiler "C:\path\to\compiler.exe"
+py cli\build_native.py --compiler "C:\path\to\compiler.exe"
 ```
 
 See [Native acceleration](Native-Acceleration.md) for supported toolchains and all build options.
 
-## Analysis/export buttons do nothing
+## NN Analysis+ does nothing
 
-Generate a response first. Analysis and export operate on the token frames from the latest response only. Starting another response, changing model, quality, or spacing discards old replay/analysis data to prevent mixing incompatible graph layouts.
+Generate a response first. NN Analysis+ processes the session's recorded visual frames through its online autoencoder. Changing model, quality, or spacing discards old replay/analysis data to prevent mixing incompatible graph layouts.

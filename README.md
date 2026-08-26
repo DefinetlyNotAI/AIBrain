@@ -9,9 +9,9 @@ It is built with Python and PySide6/Qt. The interface is a real Windows window w
 Requirements: Windows 10/11, Python 3.11+, and at least one locally installed Ollama GGUF model.
 
 ```powershell
-py installer.py
+py cli\installer.py
 .\.venv\Scripts\Activate.ps1
-python main.py
+python cli\main.py
 ```
 
 AIBrain only runs from its managed virtual environment. The installer creates and populates `.venv`, checks NVIDIA/CUDA capability before choosing an inference wheel, and never installs packages into the system Python.
@@ -36,10 +36,13 @@ The `Publish documentation to Wiki` GitHub Actions workflow publishes this folde
 
 ```powershell
 # Rebuild and verify the native DLL after editing its C source.
-py scripts\build_native.py --clean
+py cli\build_native.py --clean
+
+# Create dist\AIBrain_YYYYMMDD_HHMMSS\AIBrain.exe and all required files.
+python cli\build_dist.py
 
 # Verify Python syntax from the managed environment.
-python -m compileall -q main.py install.py src
+python -m compileall -q cli src tests
 ```
 
 See [Native acceleration](docs/Native-Acceleration.md) and [Architecture and development](docs/Architecture.md) for full build, verification, and contributor guidance.

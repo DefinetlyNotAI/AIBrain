@@ -2,9 +2,9 @@
 
 ## Runtime environment
 
-The application requires the project `.venv` at launch. There is no settings file to edit for dependency selection; use `install.py` to create or repair the managed environment.
+The application requires the project `.venv` at launch. There is no settings file to edit for dependency selection; use `cli/installer.py` to create or repair the managed environment.
 
-`main.py` configures a desktop OpenGL 3.3 core-profile request before creating the Qt application. When high-performance rendering is selected (the default), it writes the Windows preference for both virtual-environment Python hosts and relaunches once before Qt creates an OpenGL context. The renderer overlay then verifies the actual OpenGL adapter.
+`cli/main.py` configures a desktop OpenGL 3.3 core-profile request before creating the Qt application. When high-performance rendering is selected (the default), it writes the Windows preference for both virtual-environment Python hosts and relaunches once before Qt creates an OpenGL context. The renderer overlay then verifies the actual OpenGL adapter.
 
 ## Persisted settings
 
