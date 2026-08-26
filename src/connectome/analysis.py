@@ -9,6 +9,16 @@ from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome import native
 
+from typing import TypedDict
+
+
+class PatternSegment(TypedDict):
+    start_step: int
+    end_step: int
+    dominant_region: str
+    frames: int
+    mean_novelty: float
+
 
 @dataclass(slots=True)
 class AnalysisRecord:
@@ -182,17 +192,26 @@ class ConnectomeAnalyzer:
             ],
         }
 
-    def _segments(self) -> list[dict[str, object]]:
-        groups: list[dict[str, object]] = []
+    def _segments(self) -> list[PatternSegment]:
+        groups: list[PatternSegment] = []
+
         for record in self.records:
             if not groups or groups[-1]["dominant_region"] != record.dominant_region:
                 groups.append(
-                    {"start_step": record.step, "end_step": record.step, "dominant_region": record.dominant_region,
-                     "frames": 1, "mean_novelty": record.novelty})
+                    {
+                        "start_step": record.step,
+                        "end_step": record.step,
+                        "dominant_region": record.dominant_region,
+                        "frames": 1,
+                        "mean_novelty": record.novelty,
+                    }
+                )
                 continue
+
             group = groups[-1]
-            frame_count = int(group["frames"])
+            frame_count = group["frames"]
             group["end_step"] = record.step
             group["frames"] = frame_count + 1
-            group["mean_novelty"] = (float(group["mean_novelty"]) * frame_count + record.novelty) / (frame_count + 1)
+            group["mean_novelty"] = (group["mean_novelty"] * frame_count + record.novelty) / (frame_count + 1)
+
         return groups[:40]
