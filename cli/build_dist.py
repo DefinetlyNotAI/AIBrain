@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from cli.ui import command, error, header, section, success
+from src.utils.gpu import set_windows_executable_gpu_preference
 
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
@@ -69,6 +70,7 @@ def build(timestamp: str | None = None) -> Path:
     for runtime_name in ("msvcp140.dll", "vcomp140.dll"):
         if not (release / runtime_name).is_file():
             raise RuntimeError(f"Standalone distribution is missing required runtime: {runtime_name}")
+    set_windows_executable_gpu_preference(executable)
     return release
 
 

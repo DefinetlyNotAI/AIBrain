@@ -74,6 +74,23 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
         return False
 
 
+def set_windows_executable_gpu_preference(executable: Path, high_performance: bool = True) -> bool:
+    """Persist Windows' GPU preference for a standalone AIBrain executable."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+
+        key_path = r"Software\Microsoft\DirectX\UserGpuPreferences"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            winreg.SetValueEx(key, str(executable.resolve()), 0, winreg.REG_SZ, "GpuPreference=2;" if high_performance else "GpuPreference=0;")
+        LOG.info("Requested Windows %s GPU for packaged executable %s", "high-performance" if high_performance else "system-default", executable)
+        return True
+    except OSError as exc:
+        LOG.warning("Could not set packaged executable GPU preference: %s", exc)
+        return False
+
+
 def should_prefer_high_performance_gpu() -> bool:
     """Return the saved rendering preference without importing Qt at startup."""
     if sys.platform != "win32":
