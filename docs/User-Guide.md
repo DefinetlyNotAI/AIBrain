@@ -35,7 +35,7 @@ The controls at the bottom of the chat pane are saved in Windows application set
 
 ## Connectome controls
 
-The right pane is a native `QOpenGLWidget` renderer. It supports left-drag to orbit, mouse-wheel zoom, and **Reset view** to restore the camera. **Pause** stops visual updates; press **Resume** to continue. **Low**, **Medium**, and **High** quality graphs contain respectively 5,000, 11,000, and 22,000 visual neurons. The **Spacing** slider rebuilds the procedural cluster layout.
+The right pane is a native `QOpenGLWidget` renderer. It supports left-drag to orbit, mouse-wheel zoom, and **Reset view** to restore the camera. **Pause** stops visual updates; press **Resume** to continue. **Low**, **Medium**, and **High** quality graphs contain respectively 5,000, 11,000, and 22,000 visual neurons. The **Spacing** slider shows its selected multiplier immediately and rebuilds the procedural cluster layout after you pause movement, avoiding repeated expensive graph rebuilds while dragging. Region colors remain visible even before activity begins.
 
 The GPU selector asks Windows to use the high-performance adapter for the project Python executable on the next launch. The overlay always identifies the renderer actually selected by OpenGL.
 
@@ -43,4 +43,4 @@ Click a visual neuron to inspect its region, current value, and peak. You can si
 
 ## Analysis and export
 
-After generating a response, choose **NN Analysis+** to create its compact neural-analysis JSON. Full semantics and file layout are documented in [Connectome and analysis](Connectome-and-Analysis.md).
+After generating a response, choose **NN Analysis+** to create its compact neural-analysis JSON. Full semantics and file layout are documented in [Connectome and analysis](Connectome-and-Analysis.md). Chat bubbles render safe Markdown for headings, emphasis, inline code, and HTTP(S) links while preserving selectable source text. Generated chat follows the newest token only while the message list is already at the bottom; scroll up to read or copy earlier text without being pulled back down.

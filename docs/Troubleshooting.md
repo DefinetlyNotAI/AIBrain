@@ -33,7 +33,7 @@ To repair dependencies, run `py cli\installer.py` again. The installer repairs t
 
 ## The renderer uses an integrated GPU
 
-Choose the NVIDIA/high-performance adapter in AIBrain and restart the entire application. AIBrain starts a fresh process after applying this preference because an existing OpenGL context cannot migrate adapters. If the overlay still reports `vendor=Intel` while an NVIDIA GPU is installed, this is a Qt/WGL hybrid-GPU driver decision, not a cosmetic label: open **NVIDIA Control Panel > Manage 3D settings > Program Settings**, add the active `python.exe` (or packaged `AIBrain.exe`), choose **High-performance NVIDIA processor**, apply, and restart.
+Choose the NVIDIA/high-performance adapter in AIBrain and restart the entire application. AIBrain writes and reads back the Windows high-performance preference for the active Python or packaged executable before OpenGL is created, and re-applies it if a mismatch is detected. An existing OpenGL context cannot migrate adapters. If the overlay still reports `vendor=Intel` while an NVIDIA GPU is installed, the Qt/WGL hybrid-GPU driver decision overrode that request: open **NVIDIA Control Panel > Manage 3D settings > Program Settings**, add the active `python.exe` (or packaged `AIBrain.exe`), choose **High-performance NVIDIA processor**, apply, and restart.
 
 If the overlay still identifies the integrated renderer, open **Windows Settings > System > Display > Graphics**, add the project `.venv\Scripts\python.exe`, select **Options**, choose **High performance**, and restart AIBrain. The overlay reports the actual selected renderer.
 
