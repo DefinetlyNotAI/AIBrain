@@ -9,7 +9,7 @@ It is built with Python and PySide6/Qt. The interface is a real Windows window w
 Requirements: Windows 10/11, Python 3.11+, and at least one locally installed Ollama GGUF model.
 
 ```powershell
-py -3.11 install.py
+py install.py
 .\.venv\Scripts\Activate.ps1
 python main.py
 ```

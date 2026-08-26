@@ -1,0 +1,42 @@
+name: Publish documentation to Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - .github/workflows/publish-wiki.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-aibrain-wiki
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish docs folder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Publish Markdown to the repository wiki
+        env:
+          WIKI_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
+        run: |
+          set -euo pipefail
+          git clone "$WIKI_REMOTE" wiki
+          rsync -a --delete --exclude '.git' docs/ wiki/
+          cd wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Wiki already matches docs/."
+            exit 0
+          fi
+          git add --all
+          git commit -m "docs: publish repository documentation"
+          git push origin HEAD:master
