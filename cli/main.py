@@ -34,6 +34,11 @@ def color(text: str, *styles: str) -> str:
 
 def require_virtual_environment() -> None:
     """Prevent accidental system-wide package use or installation."""
+    # Nuitka embeds this entry point in its own isolated Python runtime. It is
+    # deliberately not a development virtual environment, but is still the
+    # managed self-contained distribution we support.
+    if "__compiled__" in globals():
+        return
     if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
         print(file=sys.stderr)
 
