@@ -6,16 +6,81 @@ import signal
 import sys
 
 
+
+if os.name == "nt":
+    os.system("")
+
+
+class Color:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    GRAY = "\033[90m"
+
+
+def color(text: str, *styles: str) -> str:
+    return "".join(styles) + text + Color.RESET
+
+
 def require_virtual_environment() -> None:
     """Prevent accidental system-wide package use or installation."""
     if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+        print(file=sys.stderr)
+
         print(
-            "AIBrain must run inside a Python virtual environment.\n"
-            "Create and install: py -3.11 install.py\n"
-            "Activate it:          .\\.venv\\Scripts\\Activate.ps1\n"
-            "Run AIBrain:          python main.py",
+            "  "
+            + color("✗", Color.RED, Color.BOLD)
+            + " "
+            + color(
+                "AIBrain must run inside a Python virtual environment.",
+                Color.RED,
+                Color.BOLD,
+            ),
             file=sys.stderr,
         )
+
+        print(file=sys.stderr)
+
+        print(
+            "  "
+            + color("1.", Color.CYAN, Color.BOLD)
+            + " "
+            + color("Create and install:", Color.GRAY)
+            + "   "
+            + color("py installer.py", Color.WHITE, Color.BOLD),
+            file=sys.stderr,
+        )
+
+        print(
+            "  "
+            + color("2.", Color.CYAN, Color.BOLD)
+            + " "
+            + color("Activate it:", Color.GRAY)
+            + "          "
+            + color(
+                r".\.venv\Scripts\Activate.ps1",
+                Color.WHITE,
+                Color.BOLD,
+            ),
+            file=sys.stderr,
+        )
+
+        print(
+            "  "
+            + color("3.", Color.CYAN, Color.BOLD)
+            + " "
+            + color("Run AIBrain:", Color.GRAY)
+            + "          "
+            + color("python main.py", Color.WHITE, Color.BOLD),
+            file=sys.stderr,
+        )
+
+        print(file=sys.stderr)
+
         raise SystemExit(1)
 
 
