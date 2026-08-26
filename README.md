@@ -1,8 +1,10 @@
 # AIBrain
 
-AIBrain is a native Windows desktop application for chatting with GGUF models already installed by Ollama and exploring token-driven activity through a live connectome visualization.
+AIBrain is a native Windows desktop application for chatting with GGUF models already installed by Ollama and exploring
+token-driven activity through a live connectome visualization.
 
-It is built with Python and PySide6/Qt. The interface is a real Windows window with a native OpenGL context—there is no React, Electron, browser, or WebView layer.
+It is built with Python and PySide6/Qt. The interface is a real Windows window with a native OpenGL context—there is no
+React, Electron, browser, or WebView layer.
 
 ## Quick start
 
@@ -14,23 +16,25 @@ py cli\installer.py
 python cli\main.py
 ```
 
-AIBrain only runs from its managed virtual environment. The installer creates and populates `.venv`, checks NVIDIA/CUDA capability before choosing an inference wheel, and never installs packages into the system Python.
+AIBrain only runs from its managed virtual environment. The installer creates and populates `.venv`, checks NVIDIA/CUDA
+capability before choosing an inference wheel, and never installs packages into the system Python.
 
 ## Documentation
 
 The complete documentation is in [`docs/`](docs/Home.md):
 
-- [Getting started](docs/Getting-Started.md)
-- [User guide](docs/User-Guide.md)
-- [Models and inference](docs/Models-and-Inference.md)
-- [Connectome and analysis](docs/Connectome-and-Analysis.md)
-- [Native acceleration](docs/Native-Acceleration.md)
+- [Getting started](docs/Getting%20Started.md)
+- [User guide](docs/User%20Guide.md)
+- [Models and inference](docs/Models%20and%20Inference.md)
+- [Connectome and analysis](docs/Connectome%20and%20Analysis.md)
+- [Native acceleration](docs/Native%20Acceleration.md)
 - [Architecture and development](docs/Architecture.md)
 - [Configuration](docs/Configuration.md)
 - [Troubleshooting](docs/Troubleshooting.md)
-- [Wiki publishing](docs/Wiki-Publishing.md)
+- [Wiki publishing](docs/Wiki%20Publishing.md)
 
-The `Publish documentation to Wiki` GitHub Actions workflow publishes this folder to the repository wiki after one has been enabled.
+The `Publish documentation to Wiki` GitHub Actions workflow publishes this folder to the repository wiki after one has
+been enabled.
 
 ## Development shortcuts
 
@@ -45,4 +49,5 @@ python cli\build_dist.py
 python -m compileall -q cli src tests
 ```
 
-See [Native acceleration](docs/Native-Acceleration.md) and [Architecture and development](docs/Architecture.md) for full build, verification, and contributor guidance.
+See [Native acceleration](docs/Native%20Acceleration.md) and [Architecture and development](docs/Architecture.md) for
+full build, verification, and contributor guidance.
