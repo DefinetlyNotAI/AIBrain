@@ -4,6 +4,12 @@ from __future__ import annotations
 import os
 import signal
 import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 
@@ -51,7 +57,7 @@ def require_virtual_environment() -> None:
             + " "
             + color("Create and install:", Color.GRAY)
             + "   "
-            + color("py installer.py", Color.WHITE, Color.BOLD),
+            + color("py cli\\installer.py", Color.WHITE, Color.BOLD),
             file=sys.stderr,
         )
 
@@ -75,7 +81,7 @@ def require_virtual_environment() -> None:
             + " "
             + color("Run AIBrain:", Color.GRAY)
             + "          "
-            + color("python main.py", Color.WHITE, Color.BOLD),
+            + color("python cli\\main.py", Color.WHITE, Color.BOLD),
             file=sys.stderr,
         )
 

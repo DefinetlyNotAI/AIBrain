@@ -26,3 +26,26 @@ API void edge_activity(const float *values, const int32_t *edges, size_t edge_co
         output[i * 2 + 1] = activity;
     }
 }
+
+API size_t region_activity(
+    const float *values,
+    const int16_t *regions,
+    size_t count,
+    size_t region_count,
+    float threshold,
+    float *sums
+) {
+    for (size_t region = 0; region < region_count; ++region) {
+        sums[region] = 0.0f;
+    }
+    size_t active = 0;
+    for (size_t index = 0; index < count; ++index) {
+        const int16_t region = regions[index];
+        const float value = values[index];
+        if (region >= 0 && (size_t)region < region_count) {
+            sums[region] += value;
+        }
+        active += value > threshold;
+    }
+    return active;
+}

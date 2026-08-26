@@ -1,6 +1,6 @@
 """Build and verify AIBrain's native Windows connectome library.
 
-Run from any directory with: ``py -3.11 scripts/build_native.py``.
+Run from any directory with: ``py -3.11 cli/build_native.py``.
 The script discovers MinGW GCC, Clang, or MSVC, compiles an optimized x64 DLL,
 and verifies it can be loaded before reporting success.
 """
@@ -17,25 +17,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "src" / "native" / "connectome_native.c"
-OUTPUT = ROOT / "src" / "native" / "aibrain_connectome.dll"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
+from cli.ui import Color as Colour, command, error, header, section, status, success
 
-class Colour:
-    RESET = "\x1b[0m"; BOLD = "\x1b[1m"; CYAN = "\x1b[36m"; GREEN = "\x1b[32m"; YELLOW = "\x1b[33m"; RED = "\x1b[31m"
-
-
-def enable_colour() -> bool:
-    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
-        return False
-    if os.name == "nt":
-        try:
-            import ctypes as _ctypes
-            _ctypes.windll.kernel32.SetConsoleMode(_ctypes.windll.kernel32.GetStdHandle(-11), 7)
-        except (AttributeError, OSError):
-            pass
-    return True
-
+SOURCE = ROOT / "src" / "native" / "c" / "connectome_native.c"
+OUTPUT = ROOT / "dll" / "aibrain_connectome.dll"
 
 @dataclass(frozen=True, slots=True)
 class Compiler:
@@ -53,9 +41,8 @@ def discover_compiler(explicit: str | None) -> Compiler:
     raise RuntimeError("No C compiler found. Install Visual Studio Build Tools, LLVM, or MSYS2 MinGW-w64 GCC.")
 
 
-def line(label: str, text: str, colour: str = "") -> None:
-    prefix = f"{colour}{Colour.BOLD}[{label:<7}]{Colour.RESET}" if COLOUR else f"[{label:<7}]"
-    print(f"{prefix} {text}")
+def line(label: str, text: str, colour: str = Colour.CYAN) -> None:
+    status(label, text, colour)
 
 
 def command_for(compiler: Compiler, debug: bool) -> list[str]:
@@ -69,9 +56,9 @@ def command_for(compiler: Compiler, debug: bool) -> list[str]:
 
 
 def compile_library(compiler: Compiler, debug: bool) -> None:
-    command = command_for(compiler, debug)
-    line("BUILD", " ".join(command), Colour.CYAN)
-    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+    build_command = command_for(compiler, debug)
+    command(build_command)
+    result = subprocess.run(build_command, cwd=ROOT, text=True, capture_output=True)
     for output in (result.stdout, result.stderr):
         for item in output.splitlines():
             line("COMPILER", item, Colour.YELLOW if result.returncode else Colour.CYAN)
@@ -85,7 +72,7 @@ def verify_library() -> None:
     if OUTPUT.read_bytes()[:2] != b"MZ":
         raise RuntimeError("Output is not a Windows PE DLL")
     library = ctypes.WinDLL(str(OUTPUT))
-    for symbol in ("decay_and_count", "edge_activity"):
+    for symbol in ("decay_and_count", "edge_activity", "region_activity"):
         getattr(library, symbol)
     line("VERIFY", f"Loaded {OUTPUT.name} ({OUTPUT.stat().st_size:,} bytes); exported symbols verified", Colour.GREEN)
 
@@ -96,7 +83,7 @@ def main() -> int:
     parser.add_argument("--debug", action="store_true", help="Build an unoptimized debug DLL")
     parser.add_argument("--clean", action="store_true", help="Remove the compiled DLL before building")
     arguments = parser.parse_args()
-    line("AIBRAIN", "Native connectome build tool · x64 Windows", Colour.CYAN)
+    header("AIBrain", "Native connectome build tool · x64 Windows")
     if not SOURCE.is_file():
         line("ERROR", f"Missing source: {SOURCE}", Colour.RED); return 1
     if arguments.clean and OUTPUT.exists():
@@ -108,10 +95,9 @@ def main() -> int:
         verify_library()
     except (OSError, RuntimeError) as exc:
         line("ERROR", str(exc), Colour.RED); return 1
-    line("SUCCESS", "Native acceleration is ready for AIBrain.", Colour.GREEN)
+    success("Native acceleration is ready for AIBrain.")
     return 0
 
 
-COLOUR = enable_colour()
 if __name__ == "__main__":
     raise SystemExit(main())

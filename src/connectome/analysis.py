@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .graph import ConnectomeGraph
+from ..native.wrapper.connectome import native
 from ..models.instrumented_backend import ActivationFrame
 
 
@@ -46,7 +47,7 @@ class ConnectomeAnalyzer:
         self._learning_rate = .025
 
     def observe(self, frame: ActivationFrame, values: np.ndarray) -> AnalysisRecord:
-        regional = np.bincount(self.graph.regions, weights=values, minlength=self.region_count).astype("f4")
+        regional, active_nodes = native.regions(values, self.graph.regions, self.region_count)
         counts = np.bincount(self.graph.regions, minlength=self.region_count).clip(1).astype("f4")
         regional_mean = regional / counts
         distribution = regional / max(float(regional.sum()), 1e-6)
@@ -64,7 +65,7 @@ class ConnectomeAnalyzer:
         self.embedding_centroid += .04 * (embedding - self.embedding_centroid)
         dominant = int(np.argmax(regional))
         record = AnalysisRecord(
-            frame.step, frame.token_text, int(np.count_nonzero(values > .1)), float(values.mean()), float(values.max()),
+            frame.step, frame.token_text, active_nodes, float(values.mean()), float(values.max()),
             self.graph.region_names[dominant], novelty, reconstruction_error, coherence,
             tuple(float(value) for value in embedding), tuple(float(value) for value in regional_mean),
         )

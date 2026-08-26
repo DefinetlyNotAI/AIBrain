@@ -10,7 +10,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
-from .native import native
+from ..native.wrapper.connectome import native
 
 LOG = logging.getLogger(__name__)
 
