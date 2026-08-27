@@ -1,4 +1,4 @@
-"""Compile a timestamped, standalone AIBrain distribution with Nuitka."""
+"""Compile timestamped standalone AIBrain desktop applications with Nuitka."""
 from __future__ import annotations
 
 import argparse
@@ -6,8 +6,10 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -16,12 +18,27 @@ if str(ROOT) not in sys.path:
 from src.utils.console_ui import Color, clear_screen, command_output_box, command_preview, error, header, panel, section
 from src.utils.gpu import set_windows_executable_gpu_preference
 
+
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
-# Nuitka already bundles msvcp140.dll from the Python/PySide dependency graph.
-# llama.cpp additionally needs the OpenMP runtime, which Nuitka cannot locate
-# reliably on a machine with only an older Visual Studio installation.
 RUNTIME_DLLS = ("vcomp140.dll",)
+NATIVE_LIBRARY = ROOT / "dll" / "aibrain.connectome.dll"
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationTarget:
+    directory: str
+    executable: str
+    entry_point: Path
+    icon: Path
+    console_mode: str
+
+
+APPLICATIONS = (
+    ApplicationTarget("ai_brain", "ai_brain.exe", ROOT / "cli" / "main.py", ROOT / "ico" / "brain.ico", "attach"),
+    ApplicationTarget("diagnostic", "diagnostic.exe", ROOT / "cli" / "diagnostic.py", ROOT / "ico" / "diagnostic.ico", "disable"),
+    ApplicationTarget("analysis", "analysis.exe", ROOT / "cli" / "analysis.py", ROOT / "ico" / "analysis.ico", "disable"),
+)
 
 
 def run(command_line: list[str]) -> None:
@@ -49,48 +66,78 @@ def runtime_dlls() -> list[Path]:
     return resolved
 
 
+def nuitka_command(target: ApplicationTarget, build_root: Path, runtimes: list[Path]) -> list[str]:
+    """Build a reproducible standalone command for one application target."""
+    command_line = [
+        str(VENV_PYTHON),
+        "-m",
+        "nuitka",
+        "--standalone",
+        "--assume-yes-for-downloads",
+        "--enable-plugin=pyside6",
+        f"--windows-console-mode={target.console_mode}",
+        f"--windows-icon-from-ico={target.icon}",
+        f"--output-filename={target.executable}",
+        f"--output-dir={build_root}",
+        "--include-package=src",
+        f"--include-data-files={NATIVE_LIBRARY}=dll/{NATIVE_LIBRARY.name}",
+        str(target.entry_point),
+    ]
+    for runtime in runtimes:
+        command_line.insert(-1, f"--include-data-files={runtime}={runtime.name}")
+    return command_line
+
+
+def _produced_distribution(build_root: Path) -> Path:
+    candidates = list(build_root.glob("*.dist"))
+    if len(candidates) != 1 or not candidates[0].is_dir():
+        raise RuntimeError("Nuitka did not produce exactly one standalone distribution directory")
+    return candidates[0]
+
+
+def _verify_application(application: Path, target: ApplicationTarget) -> Path:
+    executable = application / target.executable
+    if not executable.is_file() or executable.stat().st_size < 100_000:
+        raise RuntimeError(f"Standalone output is missing {target.executable} or it is unexpectedly small")
+    if not (application / "dll" / NATIVE_LIBRARY.name).is_file():
+        raise RuntimeError(f"{target.executable} is missing the native connectome DLL")
+    for runtime_name in ("msvcp140.dll", *RUNTIME_DLLS):
+        if not (application / runtime_name).is_file():
+            raise RuntimeError(f"{target.executable} is missing required runtime {runtime_name}")
+    return executable
+
+
 def build(timestamp: str | None = None) -> Path:
     if not VENV_PYTHON.is_file():
         raise RuntimeError("Managed virtual environment is missing. Run: py cli\\installer.py")
+    if not NATIVE_LIBRARY.is_file():
+        raise RuntimeError("Native connectome DLL is missing. Run: py cli\\build_native.py")
+    for target in APPLICATIONS:
+        if not target.icon.is_file():
+            raise RuntimeError(f"Required application icon is missing: {target.icon}")
+
     release = DIST_ROOT / f"AIBrain_{timestamp or datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if release.exists():
         raise RuntimeError(f"Refusing to overwrite existing distribution: {release}")
-    section("Compile standalone application", 1)
     release.mkdir(parents=True)
-    build_root = release / "_nuitka"
-    target = ROOT / "cli" / "main.py"
-    command_line = [
-        str(VENV_PYTHON), "-m", "nuitka", "--standalone", "--assume-yes-for-downloads", "--enable-plugin=pyside6",
-        "--windows-console-mode=disable", "--output-filename=AIBrain.exe", f"--output-dir={build_root}",
-        "--include-package=src",
-        f"--include-data-files={ROOT / 'dll' / 'aibrain.connectome.dll'}=dll/aibrain.connectome.dll", str(target),
-    ]
-    for runtime in runtime_dlls():
-        command_line.insert(-1, f"--include-data-files={runtime}={runtime.name}")
-    run(command_line)
-    produced = build_root / "main.dist"
-    if not produced.is_dir():
-        candidates = list(build_root.glob("*.dist"))
-        if len(candidates) != 1:
-            raise RuntimeError("Nuitka did not produce a standalone distribution directory")
-        produced = candidates[0]
-    for item in produced.iterdir():
-        shutil.move(str(item), release / item.name)
-    shutil.rmtree(build_root)
-    executable = release / "AIBrain.exe"
-    if not executable.is_file() or executable.stat().st_size < 100_000:
-        raise RuntimeError("Nuitka output is missing AIBrain.exe or is unexpectedly small")
-    if not (release / "dll" / "aibrain.connectome.dll").is_file():
-        raise RuntimeError("Standalone distribution is missing the native connectome DLL")
-    for runtime_name in ("msvcp140.dll", "vcomp140.dll"):
-        if not (release / runtime_name).is_file():
-            raise RuntimeError(f"Standalone distribution is missing required runtime: {runtime_name}")
-    set_windows_executable_gpu_preference(executable)
+    runtimes = runtime_dlls()
+    try:
+        for index, target in enumerate(APPLICATIONS, start=1):
+            section(f"Compile {target.executable}", index)
+            build_root = release / "_nuitka" / target.directory
+            run(nuitka_command(target, build_root, runtimes))
+            application = release / target.directory
+            shutil.move(str(_produced_distribution(build_root)), application)
+            executable = _verify_application(application, target)
+            if target.executable == "ai_brain.exe":
+                set_windows_executable_gpu_preference(executable)
+    finally:
+        shutil.rmtree(release / "_nuitka", ignore_errors=True)
     return release
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build a timestamped Nuitka standalone AIBrain distribution.")
+    parser = argparse.ArgumentParser(description="Build timestamped standalone AIBrain desktop applications.")
     parser.add_argument("--timestamp", help="Override the YYYYMMDD_HHMMSS distribution suffix for reproducible builds")
     arguments = parser.parse_args()
     clear_screen()
@@ -102,8 +149,8 @@ def main() -> int:
         return 1
     panel(
         "DISTRIBUTION COMPLETE",
-        [("Release", str(release)), ("Executable", str(release / "AIBrain.exe"))],
-        footer="Standalone AIBrain package is ready to launch.",
+        [(target.executable, str(release / target.directory / target.executable)) for target in APPLICATIONS],
+        footer="Each application folder is self-contained and ready to launch.",
         tone=Color.GREEN,
     )
     return 0

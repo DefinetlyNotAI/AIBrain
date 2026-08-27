@@ -4,6 +4,7 @@ import subprocess
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 from cli import build_dist
@@ -31,6 +32,16 @@ class BuildDistributionTests(unittest.TestCase):
             build_dist.run(["tool"])
 
         self.assertEqual(raised.exception.returncode, 4)
+
+    def test_each_packaged_application_has_its_named_entry_point_and_icon(self) -> None:
+        targets = {target.executable: target for target in build_dist.APPLICATIONS}
+
+        self.assertEqual(set(targets), {"ai_brain.exe", "diagnostic.exe", "analysis.exe"})
+        self.assertEqual(targets["ai_brain.exe"].console_mode, "attach")
+        for target in targets.values():
+            command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")])
+            self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
+            self.assertIn(f"--output-filename={target.executable}", command)
 
 
 if __name__ == "__main__":
