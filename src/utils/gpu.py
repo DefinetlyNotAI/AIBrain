@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -16,6 +17,22 @@ class RenderAdapter:
 
 
 LOG = logging.getLogger(__name__)
+GPU_RELAUNCH_EXIT_CODE = 75
+_GPU_RELAUNCH_ATTEMPT_ENV = "AIBRAIN_GPU_RELAUNCH_ATTEMPT"
+_MAX_GPU_RELAUNCH_ATTEMPTS = 1
+
+
+def gpu_relaunch_attempt() -> int:
+    """Return the validated number of GPU-process retries already performed."""
+    try:
+        return max(0, int(os.environ.get(_GPU_RELAUNCH_ATTEMPT_ENV, "0")))
+    except ValueError:
+        return 0
+
+
+def can_request_gpu_relaunch() -> bool:
+    """Allow one renderer-triggered restart after a wrong adapter is detected."""
+    return sys.platform == "win32" and gpu_relaunch_attempt() < _MAX_GPU_RELAUNCH_ATTEMPTS
 def discover_render_adapters() -> list[RenderAdapter]:
     """Discover Windows display adapters; Qt/OpenGL makes the final device choice."""
     command = ["powershell", "-NoProfile", "-Command",

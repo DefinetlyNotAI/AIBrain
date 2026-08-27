@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,6 +12,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.utils.console_ui import error, instruction_list
+from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
+
+_GPU_SUPERVISOR_ENV = "AIBRAIN_GPU_SUPERVISOR"
+_GPU_RELAUNCH_ATTEMPT_ENV = "AIBRAIN_GPU_RELAUNCH_ATTEMPT"
+_MAX_GPU_RELAUNCH_ATTEMPTS = 1
 
 
 def require_virtual_environment() -> None:
@@ -34,6 +40,39 @@ def require_virtual_environment() -> None:
         raise SystemExit(1)
 
 
+def _child_command() -> list[str]:
+    """Build the exact command for a supervised Python or Nuitka child."""
+    if "__compiled__" in globals():
+        return [sys.executable, *sys.argv[1:]]
+    return [sys.executable, *sys.argv]
+
+
+def _supervise_gpu_launch() -> int:
+    """Keep this console process alive while a GPU-configured child runs."""
+    environment = os.environ.copy()
+    environment[_GPU_SUPERVISOR_ENV] = "1"
+
+    for attempt in range(_MAX_GPU_RELAUNCH_ATTEMPTS + 1):
+        child_environment = environment.copy()
+        child_environment[_GPU_RELAUNCH_ATTEMPT_ENV] = str(attempt)
+        child = subprocess.Popen(
+            _child_command(),
+            env=child_environment,
+            close_fds=False,
+        )
+        try:
+            exit_code = child.wait()
+        except KeyboardInterrupt:
+            child.terminate()
+            child.wait()
+            return 130
+
+        if exit_code != GPU_RELAUNCH_EXIT_CODE:
+            return exit_code
+
+    return GPU_RELAUNCH_EXIT_CODE
+
+
 def main() -> int:
     require_virtual_environment()
     os.environ.setdefault("QT_OPENGL", "desktop")
@@ -47,6 +86,8 @@ def main() -> int:
     prefer_high_performance = should_prefer_high_performance_gpu()
     if prefer_high_performance:
         set_windows_gpu_preference(True)
+        if sys.platform == "win32" and not os.environ.get(_GPU_SUPERVISOR_ENV):
+            return _supervise_gpu_launch()
 
     surface = QSurfaceFormat()
     surface.setVersion(3, 3)
