@@ -1,50 +1,127 @@
+"""Project-local, readable runtime and crash logging."""
 from __future__ import annotations
 
 import logging
-import shutil
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
+from types import TracebackType
 
 
-class OneLineFormatter(logging.Formatter):
-    """Compact structured logs that never wrap or inject terminal control text."""
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MAX_LOG_BYTES = 5 * 1024 * 1024
 
-    _COLOURS = {logging.DEBUG: "\x1b[38;5;245m", logging.INFO: "\x1b[38;5;45m", logging.WARNING: "\x1b[38;5;220m",
-                logging.ERROR: "\x1b[38;5;203m", logging.CRITICAL: "\x1b[1;38;5;196m"}
+
+class AlignedFormatter(logging.Formatter):
+    """Format complete multi-line records with an aligned continuation gutter."""
+
+    _COLOURS = {
+        logging.DEBUG: "\x1b[38;5;245m",
+        logging.INFO: "\x1b[38;5;45m",
+        logging.WARNING: "\x1b[38;5;220m",
+        logging.ERROR: "\x1b[38;5;203m",
+        logging.CRITICAL: "\x1b[1;38;5;196m",
+    }
     _RESET = "\x1b[0m"
 
-    def __init__(self, *, colour: bool, terminal_width: bool) -> None:
+    def __init__(self, *, colour: bool) -> None:
         super().__init__()
         self.colour = colour
-        self.terminal_width = terminal_width
 
     def format(self, record: logging.LogRecord) -> str:
         timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
-        message = " ".join(record.getMessage().split())
-        line = f"{timestamp} | {record.levelname:<8} | {record.name:<24.24} | {message}"
-        if self.terminal_width:
-            width = max(40, shutil.get_terminal_size(fallback=(120, 24)).columns)
-            if len(line) > width:
-                line = line[: max(3, width - 3)] + "..."
+        prefix = f"{timestamp} | {record.levelname:<8} | {record.name:<28} | "
+        message = record.getMessage()
+        if record.exc_info:
+            message = f"{message}\n{self.formatException(record.exc_info)}"
+        elif record.stack_info:
+            message = f"{message}\n{self.formatStack(record.stack_info)}"
+
+        lines = message.splitlines() or [""]
+        rendered = "\n".join([f"{prefix}{lines[0]}", *[(" " * len(prefix)) + line for line in lines[1:]]])
         if self.colour:
-            line = f"{self._COLOURS.get(record.levelno, '')}{line}{self._RESET}"
-        return line
+            return f"{self._COLOURS.get(record.levelno, '')}{rendered}{self._RESET}"
+        return rendered
 
 
-def configure_logging() -> None:
-    root = logging.getLogger()
-    if root.handlers:
+class BoundedFileHandler(logging.FileHandler):
+    """Keep the newest log data and discard old complete lines above the cap."""
+
+    def __init__(self, filename: Path, *, max_bytes: int = MAX_LOG_BYTES) -> None:
+        super().__init__(filename, mode="a", encoding="utf-8")
+        self.max_bytes = max_bytes
+
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        self._trim()
+
+    def _trim(self) -> None:
+        try:
+            self.flush()
+            path = Path(self.baseFilename)
+            if path.stat().st_size <= self.max_bytes:
+                return
+            with path.open("rb") as source:
+                source.seek(-self.max_bytes, 2)
+                source.readline()
+                retained = source.read()
+            with path.open("wb") as destination:
+                destination.write(retained)
+        except OSError:
+            # Logging cannot safely report a logging-storage failure without
+            # risking recursive writes to this same handler.
+            return
+
+
+def _uncaught_exception(
+    exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
+) -> None:
+    if issubclass(exc_type, KeyboardInterrupt):
         return
+    logging.getLogger("aibrain.crash").critical(
+        "Unhandled application exception", exc_info=(exc_type, value, traceback)
+    )
+
+
+def _thread_exception(args: threading.ExceptHookArgs) -> None:
+    _uncaught_exception(args.exc_type, args.exc_value, args.exc_traceback)
+
+
+def configure_logging(log_directory: Path | None = None) -> tuple[Path, Path]:
+    """Start fresh normal and crash logs for this application run.
+
+    Both files are bounded while the program runs so a long session preserves
+    the newest details instead of consuming disk space indefinitely.
+    """
+    directory = log_directory or PROJECT_ROOT / "logs"
+    directory.mkdir(parents=True, exist_ok=True)
+    runtime_log = directory / "aibrain.log"
+    crash_log = directory / "crash.log"
+    for path in (runtime_log, crash_log):
+        path.unlink(missing_ok=True)
+
+    root = logging.getLogger()
     root.setLevel(logging.INFO)
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+        handler.close()
+
+    formatter = AlignedFormatter(colour=sys.stderr.isatty())
     stream = logging.StreamHandler()
-    stream.setFormatter(OneLineFormatter(colour=sys.stderr.isatty(), terminal_width=True))
+    stream.setFormatter(formatter)
     root.addHandler(stream)
-    try:
-        log_directory = Path.home() / ".aibrain" / "logs"
-        log_directory.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_directory / "aibrain.log", encoding="utf-8")
-        file_handler.setFormatter(OneLineFormatter(colour=False, terminal_width=False))
-        root.addHandler(file_handler)
-    except OSError as exc:
-        root.warning("File logging disabled: %s", exc)
+
+    runtime_handler = BoundedFileHandler(runtime_log)
+    runtime_handler.setFormatter(AlignedFormatter(colour=False))
+    root.addHandler(runtime_handler)
+
+    crash_handler = BoundedFileHandler(crash_log)
+    crash_handler.setLevel(logging.ERROR)
+    crash_handler.setFormatter(AlignedFormatter(colour=False))
+    root.addHandler(crash_handler)
+
+    sys.excepthook = _uncaught_exception
+    threading.excepthook = _thread_exception
+    logging.getLogger(__name__).info("Logging to %s and %s", runtime_log, crash_log)
+    return runtime_log, crash_log
