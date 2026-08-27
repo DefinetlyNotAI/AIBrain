@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         self.chat.clearRequested.connect(self.clear)
         self.chat.infiniteRequested.connect(self.start_infinite_simulation)
         self.chat.diagnosticsRequested.connect(self.open_diagnostics)
+        self.chat.analysisRequested.connect(self.open_analysis)
         self.chat.modelChanged.connect(self.select_model)
         self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
@@ -148,6 +149,7 @@ class MainWindow(QMainWindow):
         self.unloadModel.emit()
         self.simulation_worker.unload()
         self.current_model = model
+        self.chat.set_analysis_available(model is not None and model.available)
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
@@ -169,6 +171,21 @@ class MainWindow(QMainWindow):
     def open_diagnostics(self) -> None:
         """Open model recovery without interrupting a currently loaded model."""
         DiagnosticsWindow(self).exec()
+
+    def open_analysis(self) -> None:
+        if self.current_model is not None:
+            self.visualizer.run_nn_analysis_plus()
+
+    def _show_repairable_error(self, title: str, message: str) -> None:
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Critical)
+        dialog.setWindowTitle(title)
+        dialog.setText(message)
+        diagnostics = dialog.addButton("Open Repair and Diagnostics", QMessageBox.ButtonRole.ActionRole)
+        dialog.addButton(QMessageBox.StandardButton.Ok)
+        dialog.exec()
+        if dialog.clickedButton() is diagnostics:
+            self.open_diagnostics()
 
     def send(self, prompt: str) -> None:
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
@@ -244,7 +261,7 @@ class MainWindow(QMainWindow):
         LOG.error("%s", error)
         self.chat.stats.setText(error)
         self.chat.generating(False)
-        QMessageBox.critical(self, "Infinite simulation error", error)
+        self._show_repairable_error("Infinite simulation error", error)
 
     def regenerate(self) -> None:
         if self.history and self.history[-1]["role"] == "assistant":
@@ -299,7 +316,7 @@ class MainWindow(QMainWindow):
         self.chat.generating(False)
         self._assistant_bubble = None
         self._awaiting_first_token = False
-        QMessageBox.critical(self, "Generation error", error)
+        self._show_repairable_error("Generation error", error)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self.visualizer.analyzer.save_model()

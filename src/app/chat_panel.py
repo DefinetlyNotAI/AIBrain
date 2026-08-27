@@ -60,6 +60,7 @@ class ChatPanel(QWidget):
     playbackNextRequested = Signal()
     infiniteRequested = Signal(str)
     diagnosticsRequested = Signal()
+    analysisRequested = Signal()
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
@@ -111,6 +112,9 @@ class ChatPanel(QWidget):
         self.infinite.setToolTip(
             "Start an open-ended world/participant roleplay simulation using two local model instances")
         self.clear = QPushButton("Clear")
+        self.open_analysis = QPushButton("Analysis")
+        self.open_analysis.setToolTip("Export NN Analysis+ for recorded frames from the selected model")
+        self.open_analysis.setEnabled(False)
         self.stop.setEnabled(False)
         # noinspection DuplicatedCode
         self.send.clicked.connect(self._send)
@@ -118,7 +122,8 @@ class ChatPanel(QWidget):
         self.regenerate.clicked.connect(self.regenerateRequested)
         self.infinite.clicked.connect(self._start_infinite)
         self.clear.clicked.connect(self.clearRequested)
-        for button in (self.send, self.stop, self.regenerate, self.infinite, self.clear):
+        self.open_analysis.clicked.connect(self.analysisRequested)
+        for button in (self.send, self.stop, self.regenerate, self.infinite, self.open_analysis, self.clear):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         advanced = QFormLayout()
@@ -187,6 +192,10 @@ class ChatPanel(QWidget):
             self.models.addItem(model.label, model)
         self.models.blockSignals(False)
         self.models.setEnabled(bool(models))
+        self.open_analysis.setEnabled(bool(models))
+
+    def set_analysis_available(self, available: bool) -> None:
+        self.open_analysis.setEnabled(available)
 
     def set_validating_models(self, text: str) -> None:
         self.models.blockSignals(True)
@@ -277,3 +286,4 @@ class ChatPanel(QWidget):
         self.regenerate.setEnabled(not running)
         self.infinite.setEnabled(not running)
         self.models.setEnabled(not running)
+        self.open_analysis.setEnabled(not running and self.models.currentData() is not None)

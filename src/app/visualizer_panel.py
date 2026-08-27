@@ -154,7 +154,7 @@ class VisualizerPanel(QWidget):
         self.analysis.setToolTip(
             "Analyze every recorded visual frame and export compact neural-network findings"
         )
-        self.analysis.clicked.connect(self._run_nn_analysis_plus)
+        self.analysis.clicked.connect(self.run_nn_analysis_plus)
 
         reset = QPushButton("Reset view")
         reset.clicked.connect(lambda: self.renderer.reset_camera())
@@ -384,7 +384,7 @@ class VisualizerPanel(QWidget):
         if hasattr(self, "renderer"):
             self.renderer.set_neuron_borders(visible, self.border_width.value())
 
-    def _run_nn_analysis_plus(self) -> None:
+    def run_nn_analysis_plus(self) -> None:
         if not self.analyzer.records:
             QMessageBox.information(
                 self,
