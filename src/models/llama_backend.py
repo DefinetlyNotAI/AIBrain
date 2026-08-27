@@ -82,12 +82,27 @@ class LlamaBackend:
             ctypes.c_void_p(),
         )
 
-        self._llm = Llama(
-            model_path=str(path),
-            n_ctx=config.context_length,
-            n_gpu_layers=config.gpu_layers,
-            verbose=False,
-        )
+        try:
+            self._llm = Llama(
+                model_path=str(path),
+                n_ctx=config.context_length,
+                n_gpu_layers=config.gpu_layers,
+                verbose=False,
+            )
+        except Exception as exc:
+            if config.gpu_layers == 0:
+                raise
+            LOG.warning(
+                "Model load with %s GPU layer(s) failed (%s); retrying the same GGUF on CPU layers",
+                config.gpu_layers,
+                exc,
+            )
+            self._llm = Llama(
+                model_path=str(path),
+                n_ctx=config.context_length,
+                n_gpu_layers=0,
+                verbose=False,
+            )
 
         self.loaded_path = path
 

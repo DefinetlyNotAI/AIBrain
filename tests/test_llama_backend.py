@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from src.models.llama_backend import _handle_native_log
+from src.models.llama_backend import GenerationConfig, LlamaBackend, _handle_native_log
 
 
 class LlamaBackendLoggingTests(unittest.TestCase):
@@ -17,3 +20,24 @@ class LlamaBackendLoggingTests(unittest.TestCase):
             _handle_native_log(1, None, None)
             _handle_native_log(1, b"...", None)
             _handle_native_log(1, b"model metadata loaded", None)
+
+    def test_load_retries_cpu_when_automatic_gpu_offload_fails(self) -> None:
+        calls: list[int] = []
+
+        class FakeLlama:
+            def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+                calls.append(kwargs["n_gpu_layers"])
+                if kwargs["n_gpu_layers"] != 0:
+                    raise RuntimeError("GPU offload unavailable")
+
+        fake_module = SimpleNamespace(
+            Llama=FakeLlama,
+            llama_log_callback=lambda callback: callback,
+            llama_log_set=lambda _callback, _context: None,
+        )
+        with patch.dict("sys.modules", {"llama_cpp": fake_module}):
+            backend = LlamaBackend()
+            backend.load(Path("model.gguf"), GenerationConfig(gpu_layers=-1))
+
+        self.assertEqual(calls, [-1, 0])
+        self.assertEqual(backend.loaded_path, Path("model.gguf"))
