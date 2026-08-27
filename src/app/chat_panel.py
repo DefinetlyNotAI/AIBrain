@@ -59,6 +59,7 @@ class ChatPanel(QWidget):
     playbackPreviousRequested = Signal()
     playbackNextRequested = Signal()
     infiniteRequested = Signal(str)
+    diagnosticsRequested = Signal()
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
@@ -75,8 +76,13 @@ class ChatPanel(QWidget):
         subtitle.setObjectName("muted")
         layout.addWidget(subtitle)
         self.models = QComboBox()
+        self.models.setAccessibleName("Validated local GGUF models")
         self.models.currentIndexChanged.connect(lambda _: self.modelChanged.emit(self.models.currentData()))
         layout.addWidget(self.models)
+        self.diagnostics = QPushButton("Repair and Diagnostics")
+        self.diagnostics.setToolTip("Inspect invalid Ollama manifests, repair a selected model, or remove a stale manifest")
+        self.diagnostics.clicked.connect(self.diagnosticsRequested)
+        layout.addWidget(self.diagnostics)
         self.messages_layout = QVBoxLayout()
         self.messages_layout.addStretch(1)
         container = QWidget()

@@ -9,6 +9,7 @@ from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSplitter
 
 from .chat_panel import ChatPanel
+from .diagnostics_window import DiagnosticsWindow
 from .settings import load_generation_settings, save_generation_settings
 from .visualizer_panel import VisualizerPanel
 from ..models.generation_worker import GenerationWorker
@@ -85,6 +86,7 @@ class MainWindow(QMainWindow):
         self.chat.regenerateRequested.connect(self.regenerate)
         self.chat.clearRequested.connect(self.clear)
         self.chat.infiniteRequested.connect(self.start_infinite_simulation)
+        self.chat.diagnosticsRequested.connect(self.open_diagnostics)
         self.chat.modelChanged.connect(self.select_model)
         self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
@@ -163,6 +165,10 @@ class MainWindow(QMainWindow):
             self.stop()
         else:
             self.chat.stats.setText("Escape interrupts an active generation.")
+
+    def open_diagnostics(self) -> None:
+        """Open model recovery without interrupting a currently loaded model."""
+        DiagnosticsWindow(self).exec()
 
     def send(self, prompt: str) -> None:
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
