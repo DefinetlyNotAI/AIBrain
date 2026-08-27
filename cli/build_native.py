@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import Color as Colour, command, error, header, panel, section, status
+from src.utils.console_ui import Color as Colour, clear_screen, command_output_box, command_preview, error, header, panel, section, status
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
@@ -58,11 +58,9 @@ def command_for(compiler: Compiler, debug: bool) -> list[str]:
 
 def compile_library(compiler: Compiler, debug: bool) -> None:
     build_command = command_for(compiler, debug)
-    command(build_command)
+    command_preview(build_command)
     result = subprocess.run(build_command, cwd=ROOT, text=True, capture_output=True)
-    for output in (result.stdout, result.stderr):
-        for item in output.splitlines():
-            line("COMPILER", item, Colour.YELLOW if result.returncode else Colour.CYAN)
+    command_output_box("\n".join(part.rstrip() for part in (result.stdout, result.stderr) if part.strip()))
     if result.returncode:
         raise RuntimeError(f"Compiler exited with code {result.returncode}")
 
@@ -84,6 +82,7 @@ def main() -> int:
     parser.add_argument("--debug", action="store_true", help="Build an unoptimized debug DLL")
     parser.add_argument("--clean", action="store_true", help="Remove the compiled DLL before building")
     arguments = parser.parse_args()
+    clear_screen()
     header("AIBrain", "Native connectome build tool · x64 Windows")
     section("Compile native acceleration", 1)
     if not SOURCE.is_file():

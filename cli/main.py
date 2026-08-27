@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import error, header, instruction_list
+from src.utils.console_ui import clear_screen, error, header, instruction_list
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
 
 LOG = logging.getLogger(__name__)
@@ -79,6 +79,7 @@ def _supervise_gpu_launch() -> int:
 
 def main() -> int:
     require_virtual_environment()
+    clear_screen()
     os.environ.setdefault("QT_OPENGL", "desktop")
     from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, QTimer, Slot
     from PySide6.QtGui import QFont, QSurfaceFormat

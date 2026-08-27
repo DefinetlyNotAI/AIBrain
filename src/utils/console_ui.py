@@ -9,20 +9,31 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-ROOT = Path(__file__).resolve().parents[2]
 
+ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
 COMMAND_INDENT = 2
-
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+BOX_HORIZONTAL = "\N{BOX DRAWINGS LIGHT HORIZONTAL}"
+BOX_VERTICAL = "\N{BOX DRAWINGS LIGHT VERTICAL}"
+BOX_TOP_LEFT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}"
+BOX_TOP_RIGHT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND LEFT}"
+BOX_BOTTOM_LEFT = "\N{BOX DRAWINGS LIGHT ARC UP AND RIGHT}"
+BOX_BOTTOM_RIGHT = "\N{BOX DRAWINGS LIGHT ARC UP AND LEFT}"
+BOX_MID_LEFT = "\N{BOX DRAWINGS LIGHT VERTICAL AND RIGHT}"
+BOX_MID_RIGHT = "\N{BOX DRAWINGS LIGHT VERTICAL AND LEFT}"
+BULLET = "\N{BLACK CIRCLE}"
+CHECK = "\N{CHECK MARK}"
+CROSS = "\N{MULTIPLICATION X}"
+PROMPT = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 
 
 def enable_windows_utf8_console() -> None:
-    """Configure Windows streams and an interactive console for UTF-8 output."""
+    """Configure Windows' real console and redirected streams for UTF-8."""
     if os.name != "nt":
         return
-
     try:
         kernel32 = __import__("ctypes").windll.kernel32
         if sys.stdout.isatty():
@@ -31,7 +42,7 @@ def enable_windows_utf8_console() -> None:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):
-        pass
+        return
 
 
 enable_windows_utf8_console()
@@ -63,27 +74,16 @@ def terminal_width() -> int:
         try:
             import ctypes
 
-            class _Coord(ctypes.Structure):
+            class Coord(ctypes.Structure):
                 _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
 
-            class _SmallRect(ctypes.Structure):
-                _fields_ = [
-                    ("left", ctypes.c_short),
-                    ("top", ctypes.c_short),
-                    ("right", ctypes.c_short),
-                    ("bottom", ctypes.c_short),
-                ]
+            class SmallRect(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_short), ("top", ctypes.c_short), ("right", ctypes.c_short), ("bottom", ctypes.c_short)]
 
-            class _ConsoleScreenBufferInfo(ctypes.Structure):
-                _fields_ = [
-                    ("size", _Coord),
-                    ("cursor", _Coord),
-                    ("attributes", ctypes.c_ushort),
-                    ("window", _SmallRect),
-                    ("maximum_window_size", _Coord),
-                ]
+            class ConsoleScreenBufferInfo(ctypes.Structure):
+                _fields_ = [("size", Coord), ("cursor", Coord), ("attributes", ctypes.c_ushort), ("window", SmallRect), ("maximum_window_size", Coord)]
 
-            info = _ConsoleScreenBufferInfo()
+            info = ConsoleScreenBufferInfo()
             handle = ctypes.windll.kernel32.GetStdHandle(-11)
             if handle and ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
                 width = info.window.right - info.window.left + 1
@@ -92,7 +92,40 @@ def terminal_width() -> int:
     return max(width, MIN_WIDTH)
 
 
-def rule(char: str = "─") -> str:
+def clear_screen() -> None:
+    """Clear an interactive terminal without invoking cmd.exe or a shell command."""
+    if not sys.stdout.isatty():
+        return
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            class Coord(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
+
+            class SmallRect(ctypes.Structure):
+                _fields_ = [("left", ctypes.c_short), ("top", ctypes.c_short), ("right", ctypes.c_short), ("bottom", ctypes.c_short)]
+
+            class ConsoleScreenBufferInfo(ctypes.Structure):
+                _fields_ = [("size", Coord), ("cursor", Coord), ("attributes", ctypes.c_ushort), ("window", SmallRect), ("maximum_window_size", Coord)]
+
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(-11)
+            info = ConsoleScreenBufferInfo()
+            if handle and kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
+                cells = info.size.x * info.size.y
+                written = ctypes.c_ulong()
+                origin = Coord(0, 0)
+                kernel32.FillConsoleOutputCharacterW(handle, " ", cells, origin, ctypes.byref(written))
+                kernel32.FillConsoleOutputAttribute(handle, info.attributes, cells, origin, ctypes.byref(written))
+                kernel32.SetConsoleCursorPosition(handle, origin)
+                return
+        except (AttributeError, OSError):
+            pass
+    print("\x1b[2J\x1b[H", end="", flush=True)
+
+
+def rule(char: str = BOX_HORIZONTAL) -> str:
     return char * terminal_width()
 
 
@@ -114,13 +147,9 @@ def relative_path(path: str | Path) -> str:
     path_obj = Path(path)
     try:
         resolved = path_obj.resolve()
-    except OSError:
+        return str(Path(".") / resolved.relative_to(ROOT.resolve()))
+    except (OSError, ValueError):
         return str(path_obj)
-    try:
-        relative = resolved.relative_to(ROOT.resolve())
-        return str(Path(".") / relative)
-    except ValueError:
-        return str(resolved)
 
 
 def shorten_command_argument(argument: str) -> str:
@@ -133,12 +162,10 @@ def shorten_command_argument(argument: str) -> str:
 
 
 def display_command(command_line: list[str]) -> str:
-    shortened = [shorten_command_argument(part) for part in command_line]
-    return subprocess.list2cmdline(shortened)
+    return subprocess.list2cmdline([shorten_command_argument(part) for part in command_line])
 
 
 def shorten_output_paths(text: str) -> str:
-    """Shorten project-local absolute paths inside subprocess output."""
     root = str(ROOT.resolve())
     for variant in (root, root.replace("\\", "/")):
         text = re.sub(re.escape(variant), ".", text, flags=re.IGNORECASE)
@@ -156,115 +183,64 @@ def wrap_console_line(text: str, width: int) -> list[str]:
             split_at = width
         lines.append(text[:split_at].rstrip())
         text = text[split_at:].lstrip()
-    lines.append(text)
-    return lines
+    return [*lines, text]
+
+
+def _box_line(content: str, *, width: int, tone: str) -> None:
+    print(color(BOX_VERTICAL, tone) + " " + color(content.ljust(width - 2), Color.WHITE) + " " + color(BOX_VERTICAL, tone))
 
 
 def header(title: str = "AIBrain", subtitle: str = "Neural Runtime Installer") -> None:
     width = terminal_width()
+    inner = width - 2
     print()
-    print(color("╭" + "─" * (width - 2) + "╮", Color.CYAN))
-    print(
-        color("│", Color.CYAN)
-        + color(f" {title} ".center(width - 2), Color.BOLD, Color.WHITE)
-        + color("│", Color.CYAN)
-    )
-    print(
-        color("│", Color.CYAN)
-        + color(subtitle.center(width - 2), Color.DIM, Color.CYAN)
-        + color("│", Color.CYAN)
-    )
-    print(color("╰" + "─" * (width - 2) + "╯", Color.CYAN))
+    print(color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, Color.CYAN))
+    _box_line(f" {title} ".center(inner), width=width, tone=Color.CYAN)
+    _box_line(subtitle.center(inner), width=width, tone=Color.CYAN)
+    print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, Color.CYAN))
     print()
 
 
 def section(title: str, number: int) -> None:
     print()
-    print(
-        color(f" {number:02d} ", Color.BOLD, Color.CYAN)
-        + color(title, Color.BOLD, Color.WHITE)
-    )
+    print(color(f" {number:02d} ", Color.BOLD, Color.CYAN) + color(title, Color.BOLD, Color.WHITE))
     print(color(rule(), Color.GRAY))
 
 
-def panel(
-    title: str,
-    rows: list[tuple[str, str]],
-    *,
-    subtitle: str | None = None,
-    footer: str | None = None,
-    tone: str = Color.CYAN,
-) -> None:
+def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = None, footer: str | None = None, tone: str = Color.CYAN) -> None:
     """Render a labelled summary panel shared by installer and build tools."""
     width = terminal_width()
-    inner_width = width - 2
+    inner = width - 2
     label_width = max((len(label) for label, _ in rows), default=0)
-
     print()
-    print(color("╭" + "─" * inner_width + "╮", tone))
-    print(
-        color("│", tone)
-        + color(f" {title} ".center(inner_width), Color.BOLD, tone)
-        + color("│", tone)
-    )
+    print(color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, tone))
+    _box_line(f" {title} ".center(inner), width=width, tone=tone)
     if subtitle:
-        print(
-            color("│", tone)
-            + color(subtitle.center(inner_width), Color.DIM, tone)
-            + color("│", tone)
-        )
-    print(color("├" + "─" * inner_width + "┤", tone))
-
+        _box_line(subtitle.center(inner), width=width, tone=tone)
+    print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
     for label, value in rows:
-        content = visible_trim(f"  {label:<{label_width}}  {value}", inner_width - 2)
-        print(
-            color("│", tone)
-            + " "
-            + color(content.ljust(inner_width - 2), Color.WHITE)
-            + " "
-            + color("│", tone)
-        )
-
+        _box_line(visible_trim(f"  {label:<{label_width}}  {value}", inner), width=width, tone=tone)
     if footer:
-        print(color("├" + "─" * inner_width + "┤", tone))
-        content = visible_trim(footer, inner_width - 2)
-        print(
-            color("│", tone)
-            + " "
-            + color(content.ljust(inner_width - 2), Color.BOLD, Color.WHITE)
-            + " "
-            + color("│", tone)
-        )
-
-    print(color("╰" + "─" * inner_width + "╯", tone))
+        print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
+        _box_line(visible_trim(footer, inner), width=width, tone=tone)
+    print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, tone))
     print()
 
 
-def instruction_list(
-    steps: list[tuple[str, str, str]], *, stream: TextIO | None = None
-) -> None:
-    """Render numbered setup instructions with consistent CLI styling."""
+def instruction_list(steps: list[tuple[str, str, str]], *, stream: TextIO | None = None) -> None:
     output = stream or sys.stdout
     print(file=output)
     for number, description, command_text in steps:
-        print(
-            "  "
-            + color(number, Color.CYAN, Color.BOLD)
-            + " "
-            + color(description, Color.GRAY)
-            + "   "
-            + color(command_text, Color.WHITE, Color.BOLD),
-            file=output,
-        )
+        print("  " + color(number, Color.CYAN, Color.BOLD) + " " + color(description, Color.GRAY) + "   " + color(command_text, Color.WHITE, Color.BOLD), file=output)
     print(file=output)
 
 
 def info(message: str) -> None:
-    print(f"  {color('●', Color.CYAN)} {message}")
+    print(f"  {color(BULLET, Color.CYAN)} {message}")
 
 
 def success(message: str) -> None:
-    print(f"  {color('✓', Color.GREEN, Color.BOLD)} {message}")
+    print(f"  {color(CHECK, Color.GREEN, Color.BOLD)} {message}")
 
 
 def warning(message: str) -> None:
@@ -272,59 +248,35 @@ def warning(message: str) -> None:
 
 
 def error(message: str) -> None:
-    print(f"  {color('✗', Color.RED, Color.BOLD)} {message}", file=sys.stderr)
+    print(f"  {color(CROSS, Color.RED, Color.BOLD)} {message}", file=sys.stderr)
 
 
 def detail(label: str, value: str) -> None:
-    value = visible_trim(value, max(terminal_width() - 20, 10))
-    print(f"     {color(label.ljust(12), Color.GRAY)}{color(value, Color.WHITE)}")
+    print(f"     {color(label.ljust(12), Color.GRAY)}{color(visible_trim(value, max(terminal_width() - 20, 10)), Color.WHITE)}")
 
 
 def status(label: str, message: str, tone: str = Color.CYAN) -> None:
-    """Print a compact shared status row for builder commands."""
     print(f"  {color(label.upper().ljust(8), Color.BOLD, tone)} {message}")
 
 
 def command_preview(command_line: list[str]) -> None:
-    """Print a command line without a surrounding output box."""
-    command_text = visible_trim(
-        display_command(command_line), terminal_width() - COMMAND_INDENT - 2
-    )
-    print(
-        "\n"
-        + " " * COMMAND_INDENT
-        + color("›", Color.MAGENTA, Color.BOLD)
-        + " "
-        + color(command_text, Color.DIM, Color.WHITE)
-    )
+    command_text = visible_trim(display_command(command_line), terminal_width() - COMMAND_INDENT - 2)
+    print("\n" + " " * COMMAND_INDENT + color(PROMPT, Color.MAGENTA, Color.BOLD) + " " + color(command_text, Color.DIM, Color.WHITE))
 
 
 def command_output_box(output: str, *, indent: int = COMMAND_INDENT) -> None:
-    """Render subprocess output in an indented grey box."""
+    """Render complete subprocess output in an indented grey box."""
     output = shorten_output_paths(strip_ansi(output)).rstrip()
     if not output:
         return
     prefix = " " * indent
-    inner_width = max(terminal_width() - indent, 20) - 2
-    content_width = inner_width - 2
-    rendered_lines = [
-        line
-        for raw_line in output.splitlines()
-        for line in wrap_console_line(raw_line, content_width)
-    ]
-    print(prefix + color("╭" + "─" * inner_width + "╮", Color.GRAY))
-    for line in rendered_lines:
-        line = visible_trim(line, content_width)
-        print(
-            prefix
-            + color("│", Color.GRAY)
-            + " "
-            + color(line, Color.GRAY)
-            + " " * (content_width - len(line))
-            + " "
-            + color("│", Color.GRAY)
-        )
-    print(prefix + color("╰" + "─" * inner_width + "╯", Color.GRAY))
+    inner = max(terminal_width() - indent, 20) - 2
+    content_width = inner - 2
+    lines = [line for raw_line in output.splitlines() for line in wrap_console_line(raw_line, content_width)]
+    print(prefix + color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, Color.GRAY))
+    for line in lines:
+        print(prefix + color(BOX_VERTICAL, Color.GRAY) + " " + color(visible_trim(line, content_width), Color.GRAY) + " " * (content_width - len(visible_trim(line, content_width))) + " " + color(BOX_VERTICAL, Color.GRAY))
+    print(prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, Color.GRAY))
 
 
 def command(command_line: list[str]) -> None:

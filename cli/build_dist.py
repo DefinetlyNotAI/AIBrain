@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import Color, command, error, header, panel, section
+from src.utils.console_ui import Color, clear_screen, command_output_box, command_preview, error, header, panel, section
 from src.utils.gpu import set_windows_executable_gpu_preference
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
@@ -22,6 +22,22 @@ DIST_ROOT = ROOT / "dist"
 # llama.cpp additionally needs the OpenMP runtime, which Nuitka cannot locate
 # reliably on a machine with only an older Visual Studio installation.
 RUNTIME_DLLS = ("vcomp140.dll",)
+
+
+def run(command_line: list[str]) -> None:
+    """Run a build command and present its complete output in one shared box."""
+    command_preview(command_line)
+    result = subprocess.run(
+        command_line,
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
+    command_output_box("\n".join(part.rstrip() for part in (result.stdout, result.stderr) if part.strip()))
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, command_line, result.stdout, result.stderr)
 
 
 def runtime_dlls() -> list[Path]:
@@ -51,8 +67,7 @@ def build(timestamp: str | None = None) -> Path:
     ]
     for runtime in runtime_dlls():
         command_line.insert(-1, f"--include-data-files={runtime}={runtime.name}")
-    command(command_line)
-    subprocess.run(command_line, cwd=ROOT, check=True)
+    run(command_line)
     produced = build_root / "main.dist"
     if not produced.is_dir():
         candidates = list(build_root.glob("*.dist"))
@@ -78,6 +93,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build a timestamped Nuitka standalone AIBrain distribution.")
     parser.add_argument("--timestamp", help="Override the YYYYMMDD_HHMMSS distribution suffix for reproducible builds")
     arguments = parser.parse_args()
+    clear_screen()
     header("AIBrain", "Nuitka standalone distribution builder")
     try:
         release = build(arguments.timestamp)
