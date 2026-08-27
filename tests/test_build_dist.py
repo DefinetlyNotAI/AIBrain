@@ -43,6 +43,7 @@ class BuildDistributionTests(unittest.TestCase):
             command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")])
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
+            self.assertNotIn("--include-package=src", command)
 
 
 if __name__ == "__main__":

@@ -79,7 +79,6 @@ def nuitka_command(target: ApplicationTarget, build_root: Path, runtimes: list[P
         f"--windows-icon-from-ico={target.icon}",
         f"--output-filename={target.executable}",
         f"--output-dir={build_root}",
-        "--include-package=src",
         f"--include-data-files={NATIVE_LIBRARY}=dll/{NATIVE_LIBRARY.name}",
         str(target.entry_point),
     ]
@@ -107,12 +106,12 @@ def _verify_application(application: Path, target: ApplicationTarget) -> Path:
     return executable
 
 
-def build(timestamp: str | None = None) -> Path:
+def build(timestamp: str | None = None, targets: tuple[ApplicationTarget, ...] = APPLICATIONS) -> Path:
     if not VENV_PYTHON.is_file():
         raise RuntimeError("Managed virtual environment is missing. Run: py cli\\installer.py")
     if not NATIVE_LIBRARY.is_file():
         raise RuntimeError("Native connectome DLL is missing. Run: py cli\\build_native.py")
-    for target in APPLICATIONS:
+    for target in targets:
         if not target.icon.is_file():
             raise RuntimeError(f"Required application icon is missing: {target.icon}")
 
@@ -122,7 +121,7 @@ def build(timestamp: str | None = None) -> Path:
     release.mkdir(parents=True)
     runtimes = runtime_dlls()
     try:
-        for index, target in enumerate(APPLICATIONS, start=1):
+        for index, target in enumerate(targets, start=1):
             section(f"Compile {target.executable}", index)
             build_root = release / "_nuitka" / target.directory
             run(nuitka_command(target, build_root, runtimes))
@@ -139,17 +138,26 @@ def build(timestamp: str | None = None) -> Path:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build timestamped standalone AIBrain desktop applications.")
     parser.add_argument("--timestamp", help="Override the YYYYMMDD_HHMMSS distribution suffix for reproducible builds")
+    parser.add_argument(
+        "--only",
+        choices=[target.directory for target in APPLICATIONS],
+        help="Build one application target for focused package verification",
+    )
     arguments = parser.parse_args()
     clear_screen()
     header("AIBrain", "Nuitka standalone distribution builder")
     try:
-        release = build(arguments.timestamp)
+        selected = tuple(target for target in APPLICATIONS if target.directory == arguments.only)
+        release = build(arguments.timestamp, selected or APPLICATIONS)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         error(str(exc))
         return 1
     panel(
         "DISTRIBUTION COMPLETE",
-        [(target.executable, str(release / target.directory / target.executable)) for target in APPLICATIONS],
+        [
+            (target.executable, str(release / target.directory / target.executable))
+            for target in (selected or APPLICATIONS)
+        ],
         footer="Each application folder is self-contained and ready to launch.",
         tone=Color.GREEN,
     )
