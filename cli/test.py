@@ -19,10 +19,15 @@ SUITES: dict[str, tuple[str, list[str]]] = {
     "2": ("Desktop UI tests", ["tests.test_chat_scroll", "tests.test_cluster_palette", "tests.test_cluster_spacing", "tests.test_console_ui"]),
     "3": ("Launch and generation tests", ["tests.test_cli_main", "tests.test_gpu_launch", "tests.test_infinite_simulation", "tests.test_markdown", "tests.test_nn_analysis_export"]),
 }
+ALL_TESTS = "Every test in tests/"
 
 
 def run_suite(name: str, modules: list[str]) -> int:
-    command_line = [sys.executable, "-m", "unittest", *modules]
+    command_line = (
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests"]
+        if not modules
+        else [sys.executable, "-m", "unittest", *modules]
+    )
     command_preview(command_line)
     result = subprocess.run(command_line, cwd=ROOT, text=True, encoding="utf-8", errors="replace", capture_output=True)
     command_output_box("\n".join(part.rstrip() for part in (result.stdout, result.stderr) if part.strip()))
@@ -40,7 +45,7 @@ def choose_suite() -> list[tuple[str, list[str]]]:
     if choice == "q":
         return []
     if choice == "a":
-        return [(title, modules) for title, modules in SUITES.values()]
+        return [(ALL_TESTS, [])]
     selected = SUITES.get(choice)
     if selected is None:
         error("Unknown selection. Choose 1, 2, 3, A, or Q.")
@@ -57,7 +62,7 @@ def main() -> int:
     header("AIBrain", "Verification and test centre")
     section("Select verification", 1)
     selections = (
-        [(title, modules) for title, modules in SUITES.values()]
+        [(ALL_TESTS, [])]
         if arguments.all
         else [SUITES[arguments.suite]] if arguments.suite else choose_suite()
     )

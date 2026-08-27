@@ -27,6 +27,13 @@ class TestLauncherTests(unittest.TestCase):
         modules = [module for _title, suite in test.SUITES.values() for module in suite]
         self.assertEqual(len(modules), len(set(modules)))
 
+    @patch("cli.test.subprocess.run")
+    def test_empty_suite_runs_discovery_for_every_test_file(self, run_mock) -> None:  # type: ignore[no-untyped-def]
+        run_mock.return_value = subprocess.CompletedProcess(["python"], 0, "ok", "")
+
+        self.assertEqual(test.run_suite(test.ALL_TESTS, []), 0)
+        self.assertEqual(run_mock.call_args.args[0][-3:], ["discover", "-s", "tests"])
+
 
 if __name__ == "__main__":
     unittest.main()
