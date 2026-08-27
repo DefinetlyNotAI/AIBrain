@@ -145,7 +145,13 @@ def main() -> int:
     loading.cancelled.connect(app.quit)
     loading.show()
     QTimer.singleShot(0, startup_thread.start)
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        startup_worker.cancel()
+        if startup_thread.isRunning():
+            startup_thread.quit()
+            startup_thread.wait()
 
 
 if __name__ == "__main__":
