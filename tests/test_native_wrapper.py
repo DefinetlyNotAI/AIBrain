@@ -4,10 +4,13 @@ import unittest
 
 import numpy as np
 
-from src.native.wrapper.connectome import native
+from src.native.wrapper.connectome_kernels import _DLL_PATH, native
 
 
 class NativeConnectomeTests(unittest.TestCase):
+    def test_wrapper_uses_the_standardized_dll_name(self) -> None:
+        self.assertEqual(_DLL_PATH.name, "aibrain.connectome.dll")
+
     def test_region_activity_matches_expected_sums(self) -> None:
         values = np.array([.4, .7, .2, .9], dtype=np.float32)
         regions = np.array([0, 1, 1, 2], dtype=np.int16)

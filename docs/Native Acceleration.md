@@ -2,12 +2,19 @@
 
 ## Purpose
 
-The activity-decay, edge-activity, and regional-aggregation hot paths live in `src/native/c/connectome_native.c`. They
-compile into `dll/aibrain_connectome.dll` and are loaded through `src/native/wrapper/connectome.py`. If the DLL is
+The activity-decay, edge-activity, and regional-aggregation hot paths live in `src/native/c/connectome_kernels.c`. They
+compile into `dll/aibrain.connectome.dll` and are loaded through `src/native/wrapper/connectome_kernels.py`. If the DLL is
 missing or cannot be loaded, AIBrain falls back to NumPy implementations so the application remains usable.
 
 The DLL accelerates visual activity bookkeeping. It does not implement the Qt window, OpenGL renderer, or language-model
 inference.
+
+## Native candidate audit
+
+The remaining computation paths are already backed by optimized native libraries or are not hot numeric kernels: topology
+generation and autoencoder training use NumPy operations, hashing uses `hashlib`, and reporting/UI functions create Python
+objects. Converting those paths to handwritten C would add boundary-copying and maintenance cost without a measurable gain,
+so the connectome decay, edge, and regional aggregation loops remain the focused native surface.
 
 ## Build tool
 

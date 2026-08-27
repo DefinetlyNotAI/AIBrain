@@ -40,8 +40,8 @@ field.
 | `src/connectome/activity.py`       | Holds decaying activity, peaks, silencing, and importance state.              |
 | `src/connectome/renderer.py`       | Batched ModernGL draw pipeline and interaction.                               |
 | `src/connectome/analysis.py`       | Online derived visual-stream analysis.                                        |
-| `src/native/c/connectome_native.c` | Optional native hot-path implementation.                                      |
-| `src/native/wrapper/connectome.py` | ctypes contract and NumPy fallback for `dll/aibrain_connectome.dll`.          |
+| `src/native/c/connectome_kernels.c` | Optional native hot-path implementation.                                      |
+| `src/native/wrapper/connectome_kernels.py` | ctypes contract and NumPy fallback for `dll/aibrain.connectome.dll`.          |
 
 ## Development workflow
 

@@ -13,7 +13,7 @@ _APP_ROOT = (
     else Path(__file__).resolve().parents[3]
 )
 
-_DLL_PATH = _APP_ROOT / "dll" / "aibrain_connectome.dll"
+_DLL_PATH = _APP_ROOT / "dll" / "aibrain.connectome.dll"
 
 _FLOAT_PTR = ctypes.POINTER(ctypes.c_float)
 _INT32_PTR = ctypes.POINTER(ctypes.c_int32)

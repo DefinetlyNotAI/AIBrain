@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication
 from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
-from ..native.wrapper.connectome import native
+from ..native.wrapper.connectome_kernels import native
 from ..utils.gpu import (
     GPU_RELAUNCH_EXIT_CODE,
     can_request_gpu_relaunch,

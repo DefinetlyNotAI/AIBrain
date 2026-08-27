@@ -47,7 +47,7 @@ def build(timestamp: str | None = None) -> Path:
         str(VENV_PYTHON), "-m", "nuitka", "--standalone", "--assume-yes-for-downloads", "--enable-plugin=pyside6",
         "--windows-console-mode=disable", "--output-filename=AIBrain.exe", f"--output-dir={build_root}",
         "--include-package=src",
-        f"--include-data-files={ROOT / 'dll' / 'aibrain_connectome.dll'}=dll/aibrain_connectome.dll", str(target),
+        f"--include-data-files={ROOT / 'dll' / 'aibrain.connectome.dll'}=dll/aibrain.connectome.dll", str(target),
     ]
     for runtime in runtime_dlls():
         command_line.insert(-1, f"--include-data-files={runtime}={runtime.name}")
@@ -65,7 +65,7 @@ def build(timestamp: str | None = None) -> Path:
     executable = release / "AIBrain.exe"
     if not executable.is_file() or executable.stat().st_size < 100_000:
         raise RuntimeError("Nuitka output is missing AIBrain.exe or is unexpectedly small")
-    if not (release / "dll" / "aibrain_connectome.dll").is_file():
+    if not (release / "dll" / "aibrain.connectome.dll").is_file():
         raise RuntimeError("Standalone distribution is missing the native connectome DLL")
     for runtime_name in ("msvcp140.dll", "vcomp140.dll"):
         if not (release / runtime_name).is_file():

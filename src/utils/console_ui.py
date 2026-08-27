@@ -19,15 +19,15 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def enable_windows_utf8_console() -> None:
-    """Configure an interactive Windows console to receive UTF-8 output."""
-    if os.name != "nt" or not sys.stdout.isatty():
+    """Configure Windows streams and an interactive console for UTF-8 output."""
+    if os.name != "nt":
         return
 
     try:
         kernel32 = __import__("ctypes").windll.kernel32
-        if not kernel32.SetConsoleOutputCP(65001):
-            return
-        kernel32.SetConsoleCP(65001)
+        if sys.stdout.isatty():
+            kernel32.SetConsoleOutputCP(65001)
+            kernel32.SetConsoleCP(65001)
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):

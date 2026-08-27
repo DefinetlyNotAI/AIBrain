@@ -21,8 +21,8 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import Color as Colour, command, error, header, panel, section, status
 
-SOURCE = ROOT / "src" / "native" / "c" / "connectome_native.c"
-OUTPUT = ROOT / "dll" / "aibrain_connectome.dll"
+SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
+OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
 
 
 @dataclass(frozen=True, slots=True)
