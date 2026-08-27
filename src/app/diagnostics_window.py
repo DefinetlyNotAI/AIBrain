@@ -90,7 +90,7 @@ class DiagnosticsWindow(QDialog):
     def refresh(self) -> None:
         self.table.clear()
         try:
-            diagnostics = OllamaDiagnostics().inspect()
+            diagnostics = OllamaDiagnostics().inspect(verify_backend=True)
         except OSError as exc:
             LOG.exception("Unable to inspect Ollama models")
             QMessageBox.critical(self, "Diagnostics error", str(exc))

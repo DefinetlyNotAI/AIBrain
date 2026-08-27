@@ -5,8 +5,10 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.models.diagnostics import OllamaDiagnostics
+from src.models.model_info import ModelInfo
 
 
 class ModelDiagnosticsTests(unittest.TestCase):
@@ -58,6 +60,22 @@ class ModelDiagnosticsTests(unittest.TestCase):
 
             self.assertFalse(manifest.exists())
             self.assertTrue(blob.exists())
+
+    @patch("src.models.diagnostics.ModelValidator.validate")
+    def test_backend_diagnostics_report_a_model_that_cannot_load(self, validate) -> None:  # type: ignore[no-untyped-def]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_manifest(root, blob_data=b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
+
+            def failed_validation(models, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+                model = models[0]
+                return [ModelInfo(model.name, model.tag, model.blob_path, available=False, error="llama.cpp rejected model")]
+
+            validate.side_effect = failed_validation
+            diagnostics = OllamaDiagnostics(root).inspect(verify_backend=True)
+
+        self.assertFalse(diagnostics[0].available)
+        self.assertEqual(diagnostics[0].detail, "llama.cpp rejected model")
 
 
 if __name__ == "__main__":

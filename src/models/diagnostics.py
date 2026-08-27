@@ -4,8 +4,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 
 from .model_info import ModelInfo
+from .model_validator import ModelValidator
 from .ollama_discovery import OllamaDiscovery
 
 
@@ -31,22 +33,32 @@ class OllamaDiagnostics:
         self.root = root or Path.home() / ".ollama" / "models"
         self._discovery = OllamaDiscovery(self.root)
 
-    def inspect(self) -> list[ModelDiagnostic]:
+    def inspect(self, *, verify_backend: bool = False) -> list[ModelDiagnostic]:
         manifest_root = self.root / "manifests"
         if not manifest_root.is_dir():
             return []
 
+        parsed: list[tuple[str, Path, ModelInfo]] = []
         diagnostics: list[ModelDiagnostic] = []
         for manifest in sorted(path for path in manifest_root.rglob("*") if path.is_file()):
             reference = self._reference(manifest, manifest_root)
             try:
                 model = self._discovery._parse_manifest(manifest, manifest_root)
-                diagnostics.append(self._from_model(reference, manifest, model))
+                parsed.append((reference, manifest, model))
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 diagnostics.append(
                     ModelDiagnostic(reference, manifest, None, False, f"Invalid manifest: {exc}")
                 )
-        return diagnostics
+        models = [model for _reference, _manifest, model in parsed]
+        if verify_backend and models:
+            checked = ModelValidator.validate(models, Event(), lambda _current, _total, _detail: None)
+        else:
+            checked = models
+        diagnostics.extend(
+            self._from_model(reference, manifest, model)
+            for (reference, manifest, _original), model in zip(parsed, checked)
+        )
+        return sorted(diagnostics, key=lambda item: item.reference)
 
     @staticmethod
     def remove_stale_manifest(diagnostic: ModelDiagnostic) -> None:
