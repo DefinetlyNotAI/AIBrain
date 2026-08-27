@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import signal
-import subprocess
 import sys
 from pathlib import Path
 
@@ -11,23 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-if os.name == "nt":
-    subprocess.run("", shell=True, check=False)
-
-
-class Color:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    CYAN = "\033[96m"
-    WHITE = "\033[97m"
-    GRAY = "\033[90m"
-
-
-def color(text: str, *styles: str) -> str:
-    return "".join(styles) + text + Color.RESET
+from src.utils.console_ui import error, instruction_list
 
 
 def require_virtual_environment() -> None:
@@ -38,57 +21,15 @@ def require_virtual_environment() -> None:
     if "__compiled__" in globals():
         return
     if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
-        print(file=sys.stderr)
-
-        print(
-            "  "
-            + color("✗", Color.RED, Color.BOLD)
-            + " "
-            + color(
-                "AIBrain must run inside a Python virtual environment.",
-                Color.RED,
-                Color.BOLD,
-            ),
-            file=sys.stderr,
+        error("AIBrain must run inside a Python virtual environment.")
+        instruction_list(
+            [
+                ("1.", "Create and install:", "py cli\\installer.py"),
+                ("2.", "Activate it:", r".\.venv\Scripts\Activate.ps1"),
+                ("3.", "Run AIBrain:", "python cli\\main.py"),
+            ],
+            stream=sys.stderr,
         )
-
-        print(file=sys.stderr)
-
-        print(
-            "  "
-            + color("1.", Color.CYAN, Color.BOLD)
-            + " "
-            + color("Create and install:", Color.GRAY)
-            + "   "
-            + color("py cli\\installer.py", Color.WHITE, Color.BOLD),
-            file=sys.stderr,
-        )
-
-        print(
-            "  "
-            + color("2.", Color.CYAN, Color.BOLD)
-            + " "
-            + color("Activate it:", Color.GRAY)
-            + "          "
-            + color(
-                r".\.venv\Scripts\Activate.ps1",
-                Color.WHITE,
-                Color.BOLD,
-            ),
-            file=sys.stderr,
-        )
-
-        print(
-            "  "
-            + color("3.", Color.CYAN, Color.BOLD)
-            + " "
-            + color("Run AIBrain:", Color.GRAY)
-            + "          "
-            + color("python cli\\main.py", Color.WHITE, Color.BOLD),
-            file=sys.stderr,
-        )
-
-        print(file=sys.stderr)
 
         raise SystemExit(1)
 

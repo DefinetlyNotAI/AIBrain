@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.utils.console_ui import Color, color, command_preview, command_output_box, detail, error, header, info, \
-    relative_path, section, success, terminal_width, visible_trim, warning
+panel, relative_path, section, success, warning
 
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
@@ -388,205 +388,30 @@ def completion_screen(
         gpu: GpuCapability | None,
         wheel_tag: str,
 ) -> None:
-    width = terminal_width()
-
-    print()
-
-    print(
-        color(
-            "â•­" + "â”€" * (width - 2) + "â•®",
-            Color.GREEN,
-        )
-    )
-
-    title = " INSTALLATION COMPLETE "
-
-    print(
-        color("â”‚", Color.GREEN)
-        + color(
-            title.center(width - 2),
-            Color.BOLD,
-            Color.GREEN,
-        )
-        + color("â”‚", Color.GREEN)
-    )
-
-    print(
-        color(
-            "â”œ" + "â”€" * (width - 2) + "â”¤",
-            Color.GREEN,
-        )
-    )
-
     backend = (
         f"CUDA / {wheel_tag}"
         if wheel_tag != "cpu"
         else "CPU"
     )
-
-    lines = [
-        (
-            "Environment",
-            relative_path(VENV_DIR),
-        ),
-        (
-            "Backend",
-            backend,
-        ),
-        (
-            "GPU",
-            gpu.name if gpu else "Not detected",
-        ),
-    ]
-
-    for label, value in lines:
-        content = f"  {label:<12} {value}"
-        content = visible_trim(
-            content,
-            width - 4,
-        )
-
-        padding = width - 2 - len(content)
-
-        print(
-            color("â”‚", Color.GREEN)
-            + content
-            + (" " * max(padding, 0))
-            + color("â”‚", Color.GREEN)
-        )
-
-    print(
-        color(
-            "â”œ" + "â”€" * (width - 2) + "â”¤",
-            Color.GREEN,
-        )
+    panel(
+        "INSTALLATION COMPLETE",
+        [
+            ("Environment", relative_path(VENV_DIR)),
+            ("Backend", backend),
+            ("GPU", gpu.name if gpu else "Not detected"),
+        ],
+        footer="Launch AIBrain with:  python cli\\main.py",
+        tone=Color.GREEN,
     )
-
-    launch = (
-        "  Launch AIBrain with:  python cli\\main.py"
-    )
-
-    launch = visible_trim(
-        launch,
-        width - 4,
-    )
-
-    padding = width - 2 - len(launch)
-
-    print(
-        color("â”‚", Color.GREEN)
-        + color(
-            launch,
-            Color.BOLD,
-            Color.WHITE,
-        )
-        + (" " * max(padding, 0))
-        + color("â”‚", Color.GREEN)
-    )
-
-    print(
-        color(
-            "â•°" + "â”€" * (width - 2) + "â•¯",
-            Color.GREEN,
-        )
-    )
-
-    print()
 
 
 def print_help_banner() -> None:
-    width = terminal_width()
-    inner = width - 2
-
-    print()
-
-    print(
-        color(
-            "â•­" + "â”€" * inner + "â•®",
-            Color.CYAN,
-        )
+    panel(
+        "AIBrain Installer",
+        [("-h, --help", "Show this help screen and exit.")],
+        subtitle="Available Runtime Flags",
+        footer=f"Usage: python {Path(__file__).name} [options]",
     )
-
-    print(
-        color("â”‚", Color.CYAN)
-        + color(
-            " AIBrain Installer ".center(inner),
-            Color.BOLD,
-            Color.WHITE,
-        )
-        + color("â”‚", Color.CYAN)
-    )
-
-    print(
-        color("â”‚", Color.CYAN)
-        + color(
-            "Available Runtime Flags".center(inner),
-            Color.DIM,
-            Color.CYAN,
-        )
-        + color("â”‚", Color.CYAN)
-    )
-
-    print(
-        color(
-            "â”œ" + "â”€" * inner + "â”¤",
-            Color.CYAN,
-        )
-    )
-
-    entries = (
-        (
-            "-h, --help",
-            "Show this help screen and exit.",
-        ),
-    )
-
-    for flag, description in entries:
-        content = f"  {flag:<20} {description}"
-        content = visible_trim(
-            content,
-            inner - 2,
-        )
-
-        print(
-            color("â”‚", Color.CYAN)
-            + content.ljust(inner)
-            + color("â”‚", Color.CYAN)
-        )
-
-    print(
-        color(
-            "â”œ" + "â”€" * inner + "â”¤",
-            Color.CYAN,
-        )
-    )
-
-    usage = (
-        f"  Usage: python {Path(__file__).name} [options]"
-    )
-
-    usage = visible_trim(
-        usage,
-        inner - 2,
-    )
-
-    print(
-        color("â”‚", Color.CYAN)
-        + color(
-            usage.ljust(inner),
-            Color.WHITE,
-        )
-        + color("â”‚", Color.CYAN)
-    )
-
-    print(
-        color(
-            "â•°" + "â”€" * inner + "â•¯",
-            Color.CYAN,
-        )
-    )
-
-    print()
 
 
 class BannerArgumentParser(

@@ -1,10 +1,4 @@
-"""Unicode-safe console presentation helpers for AIBrain's CLI tools.
-
-The module owns every decorative console glyph so command-line entry points
-cannot accidentally mix correctly decoded text with mojibake literals. On a
-legacy Windows console it uses a plain-ASCII rendering instead of emitting
-bytes in an incompatible code page.
-"""
+"""The shared terminal presentation library for all AIBrain CLI commands."""
 from __future__ import annotations
 
 import os
@@ -13,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TextIO
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -21,30 +16,10 @@ MIN_WIDTH = 60
 COMMAND_INDENT = 2
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-_MOJIBAKE_MARKER_RE = re.compile(
-    r"(?:\u00e2[\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178]|\u00c3[\u0080-\u00bf])"
-)
-_ASCII_GLYPHS = str.maketrans(
-    {
-        "╭": "+",
-        "╮": "+",
-        "╰": "+",
-        "╯": "+",
-        "├": "+",
-        "┤": "+",
-        "│": "|",
-        "─": "-",
-        "●": "*",
-        "✓": "OK",
-        "✗": "X",
-        "›": ">",
-        "·": "-",
-    }
-)
 
 
-def _enable_windows_utf8_console() -> None:
-    """Select UTF-8 only for an interactive Windows console when possible."""
+def enable_windows_utf8_console() -> None:
+    """Configure an interactive Windows console to receive UTF-8 output."""
     if os.name != "nt" or not sys.stdout.isatty():
         return
 
@@ -56,33 +31,10 @@ def _enable_windows_utf8_console() -> None:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, OSError):
-        return
+        pass
 
 
-def _repair_mojibake(text: str) -> str:
-    """Repair the common UTF-8-as-Windows-1252 corruption defensively."""
-    if not _MOJIBAKE_MARKER_RE.search(text):
-        return text
-
-    try:
-        return text.encode("cp1252").decode("utf-8")
-    except (UnicodeDecodeError, UnicodeEncodeError):
-        return text
-
-
-def _console_text(text: str) -> str:
-    """Return text that the active output stream can render without mojibake."""
-    text = _repair_mojibake(text)
-    encoding = sys.stdout.encoding or "ascii"
-    try:
-        text.encode(encoding)
-    except UnicodeEncodeError:
-        fallback = text.translate(_ASCII_GLYPHS)
-        return fallback.encode(encoding, errors="replace").decode(encoding)
-    return text
-
-
-_enable_windows_utf8_console()
+enable_windows_utf8_console()
 
 
 class Color:
@@ -100,8 +52,8 @@ class Color:
 
 
 def color(text: str, *styles: str) -> str:
-    """Apply ANSI styles after normalising text for the current console."""
-    return "".join(styles) + _console_text(text) + Color.RESET
+    """Apply ANSI styles to CLI text."""
+    return "".join(styles) + text + Color.RESET
 
 
 def terminal_width() -> int:
@@ -141,7 +93,7 @@ def terminal_width() -> int:
 
 
 def rule(char: str = "─") -> str:
-    return _console_text(char) * terminal_width()
+    return char * terminal_width()
 
 
 def strip_ansi(text: str) -> str:
@@ -235,30 +187,102 @@ def section(title: str, number: int) -> None:
     print(color(rule(), Color.GRAY))
 
 
+def panel(
+    title: str,
+    rows: list[tuple[str, str]],
+    *,
+    subtitle: str | None = None,
+    footer: str | None = None,
+    tone: str = Color.CYAN,
+) -> None:
+    """Render a labelled summary panel shared by installer and build tools."""
+    width = terminal_width()
+    inner_width = width - 2
+    label_width = max((len(label) for label, _ in rows), default=0)
+
+    print()
+    print(color("╭" + "─" * inner_width + "╮", tone))
+    print(
+        color("│", tone)
+        + color(f" {title} ".center(inner_width), Color.BOLD, tone)
+        + color("│", tone)
+    )
+    if subtitle:
+        print(
+            color("│", tone)
+            + color(subtitle.center(inner_width), Color.DIM, tone)
+            + color("│", tone)
+        )
+    print(color("├" + "─" * inner_width + "┤", tone))
+
+    for label, value in rows:
+        content = visible_trim(f"  {label:<{label_width}}  {value}", inner_width - 2)
+        print(
+            color("│", tone)
+            + " "
+            + color(content.ljust(inner_width - 2), Color.WHITE)
+            + " "
+            + color("│", tone)
+        )
+
+    if footer:
+        print(color("├" + "─" * inner_width + "┤", tone))
+        content = visible_trim(footer, inner_width - 2)
+        print(
+            color("│", tone)
+            + " "
+            + color(content.ljust(inner_width - 2), Color.BOLD, Color.WHITE)
+            + " "
+            + color("│", tone)
+        )
+
+    print(color("╰" + "─" * inner_width + "╯", tone))
+    print()
+
+
+def instruction_list(
+    steps: list[tuple[str, str, str]], *, stream: TextIO | None = None
+) -> None:
+    """Render numbered setup instructions with consistent CLI styling."""
+    output = stream or sys.stdout
+    print(file=output)
+    for number, description, command_text in steps:
+        print(
+            "  "
+            + color(number, Color.CYAN, Color.BOLD)
+            + " "
+            + color(description, Color.GRAY)
+            + "   "
+            + color(command_text, Color.WHITE, Color.BOLD),
+            file=output,
+        )
+    print(file=output)
+
+
 def info(message: str) -> None:
-    print(f"  {color('●', Color.CYAN)} {_console_text(message)}")
+    print(f"  {color('●', Color.CYAN)} {message}")
 
 
 def success(message: str) -> None:
-    print(f"  {color('✓', Color.GREEN, Color.BOLD)} {_console_text(message)}")
+    print(f"  {color('✓', Color.GREEN, Color.BOLD)} {message}")
 
 
 def warning(message: str) -> None:
-    print(f"  {color('!', Color.YELLOW, Color.BOLD)} {_console_text(message)}")
+    print(f"  {color('!', Color.YELLOW, Color.BOLD)} {message}")
 
 
 def error(message: str) -> None:
-    print(f"  {color('✗', Color.RED, Color.BOLD)} {_console_text(message)}", file=sys.stderr)
+    print(f"  {color('✗', Color.RED, Color.BOLD)} {message}", file=sys.stderr)
 
 
 def detail(label: str, value: str) -> None:
-    value = visible_trim(_console_text(value), max(terminal_width() - 20, 10))
+    value = visible_trim(value, max(terminal_width() - 20, 10))
     print(f"     {color(label.ljust(12), Color.GRAY)}{color(value, Color.WHITE)}")
 
 
 def status(label: str, message: str, tone: str = Color.CYAN) -> None:
     """Print a compact shared status row for builder commands."""
-    print(f"  {color(label.upper().ljust(8), Color.BOLD, tone)} {_console_text(message)}")
+    print(f"  {color(label.upper().ljust(8), Color.BOLD, tone)} {message}")
 
 
 def command_preview(command_line: list[str]) -> None:
@@ -277,7 +301,7 @@ def command_preview(command_line: list[str]) -> None:
 
 def command_output_box(output: str, *, indent: int = COMMAND_INDENT) -> None:
     """Render subprocess output in an indented grey box."""
-    output = _console_text(shorten_output_paths(strip_ansi(output))).rstrip()
+    output = shorten_output_paths(strip_ansi(output)).rstrip()
     if not output:
         return
     prefix = " " * indent
