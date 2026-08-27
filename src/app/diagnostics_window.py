@@ -172,14 +172,16 @@ class DiagnosticsWindow(QDialog):
         diagnostic = self.selected_diagnostic()
         if diagnostic is None or not diagnostic.can_remove_manifest:
             return
-        answer = QMessageBox.question(
-            self,
-            "Remove stale manifest",
-            f"Remove this invalid manifest only?\n\n{diagnostic.manifest_path}\n\nShared model blobs will not be deleted.",
-            QMessageBox.StandardButton.Remove | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
+        confirmation = QMessageBox(self)
+        confirmation.setIcon(QMessageBox.Icon.Warning)
+        confirmation.setWindowTitle("Remove stale manifest")
+        confirmation.setText(
+            f"Remove this invalid manifest only?\n\n{diagnostic.manifest_path}\n\nShared model blobs will not be deleted."
         )
-        if answer is not QMessageBox.StandardButton.Remove:
+        remove = confirmation.addButton("Remove stale manifest", QMessageBox.ButtonRole.DestructiveRole)
+        confirmation.addButton(QMessageBox.StandardButton.Cancel)
+        confirmation.exec()
+        if confirmation.clickedButton() is not remove:
             return
         try:
             OllamaDiagnostics.remove_stale_manifest(diagnostic)
