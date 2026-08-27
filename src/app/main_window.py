@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
+from pathlib import Path
 from time import monotonic
 from typing import TypedDict
 
@@ -170,11 +173,31 @@ class MainWindow(QMainWindow):
 
     def open_diagnostics(self) -> None:
         """Open model recovery without interrupting a currently loaded model."""
+        if self._launch_packaged_utility("diagnostic", "diagnostic.exe"):
+            return
         DiagnosticsWindow(self).exec()
 
     def open_analysis(self) -> None:
-        if self.current_model is not None:
+        if self.current_model is None:
+            return
+        if not self._launch_packaged_utility("analysis", "analysis.exe"):
             self.visualizer.run_nn_analysis_plus()
+
+    @staticmethod
+    def _launch_packaged_utility(directory: str, executable: str) -> bool:
+        """Start a sibling utility from a standalone distribution when present."""
+        if "__compiled__" not in globals():
+            return False
+        candidate = Path(sys.executable).resolve().parent.parent / directory / executable
+        if not candidate.is_file():
+            LOG.warning("Packaged utility is unavailable: %s", candidate)
+            return False
+        try:
+            subprocess.Popen([str(candidate)], close_fds=False)
+        except OSError as exc:
+            LOG.error("Could not start packaged utility %s: %s", candidate, exc)
+            return False
+        return True
 
     def _show_repairable_error(self, title: str, message: str) -> None:
         dialog = QMessageBox(self)

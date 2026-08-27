@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import clear_screen
+from src.utils.console_ui import clear_screen, header, info
 from src.utils.logging import configure_logging
 
 
@@ -22,9 +22,11 @@ def main() -> int:
     from src.models.ollama_discovery import OllamaDiscovery
 
     configure_logging()
+    header("AIBrain", "Connectome analysis launcher")
     app = QApplication(sys.argv)
     app.setApplicationName("AIBrain Analysis")
     models = OllamaDiscovery().discover()
+    info(f"Validated local GGUF models available for analysis: {len(models)}")
     window = QMainWindow()
     window.setWindowTitle("AIBrain Analysis")
     window.setStyleSheet(STYLESHEET)

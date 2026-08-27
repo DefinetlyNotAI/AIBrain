@@ -38,6 +38,7 @@ class BuildDistributionTests(unittest.TestCase):
 
         self.assertEqual(set(targets), {"ai_brain.exe", "diagnostic.exe", "analysis.exe"})
         self.assertEqual(targets["ai_brain.exe"].console_mode, "attach")
+        self.assertEqual(targets["analysis.exe"].console_mode, "attach")
         for target in targets.values():
             command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")])
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
