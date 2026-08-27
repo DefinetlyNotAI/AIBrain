@@ -26,7 +26,7 @@ class OneLineFormatter(logging.Formatter):
         if self.terminal_width:
             width = max(40, shutil.get_terminal_size(fallback=(120, 24)).columns)
             if len(line) > width:
-                line = line[: max(1, width - 1)] + "…"
+                line = line[: max(3, width - 3)] + "..."
         if self.colour:
             line = f"{self._COLOURS.get(record.levelno, '')}{line}{self._RESET}"
         return line

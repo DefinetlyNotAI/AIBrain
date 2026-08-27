@@ -16,6 +16,25 @@ LOG = logging.getLogger(__name__)
 _NATIVE_LOG_CALLBACK: Any = None
 
 
+def _handle_native_log(_level: int, text: bytes | None, _user_data: object) -> None:
+    """Log llama.cpp errors without allowing exceptions across the C boundary."""
+    if not text:
+        return
+
+    try:
+        message = text.decode("utf-8", errors="replace").strip()
+        lower = message.lower()
+        if message and message.strip(".") and (
+            "error" in lower
+            or "failed" in lower
+            or "unknown model architecture" in lower
+        ):
+            LOG.error("llama.cpp: %s", message)
+    except Exception:
+        # A C callback must never propagate a Python exception.
+        return
+
+
 @dataclass(slots=True)
 class GenerationConfig:
     temperature: float = 0.7
@@ -51,20 +70,9 @@ class LlamaBackend:
         )
 
         @llama_log_callback
-        def native_log(text: bytes, _user_data: object) -> None:
-            message = text.decode("utf-8", errors="replace").strip()
-
-            if not message or not message.strip("."):
-                return
-
-            lower = message.lower()
-
-            if (
-                    "error" in lower
-                    or "failed" in lower
-                    or "unknown model architecture" in lower
-            ):
-                LOG.error("llama.cpp: %s", message)
+        def native_log(_level: int, text: bytes | None, _user_data: object) -> None:
+            """Accept llama.cpp's level, message, and user-data callback ABI."""
+            _handle_native_log(_level, text, _user_data)
 
         global _NATIVE_LOG_CALLBACK
         _NATIVE_LOG_CALLBACK = native_log

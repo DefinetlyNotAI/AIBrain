@@ -11,7 +11,7 @@ from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
 from ..native.wrapper.connectome import native
-from ..utils.gpu import set_windows_gpu_preference, should_prefer_high_performance_gpu
+from ..utils.gpu import should_prefer_high_performance_gpu
 
 LOG = logging.getLogger(__name__)
 
@@ -103,14 +103,11 @@ class ConnectomeRenderer(QOpenGLWidget):
             if not is_nvidia:
                 requested = should_prefer_high_performance_gpu()
                 if requested:
-                    preference_saved = set_windows_gpu_preference(True)
-                    action = "Windows high-performance preference re-applied" if preference_saved else \
-                        "Windows preference write failed"
-                    renderer_name += f" · GPU mismatch (expected NVIDIA); {action}; restart required"
+                    renderer_name += "; GPU mismatch (expected NVIDIA); check Windows Graphics settings"
                     LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
                 else:
                     renderer_name += " · Windows system-default GPU"
-            label = f"ModernGL GPU · {renderer_name}"
+            label = f"ModernGL GPU - {renderer_name}"
             LOG.info("Connectome renderer initialized: %s", label)
             self.backendChanged.emit(label)
         except Exception as exc:

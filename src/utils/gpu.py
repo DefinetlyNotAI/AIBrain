@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -17,10 +16,6 @@ class RenderAdapter:
 
 
 LOG = logging.getLogger(__name__)
-_GPU_PREFERENCE_ENV = "AIBRAIN_GPU_PREFERENCE_READY"
-_HIGH_PERFORMANCE = "high-performance"
-
-
 def discover_render_adapters() -> list[RenderAdapter]:
     """Discover Windows display adapters; Qt/OpenGL makes the final device choice."""
     command = ["powershell", "-NoProfile", "-Command",
@@ -70,12 +65,19 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
                 executables.add(str(launched_program.resolve()))
             for executable in executables:
                 if high_performance:
+                    desired = "GpuPreference=2;"
+                    try:
+                        persisted, _ = winreg.QueryValueEx(key, executable)
+                    except FileNotFoundError:
+                        persisted = None
+                    if persisted == desired:
+                        continue
                     winreg.SetValueEx(
                         key, executable,
-                        0, winreg.REG_SZ, "GpuPreference=2;"
+                        0, winreg.REG_SZ, desired
                     )
                     persisted, _ = winreg.QueryValueEx(key, executable)
-                    if persisted != "GpuPreference=2;":
+                    if persisted != desired:
                         raise OSError(f"Windows did not persist the high-performance preference for {executable}")
                     LOG.info("Windows high-performance GPU preference persisted for %s", executable)
                 else:
@@ -123,16 +125,3 @@ def should_prefer_high_performance_gpu() -> bool:
         return True
 
 
-def relaunch_for_gpu_preference() -> bool:
-    """Restart once after writing Windows' preference, before Qt creates GL."""
-    if sys.platform != "win32" or os.environ.get(_GPU_PREFERENCE_ENV) == _HIGH_PERFORMANCE:
-        return False
-    environment = os.environ.copy()
-    environment[_GPU_PREFERENCE_ENV] = _HIGH_PERFORMANCE
-    try:
-        subprocess.Popen([sys.executable, *sys.argv], env=environment, close_fds=False)
-    except OSError as exc:
-        LOG.warning("Could not relaunch AIBrain after setting GPU preference: %s", exc)
-        return False
-    LOG.info("Relaunching AIBrain so Windows can create the OpenGL context on the high-performance GPU")
-    return True
