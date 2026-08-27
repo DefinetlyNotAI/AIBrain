@@ -49,6 +49,7 @@ class OllamaDiscovery:
         layers = data.get("layers") or []
         blob: Path | None = None
         expected_size = 0
+        validation_error = "Model layer blob is missing"
         for layer in layers:
             digest = str(layer.get("digest", ""))
             media_type = str(layer.get("mediaType", ""))
@@ -56,7 +57,8 @@ class OllamaDiscovery:
             if candidate.exists() and ("model" in media_type or blob is None):
                 blob = candidate
                 expected_size = int(layer.get("size", 0) or 0)
-                if self._validate_gguf(candidate, expected_size) is None:
+                validation_error = self._validate_gguf(candidate, expected_size)
+                if validation_error is None:
                     break
         size = blob.stat().st_size if blob else 0
         # Docker-style Ollama manifests usually contain no descriptive metadata.
@@ -64,8 +66,6 @@ class OllamaDiscovery:
         inferred_family = name.rsplit("/", 1)[-1]
         family = str(config.get("family") or config.get("model_family") or data.get("model") or inferred_family)
         details = config.get("details") or {}
-        validation_error = self._validate_gguf(blob, expected_size) if blob else \
-            "Model layer blob is missing"
         return ModelInfo(
             name=name, tag=tag, blob_path=blob, family=family,
             parameter_size=str(

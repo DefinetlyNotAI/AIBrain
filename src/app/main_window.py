@@ -15,8 +15,6 @@ from ..models.generation_worker import GenerationWorker
 from ..models.infinite_simulation import InfiniteSimulationWorker
 from ..models.llama_backend import LlamaBackend
 from ..models.model_info import ModelInfo
-from ..models.model_validator import ModelValidator
-from ..models.ollama_discovery import OllamaDiscovery
 
 LOG = logging.getLogger(__name__)
 
@@ -56,10 +54,9 @@ class GenerationStats(TypedDict):
 class MainWindow(QMainWindow):
     startGeneration = Signal(object, object, object)
     unloadModel = Signal()
-    validateModels = Signal(object)
     startInfiniteSimulation = Signal(object, object, object)
 
-    def __init__(self) -> None:
+    def __init__(self, models: list[ModelInfo]) -> None:
         super().__init__()
         self.setWindowTitle("AIBrain — Local LLM Connectome")
         self._display_fitted = False
@@ -95,7 +92,7 @@ class MainWindow(QMainWindow):
         self._escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self._escape_shortcut.activated.connect(self._handle_escape)
-        self._discover()
+        self._set_models(models)
 
     def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         super().showEvent(event)
@@ -132,33 +129,16 @@ class MainWindow(QMainWindow):
         self.simulation_worker.failed.connect(self._simulation_failed)
         self.simulation_thread.start()
 
-    def _discover(self) -> None:
-        models = OllamaDiscovery().discover()
-        if not models:
-            self.chat.stats.setText(
-                "No usable GGUF blob found in %USERPROFILE%\\.ollama\\models. "
-                "Install a GGUF Ollama model, then reopen AIBrain.")
-            return
-        self.chat.set_validating_models("Validating installed GGUF models…")
-        self.chat.stats.setText(f"Validating {len(models)} installed GGUF models with the local backend…")
-        self.validation_thread = QThread(self)
-        self.validator = ModelValidator()
-        self.validator.moveToThread(self.validation_thread)
-        self.validateModels.connect(self.validator.validate)
-        self.validation_thread.started.connect(lambda: self.validateModels.emit(models))
-        self.validator.progress.connect(self.chat.stats.setText)
-        self.validator.finished.connect(self._validation_finished)
-        self.validator.finished.connect(self.validation_thread.quit)
-        self.validation_thread.finished.connect(self.validator.deleteLater)
-        self.validation_thread.start()
-
-    def _validation_finished(self, models: list[ModelInfo]) -> None:
+    def _set_models(self, models: list[ModelInfo]) -> None:
         self.chat.set_models(models)
         if models:
             self.select_model(models[0])
             self.chat.stats.setText(f"Validated {len(models)} GGUF model(s); select one to begin.")
         else:
-            self.chat.stats.setText("No installed GGUF model could be loaded by this llama.cpp backend.")
+            self.chat.stats.setText(
+                "No usable GGUF blob found in %USERPROFILE%\\.ollama\\models. "
+                "Install a GGUF Ollama model, then reopen AIBrain."
+            )
 
     def select_model(self, model: ModelInfo | None) -> None:
         if model == self.current_model:
@@ -317,11 +297,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         self.visualizer.analyzer.save_model()
-        if hasattr(self, "validator"):
-            self.validator.cancel()
-        if hasattr(self, "validation_thread") and self.validation_thread.isRunning():
-            self.validation_thread.quit()
-            self.validation_thread.wait(3000)
         if self.worker_thread.isRunning():
             self.worker.cancel()
             self.worker_thread.quit()

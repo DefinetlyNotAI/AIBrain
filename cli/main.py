@@ -76,11 +76,13 @@ def _supervise_gpu_launch() -> int:
 def main() -> int:
     require_virtual_environment()
     os.environ.setdefault("QT_OPENGL", "desktop")
-    from PySide6.QtCore import Qt, QTimer
+    from PySide6.QtCore import Qt, QThread, QTimer
     from PySide6.QtGui import QFont, QSurfaceFormat
     from PySide6.QtWidgets import QApplication
+    from src.app.loading_window import LoadingWindow
     from src.app.main_window import MainWindow
     from src.utils.logging import configure_logging
+    from src.models.model_validator import StartupWorker
     from src.utils.gpu import set_windows_gpu_preference, should_prefer_high_performance_gpu
 
     prefer_high_performance = should_prefer_high_performance_gpu()
@@ -101,12 +103,39 @@ def main() -> int:
     app.setFont(QFont("Segoe UI", 10))
     app.setApplicationName("AIBrain")
     app.setOrganizationName("AIBrain")
-    window = MainWindow()
-    window.show()
     signal.signal(signal.SIGINT, lambda _signal, _frame: app.quit())
     interrupt_timer = QTimer(app)
     interrupt_timer.timeout.connect(lambda: None)
     interrupt_timer.start(200)
+
+    loading = LoadingWindow()
+    startup_thread = QThread(app)
+    startup_worker = StartupWorker()
+    startup_worker.moveToThread(startup_thread)
+
+    def show_main(models: list[object]) -> None:
+        if not loading.isVisible():
+            return
+        window = MainWindow(models)
+        app.main_window = window  # type: ignore[attr-defined]
+        window.show()
+        loading.finish()
+        startup_thread.quit()
+
+    def show_startup_error(message: str) -> None:
+        loading.set_progress(1, 1, message)
+        show_main([])
+
+    startup_thread.started.connect(startup_worker.run)
+    startup_worker.progress.connect(loading.set_progress)
+    startup_worker.finished.connect(show_main)
+    startup_worker.failed.connect(show_startup_error)
+    startup_thread.finished.connect(startup_worker.deleteLater)
+    loading.cancelled.connect(startup_worker.cancel)
+    loading.cancelled.connect(startup_thread.quit)
+    loading.cancelled.connect(app.quit)
+    loading.show()
+    QTimer.singleShot(0, startup_thread.start)
     return app.exec()
 
 
