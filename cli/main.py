@@ -130,6 +130,7 @@ def main() -> int:
             super().__init__(app)
             self._models: list[object] | None = None
             self._gpu_checked = False
+            self._gpu_relaunch_requested = False
 
         @Slot(object)
         def models_ready(self, models: object) -> None:
@@ -146,6 +147,13 @@ def main() -> int:
                     vendor,
                     renderer,
                 )
+                # The worker may have already queued its completion callback.
+                # Mark this path terminal before asking Qt to leave its event
+                # loop so no MainWindow can flash between loader processes.
+                self._gpu_relaunch_requested = True
+                startup_worker.cancel()
+                startup_thread.quit()
+                loading.finish()
                 QCoreApplication.exit(GPU_RELAUNCH_EXIT_CODE)
                 return
             self._gpu_checked = True
@@ -159,7 +167,12 @@ def main() -> int:
             self._show_main_when_ready()
 
         def _show_main_when_ready(self) -> None:
-            if not loading.isVisible() or self._models is None or not self._gpu_checked:
+            if (
+                self._gpu_relaunch_requested
+                or not loading.isVisible()
+                or self._models is None
+                or not self._gpu_checked
+            ):
                 return
             window = MainWindow(self._models)
             app.main_window = window  # type: ignore[attr-defined]
