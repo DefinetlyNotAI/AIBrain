@@ -1,7 +1,40 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtGui import QOffscreenSurface, QOpenGLContext, QSurfaceFormat
 from PySide6.QtWidgets import QLabel, QProgressBar, QVBoxLayout, QWidget
+
+
+class GpuProbe(QObject):
+    """Probe the Qt OpenGL adapter before creating the main application UI."""
+
+    completed = Signal(str, str)
+    failed = Signal(str)
+
+    @Slot()
+    def run(self) -> None:
+        surface = QOffscreenSurface()
+        surface.setFormat(QSurfaceFormat.defaultFormat())
+        surface.create()
+        context = QOpenGLContext()
+        context.setFormat(surface.format())
+
+        if not context.create() or not context.makeCurrent(surface):
+            self.failed.emit("Could not create an OpenGL startup context")
+            return
+
+        try:
+            import moderngl
+
+            gl_context = moderngl.create_context(require=330)
+            renderer = str(gl_context.info.get("GL_RENDERER", "Unknown renderer"))
+            vendor = str(gl_context.info.get("GL_VENDOR", "Unknown vendor"))
+            self.completed.emit(vendor, renderer)
+            gl_context.release()
+        except Exception as exc:
+            self.failed.emit(f"Could not inspect the OpenGL adapter: {exc}")
+        finally:
+            context.doneCurrent()
 
 
 class LoadingWindow(QWidget):

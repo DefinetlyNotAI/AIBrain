@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import sys
+import logging
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,8 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import error, header, instruction_list
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
+
+LOG = logging.getLogger(__name__)
 
 _GPU_SUPERVISOR_ENV = "AIBRAIN_GPU_SUPERVISOR"
 _GPU_RELAUNCH_ATTEMPT_ENV = "AIBRAIN_GPU_RELAUNCH_ATTEMPT"
@@ -77,14 +80,18 @@ def _supervise_gpu_launch() -> int:
 def main() -> int:
     require_virtual_environment()
     os.environ.setdefault("QT_OPENGL", "desktop")
-    from PySide6.QtCore import QObject, Qt, QThread, QTimer, Slot
+    from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, QTimer, Slot
     from PySide6.QtGui import QFont, QSurfaceFormat
     from PySide6.QtWidgets import QApplication
-    from src.app.loading_window import LoadingWindow
+    from src.app.loading_window import GpuProbe, LoadingWindow
     from src.app.main_window import MainWindow
     from src.utils.logging import configure_logging
     from src.models.model_validator import StartupWorker
-    from src.utils.gpu import set_windows_gpu_preference, should_prefer_high_performance_gpu
+    from src.utils.gpu import (
+        can_request_gpu_relaunch,
+        set_windows_gpu_preference,
+        should_prefer_high_performance_gpu,
+    )
 
     prefer_high_performance = should_prefer_high_performance_gpu()
     if prefer_high_performance:
@@ -113,15 +120,47 @@ def main() -> int:
     startup_thread = QThread(app)
     startup_worker = StartupWorker()
     startup_worker.moveToThread(startup_thread)
+    gpu_probe = GpuProbe(app)
 
     class StartupCoordinator(QObject):
         """Receive worker completion signals on the QApplication thread."""
 
+        def __init__(self) -> None:
+            super().__init__(app)
+            self._models: list[object] | None = None
+            self._gpu_checked = False
+
         @Slot(object)
-        def show_main(self, models: object) -> None:
-            if not loading.isVisible():
+        def models_ready(self, models: object) -> None:
+            self._models = models if isinstance(models, list) else []
+            self._show_main_when_ready()
+
+        @Slot(str, str)
+        def gpu_ready(self, vendor: str, renderer: str) -> None:
+            is_nvidia = "nvidia" in f"{vendor} {renderer}".lower()
+            loading.set_progress(0, 1, f"OpenGL adapter: {vendor} - {renderer}")
+            if prefer_high_performance and not is_nvidia and can_request_gpu_relaunch():
+                LOG.warning(
+                    "Loader detected a non-NVIDIA OpenGL adapter: vendor=%s renderer=%s; restarting before main UI",
+                    vendor,
+                    renderer,
+                )
+                QCoreApplication.exit(GPU_RELAUNCH_EXIT_CODE)
                 return
-            window = MainWindow(models if isinstance(models, list) else [])
+            self._gpu_checked = True
+            self._show_main_when_ready()
+
+        @Slot(str)
+        def gpu_probe_failed(self, message: str) -> None:
+            LOG.warning("%s", message)
+            loading.set_progress(0, 1, message)
+            self._gpu_checked = True
+            self._show_main_when_ready()
+
+        def _show_main_when_ready(self) -> None:
+            if not loading.isVisible() or self._models is None or not self._gpu_checked:
+                return
+            window = MainWindow(self._models)
             app.main_window = window  # type: ignore[attr-defined]
             window.show()
             loading.finish()
@@ -130,21 +169,24 @@ def main() -> int:
         @Slot(str)
         def show_startup_error(self, message: str) -> None:
             loading.set_progress(1, 1, message)
-            self.show_main([])
+            self.models_ready([])
 
     startup_coordinator = StartupCoordinator(app)
     app.startup_coordinator = startup_coordinator  # type: ignore[attr-defined]
 
     startup_thread.started.connect(startup_worker.run)
     startup_worker.progress.connect(loading.set_progress)
-    startup_worker.finished.connect(startup_coordinator.show_main)
+    startup_worker.finished.connect(startup_coordinator.models_ready)
     startup_worker.failed.connect(startup_coordinator.show_startup_error)
+    gpu_probe.completed.connect(startup_coordinator.gpu_ready)
+    gpu_probe.failed.connect(startup_coordinator.gpu_probe_failed)
     startup_thread.finished.connect(startup_worker.deleteLater)
     loading.cancelled.connect(startup_worker.cancel)
     loading.cancelled.connect(startup_thread.quit)
     loading.cancelled.connect(app.quit)
     loading.show()
     QTimer.singleShot(0, startup_thread.start)
+    QTimer.singleShot(0, gpu_probe.run)
     try:
         return app.exec()
     finally:

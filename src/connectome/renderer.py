@@ -3,20 +3,15 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from PySide6.QtCore import QCoreApplication, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtWidgets import QApplication
 
 from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
 from ..native.wrapper.connectome_kernels import native
-from ..utils.gpu import (
-    GPU_RELAUNCH_EXIT_CODE,
-    can_request_gpu_relaunch,
-    should_prefer_high_performance_gpu,
-)
+from ..utils.gpu import should_prefer_high_performance_gpu
 
 LOG = logging.getLogger(__name__)
 
@@ -90,14 +85,6 @@ class ConnectomeRenderer(QOpenGLWidget):
             self.graph.positions) <= 12_000 else 110_000
         return self.graph.edges[::max(1, len(self.graph.edges) // target)]
 
-    @staticmethod
-    def _restart_for_gpu() -> None:
-        """Close worker-owning windows before returning the GPU retry exit code."""
-        application = QApplication.instance()
-        if application is not None:
-            application.closeAllWindows()
-        QCoreApplication.exit(GPU_RELAUNCH_EXIT_CODE)
-
     def initializeGL(self) -> None:
         try:
             import moderngl
@@ -116,14 +103,7 @@ class ConnectomeRenderer(QOpenGLWidget):
             if not is_nvidia:
                 requested = should_prefer_high_performance_gpu()
                 if requested:
-                    if can_request_gpu_relaunch():
-                        renderer_name += "; GPU mismatch (expected NVIDIA); restarting on high-performance GPU"
-                        QTimer.singleShot(
-                            0,
-                            self._restart_for_gpu,
-                        )
-                    else:
-                        renderer_name += "; GPU mismatch (expected NVIDIA); check Windows Graphics settings"
+                    renderer_name += "; GPU mismatch (expected NVIDIA); open Repair & Diagnostics"
                     LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
                 else:
                     renderer_name += " · Windows system-default GPU"

@@ -45,15 +45,5 @@ class GpuLaunchTests(unittest.TestCase):
         child.terminate.assert_called_once_with()
         self.assertEqual(child.wait.call_count, 2)
 
-    @patch("src.connectome.renderer.QCoreApplication.exit")
-    @patch("src.connectome.renderer.QApplication.instance")
-    def test_renderer_closes_worker_windows_before_requesting_gpu_retry(
-        self, application_instance: Mock, exit_application: Mock
-    ) -> None:
-        application = Mock()
-        application_instance.return_value = application
-
-        ConnectomeRenderer._restart_for_gpu()
-
-        application.closeAllWindows.assert_called_once_with()
-        exit_application.assert_called_once_with(GPU_RELAUNCH_EXIT_CODE)
+    def test_renderer_does_not_own_the_gpu_restart_path(self) -> None:
+        self.assertFalse(hasattr(ConnectomeRenderer, "_restart_for_gpu"))

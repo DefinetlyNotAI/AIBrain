@@ -19,9 +19,17 @@ class ModelValidator:
         candidates: list[ModelInfo],
         cancelled: Event,
         report: Callable[[int, int, str], None],
+        *,
+        verify_backend: bool = True,
     ) -> list[ModelInfo]:
+        """Confirm that each unique GGUF has a valid header and loads in llama.cpp."""
         validated: list[ModelInfo] = []
         checked_paths: dict[Path, str | None] = {}
+        backend = None
+        if verify_backend:
+            from .llama_backend import GenerationConfig, LlamaBackend
+
+            backend = LlamaBackend()
         total = len(candidates)
 
         for index, model in enumerate(candidates, start=1):
@@ -36,6 +44,17 @@ class ModelValidator:
             error = checked_paths.get(model.blob_path)
             if model.blob_path not in checked_paths:
                 error = OllamaDiscovery._validate_gguf(model.blob_path, model.size_bytes)
+                if error is None and backend is not None:
+                    report(index, total, f"Loading {model.name}:{model.tag} with llama.cpp")
+                    try:
+                        backend.load(
+                            model.blob_path,
+                            GenerationConfig(context_length=512, gpu_layers=0),
+                        )
+                    except Exception as exc:
+                        error = f"llama.cpp compatibility check failed: {exc}"
+                    finally:
+                        backend.unload()
                 checked_paths[model.blob_path] = error
             validated.append(replace(model, available=error is None, error=error))
 

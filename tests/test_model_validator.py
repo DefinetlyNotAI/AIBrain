@@ -22,6 +22,7 @@ class ModelValidatorTests(unittest.TestCase):
                 [model],
                 Event(),
                 lambda current, total, detail: progress.append((current, total, detail)),
+                verify_backend=False,
             )
 
         self.assertTrue(validated[0].available)
@@ -37,6 +38,11 @@ class ModelValidatorTests(unittest.TestCase):
                 ModelInfo("demo", "copy", blob, size_bytes=blob.stat().st_size),
             ]
 
-            validated = ModelValidator.validate(models, Event(), lambda *_: None)
+            validated = ModelValidator.validate(
+                models,
+                Event(),
+                lambda *_: None,
+                verify_backend=False,
+            )
 
         self.assertTrue(all(model.available for model in validated))
