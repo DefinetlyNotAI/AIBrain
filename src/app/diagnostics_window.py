@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..models.diagnostics import ModelDiagnostic, OllamaDiagnostics
+from ..utils.gpu import discover_render_adapters, should_prefer_high_performance_gpu
 from ..utils.logging import PROJECT_ROOT
 
 
@@ -52,6 +53,11 @@ class DiagnosticsWindow(QDialog):
         help_text.setWordWrap(True)
         help_text.setObjectName("muted")
         layout.addWidget(help_text)
+        self.system_status = QLabel()
+        self.system_status.setObjectName("muted")
+        self.system_status.setWordWrap(True)
+        self.system_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.system_status)
 
         self.table = QTreeWidget()
         self.table.setAccessibleName("Ollama model diagnostics")
@@ -89,6 +95,10 @@ class DiagnosticsWindow(QDialog):
 
     def refresh(self) -> None:
         self.table.clear()
+        adapters = discover_render_adapters()
+        adapter_text = ", ".join(adapter.name for adapter in adapters) if adapters else "No display adapters could be queried"
+        preference = "high-performance GPU requested" if should_prefer_high_performance_gpu() else "Windows system-default GPU requested"
+        self.system_status.setText(f"Render diagnostics: {preference}. Detected adapters: {adapter_text}.")
         try:
             diagnostics = OllamaDiagnostics().inspect(verify_backend=True)
         except OSError as exc:
