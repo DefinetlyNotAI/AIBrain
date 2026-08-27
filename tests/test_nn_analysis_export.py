@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -19,11 +21,14 @@ class NNAnalysisExportTests(unittest.TestCase):
     def setUp(self) -> None:
         self.graph = ConnectomeGraph(
             positions=np.array([[0, 0, 0], [1, 0, 0]], dtype=np.float32),
-            regions=np.array([0, 1], dtype=np.int32),
+            regions=np.array([0, 1], dtype=np.int16),
             edges=np.array([[0, 1]], dtype=np.int32),
             region_names=REGIONS,
         )
-        self.analyzer = ConnectomeAnalyzer(self.graph, hidden_width=4)
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.model_path = Path(self.temporary_directory.name) / "learned.npz"
+        self.analyzer = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=self.model_path)
         self.analyzer.observe(ActivationFrame(1, "hello", 1, ActivitySource.SIMULATION),
                               np.array([.5, 0.], dtype=np.float32))
 
@@ -53,13 +58,21 @@ class NNAnalysisExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "learned.npz"
             first = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
+            initial_weights = first.encoder_weights.copy()
             first.observe(ActivationFrame(2, "learn", 2, ActivitySource.SIMULATION),
                           np.array([.3, .2], dtype=np.float32))
-            first.save_model()
+            self.assertTrue(path.is_file())
+            self.assertFalse(np.array_equal(first.encoder_weights, initial_weights))
             second = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
 
         self.assertEqual(second.frames_seen, 1)
         self.assertTrue(np.array_equal(second.encoder_weights, first.encoder_weights))
+
+    def test_default_memory_path_is_user_writable_not_the_application_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"LOCALAPPDATA": directory}):
+            path = ConnectomeAnalyzer.default_model_path()
+
+        self.assertEqual(path, Path(directory) / "AIBrain" / "analysis_model" / "connectome_autoencoder_v1.npz")
 
 
 if __name__ == "__main__":

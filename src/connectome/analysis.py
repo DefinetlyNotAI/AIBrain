@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import os
 from pathlib import Path
+import tempfile
 
 import numpy as np
 
@@ -10,6 +13,10 @@ from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome import native
 
 from typing import TypedDict
+
+
+LOG = logging.getLogger(__name__)
+MODEL_FILENAME = "connectome_autoencoder_v1.npz"
 
 
 class PatternSegment(TypedDict):
@@ -58,10 +65,20 @@ class ConnectomeAnalyzer:
         self._learning_rate = .025
         self._previous_mean = 0.0
         self.frames_seen = 0
-        self._unsaved_frames = 0
-        self.model_path = model_path or Path(__file__).resolve().parents[
-            2] / "analysis_model" / "connectome_autoencoder_v1.npz"
-        self._load_model()
+        self.model_path = model_path or self.default_model_path()
+        self._load_persistent_model()
+
+    @staticmethod
+    def default_model_path() -> Path:
+        """Return the user-writable location for AIBrain's learned state."""
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return base / "AIBrain" / "analysis_model" / MODEL_FILENAME
+
+    @staticmethod
+    def legacy_model_path() -> Path:
+        """Return the pre-release location, retained only for one-time migration."""
+        return Path(__file__).resolve().parents[2] / "analysis_model" / MODEL_FILENAME
 
     def observe(self, frame: ActivationFrame, values: np.ndarray) -> AnalysisRecord:
         regional, active_nodes = native.regions(values, self.graph.regions, self.region_count)
@@ -95,35 +112,66 @@ class ConnectomeAnalyzer:
         )
         self.records.append(record)
         self.frames_seen += 1
-        self._unsaved_frames += 1
-        if self._unsaved_frames >= 32:
-            self.save_model()
+        # A process can be closed or terminated between generated responses.
+        # Commit every online-learning step, rather than waiting for a clean exit
+        # or an arbitrary batch threshold, so the NPZ is durable memory.
+        self.save_model()
         return record
 
-    def _load_model(self) -> None:
-        try:
-            with np.load(self.model_path, allow_pickle=False) as stored:
-                if tuple(stored["encoder_weights"].shape) != self.encoder_weights.shape:
-                    return
-                self.encoder_weights[:] = stored["encoder_weights"]
-                self.encoder_bias[:] = stored["encoder_bias"]
-                self.decoder_weights[:] = stored["decoder_weights"]
-                self.decoder_bias[:] = stored["decoder_bias"]
-                self.embedding_centroid[:] = stored["embedding_centroid"]
-                self.frames_seen = int(stored["frames_seen"])
-        except (OSError, KeyError, ValueError):
+    def _load_persistent_model(self) -> None:
+        if self._load_model(self.model_path):
             return
+        legacy_path = self.legacy_model_path()
+        if legacy_path != self.model_path and self._load_model(legacy_path):
+            # Preserve learning from older installs while moving it out of the
+            # application directory, which is often read-only for releases.
+            self.save_model()
 
-    def save_model(self) -> None:
+    def _load_model(self, path: Path) -> bool:
+        try:
+            with np.load(path, allow_pickle=False) as stored:
+                tensors = {
+                    "encoder_weights": self.encoder_weights,
+                    "encoder_bias": self.encoder_bias,
+                    "decoder_weights": self.decoder_weights,
+                    "decoder_bias": self.decoder_bias,
+                    "embedding_centroid": self.embedding_centroid,
+                }
+                loaded = {name: stored[name] for name in tensors}
+                if any(value.shape != tensors[name].shape or not np.isfinite(value).all()
+                       for name, value in loaded.items()):
+                    return False
+                frames_seen = int(stored["frames_seen"])
+                if frames_seen < 0:
+                    return False
+        except (OSError, KeyError, TypeError, ValueError):
+            return False
+
+        for name, target in tensors.items():
+            target[:] = loaded[name]
+        self.frames_seen = frames_seen
+        return True
+
+    def save_model(self) -> bool:
         """Atomically persist learned weights for future analysis sessions."""
-        self.model_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.model_path.with_suffix(".tmp")
-        with temporary.open("wb") as handle:
-            np.savez_compressed(handle, encoder_weights=self.encoder_weights, encoder_bias=self.encoder_bias,
-                                decoder_weights=self.decoder_weights, decoder_bias=self.decoder_bias,
-                                embedding_centroid=self.embedding_centroid, frames_seen=np.array(self.frames_seen))
-        temporary.replace(self.model_path)
-        self._unsaved_frames = 0
+        temporary_path: Path | None = None
+        try:
+            self.model_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile("wb", dir=self.model_path.parent, delete=False) as handle:
+                temporary_path = Path(handle.name)
+                np.savez_compressed(handle, encoder_weights=self.encoder_weights, encoder_bias=self.encoder_bias,
+                                    decoder_weights=self.decoder_weights, decoder_bias=self.decoder_bias,
+                                    embedding_centroid=self.embedding_centroid, frames_seen=np.array(self.frames_seen))
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary_path.replace(self.model_path)
+            return True
+        except (OSError, ValueError) as exc:
+            LOG.warning("Could not persist NN Analysis+ memory to %s: %s", self.model_path, exc)
+            return False
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink(missing_ok=True)
 
     def _train(self, features: np.ndarray, embedding: np.ndarray, reconstruction: np.ndarray) -> None:
         """One gradient-descent step for tanh encoder + sigmoid decoder."""

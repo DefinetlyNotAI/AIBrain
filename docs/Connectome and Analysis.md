@@ -40,8 +40,10 @@ fallback.
 
 **NN Analysis+** runs an actual online NumPy autoencoder over every visual frame, then creates a compact JSON data file.
 The network uses region-density and temporal-change features, a tanh encoder, sigmoid decoder, and per-frame
-gradient-descent reconstruction training. Learned weights persist locally in the gitignored `analysis_model/` directory,
-so later sessions continue learning. Region-density normalization removes static cluster-size and global
+gradient-descent reconstruction training. Every recorded frame is atomically saved immediately, so its learned weights
+survive an unexpected close as well as a normal exit. The NPZ lives in `%LOCALAPPDATA%\AIBrain\analysis_model\` rather
+than the application folder, so upgrades and standalone releases keep the same per-user memory; an older project-local
+NPZ is migrated automatically on first use. Region-density normalization removes static cluster-size and global
 renderer-amplitude bias; findings remain analysis of procedural visual signals, not measured transformer activations.
 The export contains the complete session conversation, network architecture and fit metrics, regional profile, pattern
 segments, and a bounded set of high-novelty events. It intentionally excludes massive per-neuron frame dumps.
