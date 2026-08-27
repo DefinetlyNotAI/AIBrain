@@ -76,6 +76,29 @@ def verify_library() -> None:
     line("VERIFY", f"Loaded {OUTPUT.name} ({OUTPUT.stat().st_size:,} bytes); exported symbols verified", Colour.GREEN)
 
 
+def commit_regenerated_library() -> bool:
+    """Commit only a changed generated DLL, leaving unrelated work untouched."""
+    relative_output = OUTPUT.relative_to(ROOT)
+    subprocess.run(["git", "add", "--", str(relative_output)], cwd=ROOT, check=True)
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--quiet", "--", str(relative_output)],
+        cwd=ROOT,
+        check=False,
+    )
+    if staged.returncode == 0:
+        line("GIT", "Native DLL is unchanged; no generated-artifact commit needed", Colour.GRAY)
+        return False
+    if staged.returncode != 1:
+        raise RuntimeError("Could not determine whether the generated DLL changed")
+    subprocess.run(
+        ["git", "commit", "-m", "build: Regenerated DLL's dynamically", "--", str(relative_output)],
+        cwd=ROOT,
+        check=True,
+    )
+    line("GIT", "Committed regenerated native DLL", Colour.GREEN)
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Compile AIBrain's optimized native connectome DLL.")
     parser.add_argument("--compiler", help="Path to a specific C compiler executable")
@@ -96,6 +119,7 @@ def main() -> int:
         line("TOOLCHAIN", f"{compiler.family.upper()} · {compiler.path}", Colour.GREEN)
         compile_library(compiler, arguments.debug)
         verify_library()
+        commit_regenerated_library()
     except (OSError, RuntimeError) as exc:
         line("ERROR", str(exc), Colour.RED)
         return 1
