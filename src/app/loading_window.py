@@ -43,7 +43,8 @@ class LoadingWindow(QWidget):
         layout.addSpacing(8)
 
         self.progress = QProgressBar()
-        self.progress.setRange(0, 0)
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
         self.progress.setTextVisible(False)
         layout.addWidget(self.progress)
 
@@ -57,8 +58,6 @@ class LoadingWindow(QWidget):
         if total > 0:
             self.progress.setRange(0, total)
             self.progress.setValue(current)
-        else:
-            self.progress.setRange(0, 0)
         self.detail.setText(detail)
 
     def finish(self) -> None:

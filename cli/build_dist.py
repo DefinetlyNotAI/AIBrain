@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import command, error, header, section, success
+from src.utils.console_ui import Color, command, error, header, panel, section
 from src.utils.gpu import set_windows_executable_gpu_preference
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
@@ -84,7 +84,12 @@ def main() -> int:
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         error(str(exc))
         return 1
-    success(f"Created self-contained distribution: {release}")
+    panel(
+        "DISTRIBUTION COMPLETE",
+        [("Release", str(release)), ("Executable", str(release / "AIBrain.exe"))],
+        footer="Standalone AIBrain package is ready to launch.",
+        tone=Color.GREEN,
+    )
     return 0
 
 

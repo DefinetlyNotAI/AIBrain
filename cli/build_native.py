@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import Color as Colour, command, error, header, status, success
+from src.utils.console_ui import Color as Colour, command, error, header, panel, section, status
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_native.c"
 OUTPUT = ROOT / "dll" / "aibrain_connectome.dll"
@@ -85,6 +85,7 @@ def main() -> int:
     parser.add_argument("--clean", action="store_true", help="Remove the compiled DLL before building")
     arguments = parser.parse_args()
     header("AIBrain", "Native connectome build tool · x64 Windows")
+    section("Compile native acceleration", 1)
     if not SOURCE.is_file():
         line("ERROR", f"Missing source: {SOURCE}", Colour.RED)
         return 1
@@ -99,7 +100,15 @@ def main() -> int:
     except (OSError, RuntimeError) as exc:
         line("ERROR", str(exc), Colour.RED)
         return 1
-    success("Native acceleration is ready for AIBrain.")
+    panel(
+        "NATIVE BUILD COMPLETE",
+        [
+            ("Toolchain", compiler.family.upper()),
+            ("Library", f"{OUTPUT.name} ({OUTPUT.stat().st_size:,} bytes)"),
+        ],
+        footer="Native acceleration is ready for AIBrain.",
+        tone=Colour.GREEN,
+    )
     return 0
 
 

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import error, instruction_list
+from src.utils.console_ui import error, header, instruction_list
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
 
 _GPU_SUPERVISOR_ENV = "AIBRAIN_GPU_SUPERVISOR"
@@ -27,6 +27,7 @@ def require_virtual_environment() -> None:
     if "__compiled__" in globals():
         return
     if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+        header("AIBrain", "Desktop connectome launcher")
         error("AIBrain must run inside a Python virtual environment.")
         instruction_list(
             [
@@ -76,7 +77,7 @@ def _supervise_gpu_launch() -> int:
 def main() -> int:
     require_virtual_environment()
     os.environ.setdefault("QT_OPENGL", "desktop")
-    from PySide6.QtCore import Qt, QThread, QTimer
+    from PySide6.QtCore import QObject, Qt, QThread, QTimer, Slot
     from PySide6.QtGui import QFont, QSurfaceFormat
     from PySide6.QtWidgets import QApplication
     from src.app.loading_window import LoadingWindow
@@ -113,23 +114,31 @@ def main() -> int:
     startup_worker = StartupWorker()
     startup_worker.moveToThread(startup_thread)
 
-    def show_main(models: list[object]) -> None:
-        if not loading.isVisible():
-            return
-        window = MainWindow(models)
-        app.main_window = window  # type: ignore[attr-defined]
-        window.show()
-        loading.finish()
-        startup_thread.quit()
+    class StartupCoordinator(QObject):
+        """Receive worker completion signals on the QApplication thread."""
 
-    def show_startup_error(message: str) -> None:
-        loading.set_progress(1, 1, message)
-        show_main([])
+        @Slot(object)
+        def show_main(self, models: object) -> None:
+            if not loading.isVisible():
+                return
+            window = MainWindow(models if isinstance(models, list) else [])
+            app.main_window = window  # type: ignore[attr-defined]
+            window.show()
+            loading.finish()
+            startup_thread.quit()
+
+        @Slot(str)
+        def show_startup_error(self, message: str) -> None:
+            loading.set_progress(1, 1, message)
+            self.show_main([])
+
+    startup_coordinator = StartupCoordinator(app)
+    app.startup_coordinator = startup_coordinator  # type: ignore[attr-defined]
 
     startup_thread.started.connect(startup_worker.run)
     startup_worker.progress.connect(loading.set_progress)
-    startup_worker.finished.connect(show_main)
-    startup_worker.failed.connect(show_startup_error)
+    startup_worker.finished.connect(startup_coordinator.show_main)
+    startup_worker.failed.connect(startup_coordinator.show_startup_error)
     startup_thread.finished.connect(startup_worker.deleteLater)
     loading.cancelled.connect(startup_worker.cancel)
     loading.cancelled.connect(startup_thread.quit)
