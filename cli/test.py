@@ -52,6 +52,7 @@ SUITES: dict[str, tuple[str, list[str]]] = {
             "tests.test_analysis_cli",
             "tests.test_gpu_launch",
             "tests.test_infinite_simulation",
+            "tests.test_installer_repair",
             "tests.test_nn_analysis_export",
         ],
     ),

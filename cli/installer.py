@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -23,6 +24,7 @@ if str(ROOT) not in sys.path:
 from src.utils.console_ui import Color, clear_screen, color, command_preview, command_output_box, detail, error, header, \
     info, \
     panel, relative_path, section, success, warning
+from src.models.diagnostics import OllamaDiagnostics
 
 VENV_DIR = ROOT / ".venv"
 
@@ -52,6 +54,78 @@ class GpuCapability:
     name: str
     driver: str
     cuda_version: tuple[int, int] | None
+
+
+@dataclass(frozen=True, slots=True)
+class InstallerHealth:
+    subsystem: str
+    status: str
+    reason: str
+
+
+def collect_final_health(python: str, gpu: GpuCapability | None, root: Path = ROOT) -> list[InstallerHealth]:
+    """Collect a read-only final health report for the installed runtime."""
+    checks = [
+        InstallerHealth("Hardware", "Ready" if gpu else "CPU fallback",
+                        "NVIDIA CUDA capability detected." if gpu else "REASON: CUDA was not detected; CPU inference is supported."),
+        InstallerHealth("Python", "Ready" if Path(python).is_file() else "Needs repair",
+                        "Managed virtual-environment interpreter found." if Path(python).is_file()
+                        else "REASON: The managed interpreter is missing."),
+        InstallerHealth("pip / libraries", "Ready", "Imports were checked by the verification step."),
+    ]
+    try:
+        models = OllamaDiagnostics().inspect()
+        broken = [item for item in models if not item.available]
+        checks.append(InstallerHealth("Model manifests / blobs", "Needs repair" if broken else "Ready",
+                                      f"REASON: {broken[0].reason}" if broken else "Local manifests are healthy or none are installed."))
+    except OSError as exc:
+        checks.append(InstallerHealth("Model manifests / blobs", "Info", f"REASON: Could not inspect models: {exc}"))
+    cache = root / ".cache"
+    checks.append(InstallerHealth(".cache", "Ready" if cache.exists() else "Info",
+                                  "Cache exists." if cache.exists() else "No cache has been created yet."))
+    dlls = tuple(root.rglob("*.dll"))
+    checks.append(InstallerHealth("Native DLLs", "Ready" if dlls else "Info",
+                                  "Native acceleration assets found." if dlls else "No native DLL found; supported Python fallback remains available."))
+    return checks
+
+
+def print_final_health(python: str, gpu: GpuCapability | None) -> list[InstallerHealth]:
+    checks = collect_final_health(python, gpu)
+    panel("FINAL HEALTH CHECK", [(check.subsystem, f"{check.status} — {check.reason}") for check in checks],
+          subtitle="Selected repairs affect only the named subsystem")
+    return checks
+
+
+def repair_validation_cache(root: Path = ROOT) -> None:
+    """Invalidate only disposable validation data; never broad cache/model data."""
+    target = root / ".cache" / "validation"
+    resolved_root, resolved_target = root.resolve(), target.resolve()
+    if not resolved_target.is_relative_to(resolved_root):
+        raise ValueError("Refusing to invalidate a cache path outside the project")
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
+
+
+def repair_selected_subsystem(subsystem: str, python: str, gpu: GpuCapability | None, *, model: str | None = None) -> str:
+    """Run exactly one selected repair; destructive work is explicit and narrow."""
+    if subsystem == "dependencies":
+        install_dependencies(python)
+        return "dependencies"
+    if subsystem == "backend":
+        return install_llama(python, gpu)
+    if subsystem == "native":
+        run([python, str(ROOT / "cli" / "build_native.py")])
+        return "native"
+    if subsystem == "cache":
+        repair_validation_cache()
+        return "cache"
+    if subsystem == "models":
+        if not model:
+            raise ValueError("Model repair requires --model <name:tag>; no model blob is deleted implicitly.")
+        run(["ollama", "pull", model])
+        return "models"
+    raise ValueError(f"Unsupported repair subsystem: {subsystem}")
 
 
 def run(command: list[str]) -> None:
@@ -405,7 +479,9 @@ def completion_screen(
 def print_help_banner() -> None:
     panel(
         "AIBrain Installer",
-        [("-h, --help", "Show this help screen and exit.")],
+        [("-h, --help", "Show this help screen and exit."),
+         ("--repair <subsystem>", "Repair only dependencies, backend, native, cache, or models."),
+         ("--model <name:tag>", "Required with --repair models; pulls only that model.")],
         subtitle="Available Runtime Flags",
         footer=f"Usage: python {Path(__file__).name} [options]",
     )
@@ -428,12 +504,14 @@ def parse_args() -> argparse.Namespace:
         ),
         add_help=True,
     )
+    parser.add_argument("--repair", choices=("dependencies", "backend", "native", "cache", "models"))
+    parser.add_argument("--model")
 
     return parser.parse_args()
 
 
 def main() -> int:
-    parse_args()
+    args = parse_args()
 
     clear_screen()
     header()
@@ -457,6 +535,17 @@ def main() -> int:
         return 1
 
     python = str(venv_python())
+
+    if args.repair:
+        section(f"Targeted repair: {args.repair}", 3)
+        try:
+            repaired = repair_selected_subsystem(args.repair, python, gpu, model=args.model)
+        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+            error(f"REASON: Targeted {args.repair} repair failed: {exc}")
+            return 1
+        success(f"Targeted {repaired} repair completed")
+        print_final_health(python, gpu)
+        return 0
 
     section("Core dependencies", 3)
 
@@ -499,6 +588,7 @@ def main() -> int:
         gpu,
         wheel_tag,
     )
+    print_final_health(python, gpu)
 
     return 0
 

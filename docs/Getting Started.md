@@ -17,6 +17,12 @@ model store directly and does not copy or redownload model blobs.
 
 ## Install into the managed environment
 
+The installer finishes with a read-only health report for hardware/CUDA fallback, Python, pip/libraries, model
+manifests and blobs, `.cache`, and native DLLs. For a narrow repair, use one selected subsystem instead of reinstalling
+everything: `python cli\installer.py --repair dependencies`, `--repair backend`, `--repair native`, or `--repair cache`.
+Model repair requires an explicit reference, for example `python cli\installer.py --repair models --model llama3:latest`;
+the installer never deletes model blobs implicitly.
+
 From the project root, run:
 
 ```powershell

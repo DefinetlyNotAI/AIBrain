@@ -29,6 +29,11 @@ backend-incompatible blobs by design.
 
 ## A selected model fails to load or generate
 
+Run the final installer health report or a selected repair. Use `--repair models --model name:tag` to re-pull one known
+model; use `--repair backend` for llama-cpp-python, `--repair dependencies` for the base environment, and `--repair
+cache` only for disposable validation data. Each failure includes a `REASON`; model blobs and native DLLs are never
+removed as part of a cache refresh.
+
 Lower **Context** and set **GPU layers** to `0`, then try again. This reduces memory requirements and rules out
 GPU-offload incompatibility. A valid GGUF file may still require a different llama.cpp build or more memory than the
 machine has available.
