@@ -24,14 +24,51 @@ ALL_TESTS = "Every test in tests/"
 
 def run_suite(name: str, modules: list[str]) -> int:
     command_line = (
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests"]
+        [
+            sys.executable,
+            "-m",
+            "unittest",
+            "-b",
+            "discover",
+            "-s",
+            "tests",
+        ]
         if not modules
-        else [sys.executable, "-m", "unittest", *modules]
+        else [
+            sys.executable,
+            "-m",
+            "unittest",
+            "-b",
+            *modules,
+        ]
     )
+
     command_preview(command_line)
-    result = subprocess.run(command_line, cwd=ROOT, text=True, encoding="utf-8", errors="replace", capture_output=True)
-    command_output_box("\n".join(part.rstrip() for part in (result.stdout, result.stderr) if part.strip()))
-    status("PASS" if result.returncode == 0 else "FAIL", name, Color.GREEN if result.returncode == 0 else Color.RED)
+
+    result = subprocess.run(
+        command_line,
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+    output = result.stdout.rstrip()
+
+    if output:
+        command_output_box(output)
+
+    passed = result.returncode == 0
+
+    status(
+        "PASS" if passed else "FAIL",
+        name,
+        Color.GREEN if passed else Color.RED,
+    )
+    print()
+
     return result.returncode
 
 
