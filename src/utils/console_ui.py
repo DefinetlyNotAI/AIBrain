@@ -70,6 +70,23 @@ _SetConsoleCursorPosition = ctypes.WINFUNCTYPE(
     wintypes.HANDLE,
     _ConsoleCoord,
 )
+_CreateFile = ctypes.WINFUNCTYPE(
+    wintypes.HANDLE,
+    wintypes.LPCWSTR,
+    wintypes.DWORD,
+    wintypes.DWORD,
+    ctypes.c_void_p,
+    wintypes.DWORD,
+    wintypes.DWORD,
+    wintypes.HANDLE,
+)
+_CloseHandle = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HANDLE)
+
+_GENERIC_READ = 0x80000000
+_GENERIC_WRITE = 0x40000000
+_FILE_SHARE_READ = 0x00000001
+_FILE_SHARE_WRITE = 0x00000002
+_OPEN_EXISTING = 3
 
 
 class _Kernel32Bindings:
@@ -96,6 +113,14 @@ class _Kernel32Bindings:
         self.set_console_cursor_position: Callable[..., int] = cast(
             Callable[..., int],
             _SetConsoleCursorPosition(("SetConsoleCursorPosition", library)),
+        )
+        self.create_file: Callable[..., int] = cast(
+            Callable[..., int],
+            _CreateFile(("CreateFileW", library)),
+        )
+        self.close_handle: Callable[[int], int] = cast(
+            Callable[[int], int],
+            _CloseHandle(("CloseHandle", library)),
         )
 
 
@@ -161,30 +186,54 @@ def terminal_width() -> int:
     return max(width - RIGHT_EDGE_MARGIN, MIN_WIDTH)
 
 
+def _clear_native_console() -> bool:
+    """Clear the entire attached Windows console buffer, not just its viewport."""
+    kernel32 = _kernel32_bindings()
+    handle = kernel32.get_std_handle(-11)
+    owns_handle = False
+    info = _ConsoleScreenBufferInfo()
+    if not handle or not kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
+        # stdout may be captured by an IDE or redirected while the process still
+        # owns an interactive console. CONOUT$ addresses that console directly.
+        handle = kernel32.create_file(
+            "CONOUT$",
+            _GENERIC_READ | _GENERIC_WRITE,
+            _FILE_SHARE_READ | _FILE_SHARE_WRITE,
+            None,
+            _OPEN_EXISTING,
+            0,
+            None,
+        )
+        owns_handle = True
+        if not handle or not kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
+            if handle:
+                kernel32.close_handle(handle)
+            return False
+    try:
+        # The second parameter is a 16-bit WCHAR value, not a string pointer.
+        # Passing a pointer here produces repeated CJK glyphs from its low word.
+        cells = info.size.x * info.size.y
+        written = wintypes.DWORD()
+        origin = _ConsoleCoord(0, 0)
+        characters_cleared = kernel32.fill_console_output_character(handle, " ", cells, origin, ctypes.byref(written))
+        attributes_cleared = kernel32.fill_console_output_attribute(handle, info.attributes, cells, origin, ctypes.byref(written))
+        cursor_reset = kernel32.set_console_cursor_position(handle, origin)
+        return bool(characters_cleared and attributes_cleared and cursor_reset)
+    finally:
+        if owns_handle:
+            kernel32.close_handle(handle)
+
+
 def clear_screen() -> None:
-    """Clear an interactive terminal without invoking cmd.exe or a shell command."""
-    if not sys.stdout.isatty():
-        return
+    """Clear an attached terminal without invoking cmd.exe or a shell command."""
     if os.name == "nt":
         try:
-            kernel32 = _kernel32_bindings()
-            # The second parameter is a 16-bit WCHAR value, not a string
-            # pointer.  Without argtypes ctypes passes a pointer to " ", and
-            # Windows fills the console with the low word of that address
-            # (observed as repeated CJK glyphs such as U+4A00).
-            handle = kernel32.get_std_handle(-11)
-            info = _ConsoleScreenBufferInfo()
-            if handle and kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
-                cells = info.size.x * info.size.y
-                written = wintypes.DWORD()
-                origin = _ConsoleCoord(0, 0)
-                kernel32.fill_console_output_character(handle, " ", cells, origin, ctypes.byref(written))
-                kernel32.fill_console_output_attribute(handle, info.attributes, cells, origin, ctypes.byref(written))
-                kernel32.set_console_cursor_position(handle, origin)
+            if _clear_native_console():
                 return
         except (AttributeError, OSError):
             pass
-    print("\x1b[2J\x1b[H", end="", flush=True)
+    if sys.stdout.isatty():
+        print("\x1b[2J\x1b[H", end="", flush=True)
 
 
 def rule(char: str = BOX_HORIZONTAL) -> str:

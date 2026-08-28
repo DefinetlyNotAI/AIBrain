@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src.utils import console_ui
 from src.utils.console_ui import Color, panel
@@ -92,6 +92,43 @@ class ConsoleUiTests(unittest.TestCase):
             self.assertEqual(console_ui.terminal_width(), 76)
 
         self.assertEqual(fill_character.calls[0][1], " ")
+        self.assertEqual(fill_character.calls[0][2], 2_000)
+        self.assertEqual(fill_character.calls[0][3].x, 0)
+        self.assertEqual(fill_character.calls[0][3].y, 0)
+
+    def test_native_clear_uses_attached_console_when_stdout_is_redirected(self) -> None:
+        class ScreenInfo:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def __call__(self, _handle, info_pointer) -> int:  # type: ignore[no-untyped-def]
+                self.calls += 1
+                if self.calls == 1:
+                    return 0
+                info = info_pointer._obj
+                info.size.x = 120
+                info.size.y = 900
+                info.attributes = 7
+                return 1
+
+        create_file = Mock(return_value=99)
+        close_handle = Mock(return_value=1)
+        kernel32 = SimpleNamespace(
+            get_std_handle=Mock(return_value=1),
+            get_console_screen_buffer_info=ScreenInfo(),
+            create_file=create_file,
+            close_handle=close_handle,
+            fill_console_output_character=Mock(return_value=1),
+            fill_console_output_attribute=Mock(return_value=1),
+            set_console_cursor_position=Mock(return_value=1),
+        )
+
+        with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty", return_value=False), patch.object(console_ui, "_kernel32_bindings", return_value=kernel32):
+            console_ui.clear_screen()
+
+        self.assertEqual(create_file.call_args.args[0], "CONOUT$")
+        self.assertEqual(kernel32.fill_console_output_character.call_args.args[2], 108_000)
+        close_handle.assert_called_once_with(99)
 
     def test_console_ui_avoids_dynamic_ctypes_dll_attributes(self) -> None:
         source = Path(console_ui.__file__).read_text(encoding="utf-8")
