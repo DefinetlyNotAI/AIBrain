@@ -73,6 +73,7 @@ class MainWindow(QMainWindow):
         self._started = 0.0
         self._simulation_bubbles: dict[tuple[str, int], QLabel] = {}
         self.simulation_transcript: list[dict[str, object]] = []
+        self._analysis_is_infinite = False
         self._setup_worker()
         self.chat = ChatPanel(self.config)
         self.visualizer = VisualizerPanel()
@@ -182,8 +183,10 @@ class MainWindow(QMainWindow):
     def open_analysis(self) -> None:
         if self.current_model is None:
             return
-        if not self._launch_packaged_utility("analysis", "analysis.exe"):
+        if self._analysis_is_infinite:
             self.visualizer.run_nn_analysis_plus()
+        else:
+            self.visualizer.run_session_analysis()
 
     @staticmethod
     def _launch_packaged_utility(directory: str, executable: str) -> bool:
@@ -218,6 +221,8 @@ class MainWindow(QMainWindow):
                                 "Choose an available GGUF model discovered from Ollama first.")
             return
         self.config = self.chat.config()
+        self._analysis_is_infinite = False
+        self.chat.set_analysis_mode(False)
         save_generation_settings(self.config)
         self.history.append({"role": "user", "content": prompt})
         self.visualizer.set_conversation(self.history)
@@ -237,6 +242,8 @@ class MainWindow(QMainWindow):
         self.chat.stats.setText("Stopping after the current generated token…")
 
     def start_infinite_simulation(self, seed: str) -> None:
+        self._analysis_is_infinite = True
+        self.chat.set_analysis_mode(True)
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
             QMessageBox.warning(self, "Model unavailable",
                                 "Choose an available GGUF model discovered from Ollama first.")

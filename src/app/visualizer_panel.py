@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
-from ..connectome.export import export_nn_analysis_plus
+from ..connectome.export import export_nn_analysis_plus, export_session_analysis
 from ..connectome.generator import build_connectome
 from ..connectome.mapper import ActivityMapper
 from ..connectome.renderer import ConnectomeRenderer
@@ -155,6 +155,7 @@ class VisualizerPanel(QWidget):
             "Analyze every recorded visual frame and export compact neural-network findings"
         )
         self.analysis.clicked.connect(self.run_nn_analysis_plus)
+        self.analysis.hide()
 
         reset = QPushButton("Reset view")
         reset.clicked.connect(lambda: self.renderer.reset_camera())
@@ -411,6 +412,15 @@ class VisualizerPanel(QWidget):
             f"Conversation turns: {len(self._conversation)}\n"
             f"Visual brain-signal frames analyzed: {len(self.analyzer.records)}\n\n"
             f"The JSON contains compact neural-network findings, not a raw frame dump.")
+
+    def run_session_analysis(self) -> None:
+        if not self.analyzer.records:
+            QMessageBox.information(self, "Analysis", "Generate a normal chat response before exporting session data.")
+            return
+        filename, _ = QFileDialog.getSaveFileName(self, "Create session analysis data file", "session-analysis.json",
+                                                   "JSON data (*.json);;Compressed JSON data (*.json.gz)")
+        if filename:
+            export_session_analysis(Path(filename), self.graph, self.analyzer, self._conversation)
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()

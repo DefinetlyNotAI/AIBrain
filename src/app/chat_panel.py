@@ -287,3 +287,10 @@ class ChatPanel(QWidget):
         self.infinite.setEnabled(not running)
         self.models.setEnabled(not running)
         self.open_analysis.setEnabled(not running and self.models.currentData() is not None)
+
+    def set_analysis_mode(self, infinite: bool) -> None:
+        self.open_analysis.setText("Analysis+" if infinite else "Analysis")
+        self.open_analysis.setToolTip(
+            "Export compact neural findings for an Infinite simulation" if infinite
+            else "Export normal chat session data without neural-network findings"
+        )
