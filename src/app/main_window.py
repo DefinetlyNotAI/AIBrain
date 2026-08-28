@@ -4,7 +4,7 @@ import logging
 from time import monotonic
 from typing import TypedDict
 
-from PySide6.QtCore import QCoreApplication, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QSettings, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSplitter
 
@@ -94,9 +94,14 @@ class MainWindow(QMainWindow):
         splitter.setChildrenCollapsible(False)
         splitter.addWidget(self.chat)
         splitter.addWidget(self.visualizer)
-        splitter.setSizes([560, 940])
+        saved_sizes = QSettings().value("main_splitter_sizes")
+        if isinstance(saved_sizes, list) and len(saved_sizes) == 2:
+            splitter.setSizes([int(size) for size in saved_sizes])
+        else:
+            splitter.setSizes([560, 940])
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
+        self._splitter = splitter
         self.setCentralWidget(splitter)
         self.chat.sendRequested.connect(self.send)
         self.chat.stopRequested.connect(self.stop)
@@ -106,6 +111,8 @@ class MainWindow(QMainWindow):
         self.chat.diagnosticsRequested.connect(self.open_diagnostics)
         self.chat.analysisRequested.connect(self.open_analysis)
         self.chat.modeChanged.connect(self._change_mode)
+        self.chat.rewindRequested.connect(self.visualizer.enter_rewind_mode)
+        self.visualizer.rewindChanged.connect(self.chat.set_rewind_mode)
         self.chat.modelChanged.connect(self.select_model)
         self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
@@ -369,7 +376,8 @@ class MainWindow(QMainWindow):
         if text and text != "Thinking…":
             self.history.append({"role": "assistant", "content": text})
             self.visualizer.set_conversation(self.history)
-            self.chat.show_latest_playback()
+            # Rewind navigation is intentionally colocated with the graph,
+            # rather than interrupting the chat transcript.
         elif self._assistant_bubble is not None:
             self._assistant_bubble.setText("No response generated.")
 
@@ -399,6 +407,7 @@ class MainWindow(QMainWindow):
         self._show_repairable_error("Generation error", error)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        QSettings().setValue("main_splitter_sizes", self._splitter.sizes())
         self.visualizer.analyzer.save_model()
         if self.worker_thread.isRunning():
             self.worker.cancel()

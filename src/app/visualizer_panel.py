@@ -50,6 +50,7 @@ class NeuronInspectorLabel(QLabel):
 
 class VisualizerPanel(QWidget):
     gpuRestartRequested = Signal(str)
+    rewindChanged = Signal(bool)
 
     def __init__(self, model_key: str = "default") -> None:
         super().__init__()
@@ -64,6 +65,7 @@ class VisualizerPanel(QWidget):
         self._playback: list[PlaybackStep] = []
         self._all_signals: list[PlaybackStep] = []
         self._playback_index = -1
+        self._rewind_active = False
         self._playback_timer = QTimer(self)
         self._playback_timer.timeout.connect(self._advance_playback)
         self._conversation: list[dict[str, object]] = []
@@ -213,6 +215,28 @@ class VisualizerPanel(QWidget):
         self.settings_panel.setVisible(False)
         self.layout.addWidget(self.settings_panel)
         self.layout.addWidget(self.renderer, 1)
+        self.rewind_controls = QWidget()
+        rewind_layout = QHBoxLayout(self.rewind_controls)
+        rewind_layout.setContentsMargins(0, 4, 0, 4)
+        previous = QPushButton("Previous")
+        replay = QPushButton("Replay")
+        next_step = QPushButton("Next")
+        self.exit_rewind = QPushButton("Exit Rewind")
+        for button, tip in (
+            (previous, "Show the previous recorded token frame"),
+            (replay, "Play recorded token frames from the beginning"),
+            (next_step, "Show the next recorded token frame"),
+            (self.exit_rewind, "Return to normal chat actions"),
+        ):
+            button.setToolTip(tip)
+            rewind_layout.addWidget(button)
+        rewind_layout.addStretch(1)
+        previous.clicked.connect(self.playback_previous)
+        replay.clicked.connect(lambda: self.start_playback(1.0))
+        next_step.clicked.connect(self.playback_next)
+        self.exit_rewind.clicked.connect(self.exit_rewind_mode)
+        self.rewind_controls.setVisible(False)
+        self.layout.addWidget(self.rewind_controls)
 
         selectable_text_flags = Qt.TextInteractionFlag(
             Qt.TextInteractionFlag.TextSelectableByMouse.value
@@ -335,6 +359,22 @@ class VisualizerPanel(QWidget):
             return
         self._playback_index = -1
         self._playback_timer.start(max(35, round(110 / max(.1, speed))))
+
+    def enter_rewind_mode(self) -> None:
+        if not self._playback or self._rewind_active:
+            return
+        self._rewind_active = True
+        self.rewind_controls.setVisible(True)
+        self._show_playback_step(0)
+        self.rewindChanged.emit(True)
+
+    def exit_rewind_mode(self) -> None:
+        if not self._rewind_active:
+            return
+        self._playback_timer.stop()
+        self._rewind_active = False
+        self.rewind_controls.setVisible(False)
+        self.rewindChanged.emit(False)
 
     def playback_next(self) -> None:
         self._playback_timer.stop()

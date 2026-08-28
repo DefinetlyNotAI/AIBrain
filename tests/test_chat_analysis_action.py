@@ -44,6 +44,16 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertEqual(panel.open_analysis.text(), "Analysis+")
         panel.deleteLater()
 
+    def test_rewind_mode_locks_chat_actions_until_the_graph_exits(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        panel.set_model_available(True)
+        panel.set_rewind_mode(True)
+        self.assertFalse(panel.send.isEnabled())
+        self.assertFalse(panel.clear.isEnabled())
+        panel.set_rewind_mode(False)
+        self.assertTrue(panel.send.isEnabled())
+        panel.deleteLater()
+
 
 if __name__ == "__main__":
     unittest.main()

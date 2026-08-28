@@ -54,6 +54,8 @@ The controls at the bottom of the chat pane are saved in Windows application set
 
 Open **View settings** for Simulation Performance, Rendering GPU, Spacing, Neuron Borders (0–1), and Reset View. The
 settings are collapsed by default. In 2D, drag to pan and use the wheel to zoom; picking follows the translated view.
+Choose **Rewind** after a normal response to lock chat actions and move Previous, Replay, and Next below the graph. Use
+**Exit Rewind** to return to normal controls; replay works in both 2D and 3D.
 
 The right pane is a native `QOpenGLWidget` renderer. It supports left-drag to orbit, mouse-wheel zoom, and **Reset
 view** to restore the camera. **Pause** stops visual updates; press **Resume** to continue. **Low**, **Medium**, and

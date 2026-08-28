@@ -61,6 +61,7 @@ class ChatPanel(QWidget):
     diagnosticsRequested = Signal()
     analysisRequested = Signal()
     modeChanged = Signal(bool)
+    rewindRequested = Signal()
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
@@ -145,6 +146,8 @@ class ChatPanel(QWidget):
         self.send = QPushButton("Start")
         self.send.setToolTip("Start the selected mode; changes to Stop while generation is running")
         self.regenerate = QPushButton("Regenerate")
+        self.rewind = QPushButton("Rewind")
+        self.rewind.setToolTip("Enter token-by-token connectome replay below the graph")
         self.infinite = QPushButton("Continue")
         self.infinite.setToolTip("Continue the current Infinite Mode scenario after it has stopped")
         self.clear = QPushButton("Clear")
@@ -153,10 +156,11 @@ class ChatPanel(QWidget):
         self.open_analysis.setEnabled(False)
         self.send.clicked.connect(self._start_or_stop)
         self.regenerate.clicked.connect(self.regenerateRequested)
+        self.rewind.clicked.connect(self.rewindRequested)
         self.infinite.clicked.connect(self._start_infinite)
         self.clear.clicked.connect(self.clearRequested)
         self.open_analysis.clicked.connect(self.analysisRequested)
-        for button in (self.send, self.regenerate, self.open_analysis, self.clear, self.infinite):
+        for button in (self.send, self.regenerate, self.open_analysis, self.clear, self.rewind, self.infinite):
             buttons.addWidget(button)
         action_layout.addLayout(buttons)
         layout.addWidget(action_card)
@@ -373,11 +377,23 @@ class ChatPanel(QWidget):
         self._model_available = available
         self._refresh_actions()
 
+    def set_rewind_mode(self, active: bool) -> None:
+        """The graph owns rewind navigation; chat remains read-only until exit."""
+        if active:
+            for control in (self.send, self.regenerate, self.open_analysis, self.clear, self.infinite, self.models,
+                            self.normal_mode, self.infinite_mode):
+                control.setEnabled(False)
+            return
+        self._refresh_actions()
+
     def _refresh_actions(self) -> None:
         ready = self._model_available
         self.send.setEnabled(self._running or ready)
         self.regenerate.setEnabled(ready and not self._running and not self._infinite_mode)
+        self.rewind.setEnabled(ready and not self._running and not self._infinite_mode)
         self.infinite.setEnabled(ready and not self._running and self._infinite_mode)
         self.clear.setEnabled(not self._running)
         self.models.setEnabled(not self._running and self.models.count() > 1)
         self.open_analysis.setEnabled(ready and not self._running and self._analysis_available)
+        self.normal_mode.setEnabled(not self._running)
+        self.infinite_mode.setEnabled(not self._running)
