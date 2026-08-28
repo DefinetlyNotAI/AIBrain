@@ -12,13 +12,28 @@ from src.utils.console_ui import BOX_TOP_LEFT
 
 
 class BuildDistributionTests(unittest.TestCase):
-    @patch("cli.build_dist.subprocess.run")
-    def test_build_command_output_uses_shared_framed_panel(self, run_mock) -> None:  # type: ignore[no-untyped-def]
-        def emit_output(*_args, **kwargs):  # type: ignore[no-untyped-def]
-            kwargs["stdout"].write("compiled\nwarning\n")
-            return subprocess.CompletedProcess(["tool"], 0)
+    @patch("cli.build_dist.time.sleep")
+    @patch("cli.build_dist.subprocess.Popen")
+    def test_build_command_streams_output_inside_shared_framed_panel(self, popen_mock, sleep_mock) -> None:  # type: ignore[no-untyped-def]
+        class StreamingProcess:
+            def __init__(self, output_file) -> None:  # type: ignore[no-untyped-def]
+                self.output_file = output_file
+                self.poll_count = 0
 
-        run_mock.side_effect = emit_output
+            def poll(self) -> int | None:
+                self.poll_count += 1
+                if self.poll_count == 1:
+                    self.output_file.write("compiled\n")
+                    self.output_file.flush()
+                    return None
+                self.output_file.write("warning\n")
+                self.output_file.flush()
+                return 0
+
+            def wait(self) -> int:
+                return 0
+
+        popen_mock.side_effect = lambda *_args, **kwargs: StreamingProcess(kwargs["stdout"])
         output = StringIO()
 
         with redirect_stdout(output):
@@ -28,14 +43,23 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertIn("compiled", rendered)
         self.assertIn("warning", rendered)
         self.assertIn(BOX_TOP_LEFT, rendered)
+        sleep_mock.assert_called_once_with(0.05)
 
-    @patch("cli.build_dist.subprocess.run")
-    def test_failed_build_command_raises_after_rendering_output(self, run_mock) -> None:  # type: ignore[no-untyped-def]
-        def emit_output(*_args, **kwargs):  # type: ignore[no-untyped-def]
-            kwargs["stdout"].write("broken\n")
-            return subprocess.CompletedProcess(["tool"], 4)
+    @patch("cli.build_dist.time.sleep")
+    @patch("cli.build_dist.subprocess.Popen")
+    def test_failed_build_command_raises_after_rendering_output(self, popen_mock, _sleep_mock) -> None:  # type: ignore[no-untyped-def]
+        class FailedProcess:
+            def __init__(self, output_file) -> None:  # type: ignore[no-untyped-def]
+                output_file.write("broken\n")
+                output_file.flush()
 
-        run_mock.side_effect = emit_output
+            def poll(self) -> int:
+                return 4
+
+            def wait(self) -> int:
+                return 4
+
+        popen_mock.side_effect = lambda *_args, **kwargs: FailedProcess(kwargs["stdout"])
 
         with self.assertRaises(subprocess.CalledProcessError) as raised:
             build_dist.run(["tool"])

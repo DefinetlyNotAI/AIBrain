@@ -378,19 +378,61 @@ def command_preview(command_line: list[str]) -> None:
             print(color(line, Color.DIM, Color.WHITE))
 
 
+class CommandOutputBox:
+    """An indented, live-rendered container for subprocess output."""
+
+    def __init__(self, *, indent: int = COMMAND_INDENT) -> None:
+        self.prefix = " " * indent
+        self.inner = max(terminal_width() - indent, 20) - 2
+        self.content_width = self.inner - 2
+        self._is_open = False
+
+    def __enter__(self) -> CommandOutputBox:
+        self.open()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+    def open(self) -> None:
+        if self._is_open:
+            return
+        print(self.prefix + color(BOX_TOP_LEFT + BOX_HORIZONTAL * self.inner + BOX_TOP_RIGHT, Color.GRAY), flush=True)
+        self._is_open = True
+
+    def write(self, output: str) -> None:
+        """Append output immediately, preserving the framed presentation."""
+        if not self._is_open:
+            raise RuntimeError("The command output box must be opened before writing output")
+        rendered = shorten_output_paths(strip_ansi(output)).rstrip("\r\n")
+        if not rendered:
+            return
+        for raw_line in rendered.splitlines():
+            for line in wrap_console_line(raw_line, self.content_width):
+                print(
+                    self.prefix
+                    + color(BOX_VERTICAL, Color.GRAY)
+                    + " "
+                    + color(line, Color.GRAY)
+                    + " " * (self.content_width - len(line))
+                    + " "
+                    + color(BOX_VERTICAL, Color.GRAY),
+                    flush=True,
+                )
+
+    def close(self) -> None:
+        if not self._is_open:
+            return
+        print(self.prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * self.inner + BOX_BOTTOM_RIGHT, Color.GRAY), flush=True)
+        self._is_open = False
+
+
 def command_output_box(output: str, *, indent: int = COMMAND_INDENT) -> None:
     """Render complete subprocess output in an indented grey box."""
-    output = shorten_output_paths(strip_ansi(output)).rstrip()
-    if not output:
+    if not output.strip():
         return
-    prefix = " " * indent
-    inner = max(terminal_width() - indent, 20) - 2
-    content_width = inner - 2
-    lines = [line for raw_line in output.splitlines() for line in wrap_console_line(raw_line, content_width)]
-    print(prefix + color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, Color.GRAY))
-    for line in lines:
-        print(prefix + color(BOX_VERTICAL, Color.GRAY) + " " + color(line, Color.GRAY) + " " * (content_width - len(line)) + " " + color(BOX_VERTICAL, Color.GRAY))
-    print(prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, Color.GRAY))
+    with CommandOutputBox(indent=indent) as box:
+        box.write(output)
 
 
 def command(command_line: list[str]) -> None:

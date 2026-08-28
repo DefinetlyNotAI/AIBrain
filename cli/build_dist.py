@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import Color, clear_screen, command_output_box, command_preview, error, header, panel, section
+from src.utils.console_ui import Color, CommandOutputBox, clear_screen, command_preview, error, header, panel, section
 from src.utils.gpu import set_windows_executable_gpu_preference
 
 
@@ -42,29 +43,50 @@ APPLICATIONS = (
 )
 
 
+def _render_new_build_output(output_path: Path, offset: int, pending: str, output_box: CommandOutputBox) -> tuple[int, str]:
+    """Render only completed lines appended to Nuitka's redirected output file."""
+    output = output_path.read_text(encoding="utf-8", errors="replace")
+    if len(output) <= offset:
+        return offset, pending
+    new_output = pending + output[offset:]
+    offset = len(output)
+    lines = new_output.splitlines(keepends=True)
+    pending = ""
+    for line in lines:
+        if line.endswith(("\n", "\r")):
+            output_box.write(line)
+        else:
+            pending = line
+    return offset, pending
+
+
 def run(command_line: list[str]) -> None:
-    """Run a build command without leaving Nuitka workers holding a pipe open."""
+    """Run a build command with live boxed output and no inherited output pipe."""
     command_preview(command_line)
-    # Nuitka keeps compiler workers alive briefly.  With capture_output=True they
-    # inherit the capture pipe, so subprocess.run can wait indefinitely for EOF
-    # after Nuitka itself has completed.  A file keeps the polished final output
-    # while avoiding that Windows pipe-lifetime deadlock.
+    # Nuitka workers may inherit stdout. A redirected file therefore avoids the
+    # pipe-lifetime deadlock while this process tails it into the shared UI.
     with tempfile.TemporaryDirectory(prefix="aibrain-nuitka-") as temporary_directory:
         output_path = Path(temporary_directory) / "nuitka-output.txt"
         with output_path.open("w", encoding="utf-8", errors="replace") as output_file:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 command_line,
                 cwd=ROOT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
                 stdout=output_file,
                 stderr=subprocess.STDOUT,
             )
+            offset = 0
+            pending = ""
+            with CommandOutputBox() as output_box:
+                while process.poll() is None:
+                    offset, pending = _render_new_build_output(output_path, offset, pending, output_box)
+                    time.sleep(0.05)
+                offset, pending = _render_new_build_output(output_path, offset, pending, output_box)
+                if pending:
+                    output_box.write(pending)
+            return_code = process.wait()
         captured_output = output_path.read_text(encoding="utf-8", errors="replace").rstrip()
-    command_output_box(captured_output)
-    if result.returncode:
-        raise subprocess.CalledProcessError(result.returncode, command_line, captured_output)
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, command_line, captured_output)
 
 
 def runtime_dlls() -> list[Path]:
