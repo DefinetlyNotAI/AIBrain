@@ -18,8 +18,9 @@ LOG = logging.getLogger(__name__)
 # noinspection LongLine
 POINT_VERTEX_SHADER = """#version 330
 in vec3 in_position; in float in_region; in float in_activity;
-uniform mat4 u_mvp; out float region; out float activity;
-void main() { gl_Position = u_mvp * vec4(in_position, 1.0); gl_PointSize = 1.6 + in_activity * 8.0; region = in_region; activity = in_activity; }
+uniform mat4 u_mvp; uniform float u_region_filter; out float region; out float activity;
+void main() { if (u_region_filter >= 0.0 && abs(in_region - u_region_filter) > .5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+ gl_Position = u_mvp * vec4(in_position, 1.0); gl_PointSize = 1.6 + in_activity * 8.0; region = in_region; activity = in_activity; }
 """
 
 
@@ -42,8 +43,9 @@ void main() {{ vec2 p = gl_PointCoord * 2.0 - 1.0; float radius = dot(p, p); if 
  f_color = vec4(color, .78+activity*.22); }}
 """
 EDGE_VERTEX_SHADER = """#version 330
-in vec3 in_position; in float in_region; in float in_activity; uniform mat4 u_mvp; out float region; out float activity;
-void main() { gl_Position = u_mvp * vec4(in_position, 1.0); region = in_region; activity = in_activity; }
+in vec3 in_position; in float in_region; in float in_activity; uniform mat4 u_mvp; uniform float u_region_filter; out float region; out float activity;
+void main() { if (u_region_filter >= 0.0 && abs(in_region - u_region_filter) > .5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+ gl_Position = u_mvp * vec4(in_position, 1.0); region = in_region; activity = in_activity; }
 """
 EDGE_FRAGMENT_SHADER = f"""#version 330
 in float region; in float activity; out vec4 f_color;
@@ -76,6 +78,8 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._gpu_error: str | None = None
         self.show_neuron_borders = True
         self.neuron_border_width = .12
+        self.view_mode = "3d"
+        self.region_filter: int | None = None
         self.setMinimumSize(420, 350)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -159,7 +163,10 @@ class ConnectomeRenderer(QOpenGLWidget):
     def _mvp(self) -> np.ndarray:
         aspect = max(self.width(), 1) / max(self.height(), 1)
         scale = 1.0 / (16.0 * self.zoom)
-        projection = np.array(((scale / aspect, 0, 0, 0), (0, scale, 0, 0), (0, 0, .035, 0), (0, 0, 0, 1)), dtype="f4")
+        depth_scale = 0.0 if self.view_mode == "2d" else .035
+        projection = np.array(((scale / aspect, 0, 0, 0), (0, scale, 0, 0), (0, 0, depth_scale, 0), (0, 0, 0, 1)), dtype="f4")
+        if self.view_mode == "2d":
+            return np.ascontiguousarray(projection.T)
         cy, sy, cp, sp = np.cos(self.yaw), np.sin(self.yaw), np.cos(self.pitch), np.sin(self.pitch)
         rotate_y = np.array(((cy, 0, sy, 0), (0, 1, 0, 0), (-sy, 0, cy, 0), (0, 0, 0, 1)), dtype="f4")
         rotate_x = np.array(((1, 0, 0, 0), (0, cp, -sp, 0), (0, sp, cp, 0), (0, 0, 0, 1)), dtype="f4")
@@ -187,6 +194,9 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._edge_program["u_mvp"].write(matrix)
             self._point_program["u_mvp"].write(matrix)
             self._point_program["u_border_width"].value = self.neuron_border_width if self.show_neuron_borders else 0.0
+            region_filter = float(self.region_filter) if self.region_filter is not None else -1.0
+            self._point_program["u_region_filter"].value = region_filter
+            self._edge_program["u_region_filter"].value = region_filter
             self._edge_vao.render(self._moderngl.LINES)
             self._point_vao.render(self._moderngl.POINTS)
         except Exception as exc:
@@ -198,9 +208,11 @@ class ConnectomeRenderer(QOpenGLWidget):
     def _paint_fallback(self) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#071018"))
-        points = self._project_for_pick()
+        indices = self._visible_indices()
+        points = self._project_for_pick()[indices]
         stride = max(1, len(points) // 3000)
-        for point, activity, region in zip(points[::stride], self.field.values[::stride], self.graph.regions[::stride]):
+        for point, activity, region in zip(points[::stride], self.field.values[indices][::stride],
+                                           self.graph.regions[indices][::stride]):
             colour = QColor(CLUSTER_COLOR_MAP[self.graph.region_names[int(region)]])
             colour.setAlpha(int(155 + float(activity) * 100))
             painter.setPen(colour)
@@ -209,6 +221,10 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def _project_for_pick(self) -> np.ndarray:
         p = self.graph.positions
+        if self.view_mode == "2d":
+            x, y = p[:, 0], p[:, 1]
+            scale = min(self.width(), self.height()) / (32 * self.zoom)
+            return np.column_stack((self.width() / 2 + x * scale, self.height() / 2 - y * scale))
         cy, sy, cp, sp = np.cos(self.yaw), np.sin(self.yaw), np.cos(self.pitch), np.sin(self.pitch)
         x = p[:, 0] * cy - p[:, 2] * sy
         z = p[:, 0] * sy + p[:, 2] * cy
@@ -220,7 +236,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._last_pos = event.position()
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        if self._last_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+        if self.view_mode == "3d" and self._last_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
             delta = event.position() - self._last_pos
             self.yaw += delta.x() * .008
             self.pitch = float(np.clip(self.pitch + delta.y() * .006, -1.3, 1.3))
@@ -229,9 +245,11 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._last_pos is not None and (event.position() - self._last_pos).manhattanLength() < 5:
-            points = self._project_for_pick()
+            indices = self._visible_indices()
+            points = self._project_for_pick()[indices]
             click = np.array((event.position().x(), event.position().y()))
-            self.nodeSelected.emit(int(np.argmin(np.sum((points - click) ** 2, axis=1))))
+            if len(indices):
+                self.nodeSelected.emit(int(indices[np.argmin(np.sum((points - click) ** 2, axis=1))]))
         self._last_pos = None
 
     def wheelEvent(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -248,3 +266,18 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.show_neuron_borders = visible
         self.neuron_border_width = float(np.clip(width, .01, .45))
         self.update()
+
+    def set_projection_mode(self, mode: str, region_filter: int | None = None) -> None:
+        """Switch between depth-aware 3D and flat, optionally sector-filtered 2D."""
+        if mode not in {"2d", "3d"}:
+            raise ValueError(f"Unsupported connectome projection mode: {mode}")
+        if region_filter is not None and not 0 <= region_filter < len(self.graph.region_names):
+            raise ValueError("The selected sector is outside the connectome region list")
+        self.view_mode = mode
+        self.region_filter = region_filter if mode == "2d" else None
+        self.update()
+
+    def _visible_indices(self) -> np.ndarray:
+        if self.region_filter is None:
+            return np.arange(len(self.graph.positions))
+        return np.flatnonzero(self.graph.regions == self.region_filter)

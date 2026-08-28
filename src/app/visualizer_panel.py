@@ -160,6 +160,20 @@ class VisualizerPanel(QWidget):
         self.analysis.clicked.connect(self.run_nn_analysis_plus)
         self.analysis.hide()
 
+        self.view_toggle = QPushButton("3D View")
+        self.view_toggle.setCheckable(True)
+        self.view_toggle.setToolTip("Toggle the depth-aware 3D map and a flat 2D map")
+        self.view_toggle.toggled.connect(self._set_view_mode)
+        self.two_d_mode = QComboBox()
+        self.two_d_mode.addItem("Full 2D", "full")
+        self.two_d_mode.addItem("Sector 2D", "sector")
+        self.two_d_mode.currentIndexChanged.connect(self._apply_view_mode)
+        self.two_d_mode.hide()
+        self.region_selector = QComboBox()
+        self.region_selector.currentIndexChanged.connect(self._apply_view_mode)
+        self.region_selector.hide()
+        self._populate_region_selector()
+
         reset = QPushButton("Reset view")
         reset.clicked.connect(lambda: self.renderer.reset_camera())
 
@@ -178,8 +192,11 @@ class VisualizerPanel(QWidget):
         header.addWidget(self.border_width, 1, 5)
 
         header.addWidget(self.analysis, 2, 0, 1, 2)
-        header.addWidget(self.pause, 2, 2)
-        header.addWidget(reset, 2, 3)
+        header.addWidget(self.view_toggle, 2, 2)
+        header.addWidget(self.two_d_mode, 2, 3)
+        header.addWidget(self.region_selector, 2, 4)
+        header.addWidget(self.pause, 2, 5)
+        header.addWidget(reset, 2, 6)
 
         header.setColumnStretch(3, 1)
 
@@ -236,6 +253,9 @@ class VisualizerPanel(QWidget):
         old.setParent(None)
         old.deleteLater()
         self._build_graph(quality)
+        if hasattr(self, "region_selector"):
+            self._populate_region_selector()
+            self._apply_view_mode()
         if hasattr(self, "neuron_borders"):
             self.renderer.set_neuron_borders(self.neuron_borders.isChecked(), self.border_width.value())
         self.layout.insertWidget(index, self.renderer, 1)
@@ -244,6 +264,31 @@ class VisualizerPanel(QWidget):
     def _toggle_pause(self) -> None:
         self.renderer.paused = not self.renderer.paused
         self.pause.setText("Resume" if self.renderer.paused else "Pause")
+
+    def _populate_region_selector(self) -> None:
+        selected = self.region_selector.currentData()
+        self.region_selector.blockSignals(True)
+        self.region_selector.clear()
+        for index, name in enumerate(self.graph.region_names):
+            self.region_selector.addItem(name, index)
+        restored = self.region_selector.findData(selected)
+        self.region_selector.setCurrentIndex(restored if restored >= 0 else 0)
+        self.region_selector.blockSignals(False)
+
+    def _set_view_mode(self, two_dimensional: bool) -> None:
+        self.view_toggle.setText("2D View" if two_dimensional else "3D View")
+        self.two_d_mode.setVisible(two_dimensional)
+        self.region_selector.setVisible(two_dimensional and self.two_d_mode.currentData() == "sector")
+        self._apply_view_mode()
+
+    def _apply_view_mode(self, *_: object) -> None:
+        two_dimensional = self.view_toggle.isChecked()
+        sector = two_dimensional and self.two_d_mode.currentData() == "sector"
+        self.region_selector.setVisible(sector)
+        selected = self.region_selector.currentData()
+        region = int(selected) if sector and selected is not None else None
+        self.renderer.set_projection_mode("2d" if two_dimensional else "3d", region)
+        self._refresh_overlay()
 
     def apply_frame(self, frame: ActivationFrame, *, record: bool = True) -> None:
         self.mode.setText(frame.source.value.upper())
@@ -328,6 +373,7 @@ class VisualizerPanel(QWidget):
         self.overlay.setText(
             f"{backend}"
             f"  ·  Visualization: Simulation (token-driven)"
+            f"  ·  View: {'2D sector' if self.renderer.region_filter is not None else self.renderer.view_mode.upper()}"
             f"  ·  Step {self.field.step}"
             f"  ·  Active neurons {self.field.active_count:,}"
             f"  ·  Active pathways {active_edges:,}"
