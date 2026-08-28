@@ -14,6 +14,7 @@ from .ollama_discovery import OllamaDiscovery
 
 
 CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache"
+_VALIDATION_FORMAT = 2
 
 
 def _cache_path(model: ModelInfo) -> Path:
@@ -26,12 +27,23 @@ def _signature(path: Path) -> dict[str, int]:
     return {"size": stat.st_size, "modified_ns": stat.st_mtime_ns}
 
 
-def _cached_result(model: ModelInfo) -> str | None | object:
+def _cache_profile(*, verify_backend: bool) -> str:
+    """Separate cheap header-only checks from full llama.cpp compatibility checks."""
+    return "llama-cpp" if verify_backend else "structural"
+
+
+def _cached_result(model: ModelInfo, *, verify_backend: bool) -> str | None | object:
     if model.blob_path is None:
-        return object()
+        return _CACHE_MISS
     try:
         payload = json.loads(_cache_path(model).read_text(encoding="utf-8"))
-        if payload.get("signature") == _signature(model.blob_path):
+        if (
+                payload.get("format") == _VALIDATION_FORMAT
+                and payload.get("profile") == _cache_profile(verify_backend=verify_backend)
+                and payload.get("blob_path") == str(model.blob_path.resolve())
+                and payload.get("signature") == _signature(model.blob_path)
+                and (payload.get("error") is None or isinstance(payload.get("error"), str))
+        ):
             return payload.get("error")
     except (OSError, ValueError, TypeError):
         pass
@@ -41,12 +53,23 @@ def _cached_result(model: ModelInfo) -> str | None | object:
 _CACHE_MISS = object()
 
 
-def _store_result(model: ModelInfo, error: str | None) -> None:
+def _store_result(model: ModelInfo, error: str | None, *, verify_backend: bool) -> None:
     if model.blob_path is None:
         return
     try:
         CACHE_DIRECTORY.mkdir(exist_ok=True)
-        _cache_path(model).write_text(json.dumps({"signature": _signature(model.blob_path), "error": error}), encoding="utf-8")
+        _cache_path(model).write_text(
+            json.dumps(
+                {
+                    "format": _VALIDATION_FORMAT,
+                    "profile": _cache_profile(verify_backend=verify_backend),
+                    "blob_path": str(model.blob_path.resolve()),
+                    "signature": _signature(model.blob_path),
+                    "error": error,
+                }
+            ),
+            encoding="utf-8",
+        )
     except OSError:
         return
 
@@ -83,7 +106,7 @@ class ModelValidator:
 
             error = checked_paths.get(model.blob_path)
             if model.blob_path not in checked_paths:
-                cached = _cached_result(model)
+                cached = _cached_result(model, verify_backend=verify_backend)
                 if cached is _CACHE_MISS:
                     error = OllamaDiscovery._validate_gguf(model.blob_path, model.size_bytes)
                     if error is None and backend is not None:
@@ -100,7 +123,7 @@ class ModelValidator:
                 else:
                     error = cached
                 checked_paths[model.blob_path] = error
-                _store_result(model, error)
+                _store_result(model, error, verify_backend=verify_backend)
             validated.append(replace(model, available=error is None, error=error))
 
         return validated
