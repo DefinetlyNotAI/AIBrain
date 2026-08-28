@@ -83,6 +83,20 @@ class ModelDiagnosticsTests(unittest.TestCase):
             self.assertFalse(manifest.exists())
             self.assertTrue(blob.exists())
 
+    def test_validation_cache_repair_preserves_other_cache_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            validation = root / ".cache" / "validation"
+            validation.mkdir(parents=True)
+            (validation / "old.json").write_text("old", encoding="utf-8")
+            sibling = root / ".cache" / "keep.txt"
+            sibling.write_text("keep", encoding="utf-8")
+
+            rebuilt = OllamaDiagnostics.invalidate_validation_cache(root)
+            self.assertEqual(rebuilt, validation)
+            self.assertTrue(sibling.exists())
+            self.assertFalse((validation / "old.json").exists())
+
     @patch("src.models.diagnostics.ModelValidator.validate")
     def test_backend_diagnostics_report_a_model_that_cannot_load(self,
                                                                  validate) -> None:  # type: ignore[no-untyped-def]

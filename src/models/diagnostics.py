@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -85,6 +86,18 @@ class OllamaDiagnostics:
         if not diagnostic.can_remove_manifest:
             raise ValueError("Only an existing invalid manifest can be removed")
         diagnostic.manifest_path.unlink()
+
+    @staticmethod
+    def invalidate_validation_cache(project_root: Path) -> Path:
+        """Rebuild only disposable validation data, never models or native DLLs."""
+        root = project_root.resolve()
+        target = root / ".cache" / "validation"
+        if not target.resolve().is_relative_to(root):
+            raise ValueError("Validation cache target is outside the project")
+        if target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True, exist_ok=True)
+        return target
 
     @staticmethod
     def _from_model(reference: str, manifest: Path, model: ModelInfo) -> ModelDiagnostic:

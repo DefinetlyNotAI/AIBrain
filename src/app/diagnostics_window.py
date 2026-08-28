@@ -146,16 +146,19 @@ class DiagnosticsWindow(QDialog):
         self.refresh_button = QPushButton("Refresh")
         self.repair_button = QPushButton("Repair selected")
         self.remove_button = QPushButton("Remove stale manifest")
+        self.cache_button = QPushButton("Repair validation cache")
         self.open_logs_button = QPushButton("Open logs")
         self.refresh_button.setToolTip("Re-run health checks without deleting any data")
         self.repair_button.setToolTip("Re-download only the selected model through Ollama")
         self.remove_button.setToolTip("Permanently remove only the selected invalid manifest after confirmation")
+        self.cache_button.setToolTip("Rebuild only disposable validation cache data after confirmation")
         self.open_logs_button.setToolTip("Open the feature-specific console and crash logs")
         self.refresh_button.clicked.connect(self.refresh)
         self.repair_button.clicked.connect(self.repair_selected)
         self.remove_button.clicked.connect(self.remove_selected)
+        self.cache_button.clicked.connect(self.repair_validation_cache)
         self.open_logs_button.clicked.connect(self.open_logs)
-        for button in (self.refresh_button, self.repair_button, self.remove_button, self.open_logs_button):
+        for button in (self.refresh_button, self.repair_button, self.remove_button, self.cache_button, self.open_logs_button):
             actions.addWidget(button)
         actions.addStretch(1)
         layout.addLayout(actions)
@@ -307,6 +310,25 @@ class DiagnosticsWindow(QDialog):
             QMessageBox.critical(self, "Removal failed", str(exc))
             return
         self.output.appendPlainText(f"Removed stale manifest: {diagnostic.manifest_path}")
+        self.refresh()
+
+    def repair_validation_cache(self) -> None:
+        confirmation = QMessageBox.question(
+            self,
+            "Repair validation cache",
+            "Rebuild disposable validation-cache entries only? Model blobs, DLLs, and other cache data are preserved.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if confirmation != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            target = OllamaDiagnostics.invalidate_validation_cache(PROJECT_ROOT)
+        except (OSError, ValueError) as exc:
+            LOG.exception("Could not rebuild validation cache")
+            QMessageBox.critical(self, "Validation cache repair failed", f"REASON: {exc}")
+            return
+        self.output.appendPlainText(f"Rebuilt validation cache: {target}")
         self.refresh()
 
     @staticmethod
