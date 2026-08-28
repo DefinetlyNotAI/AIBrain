@@ -18,7 +18,8 @@ class AnalysisCliTests(unittest.TestCase):
 
         self.assertEqual(metadata["status"], "Healthy")
         self.assertEqual(metadata["learning"]["lifetime_frames_seen"], 7)
-        self.assertEqual(metadata["learning"]["maturity"], "Early learning")
+        self.assertEqual(metadata["learning"]["maturity"]["state"], "Baby")
+        self.assertFalse(metadata["learning"]["maturity"]["metrics_persisted"])
         self.assertEqual(metadata["architecture"]["shape"], "2 -> 3 -> 2")
         self.assertEqual(metadata["tensors"]["encoder_weights"]["shape"], [2, 3])
         self.assertEqual(metadata["health_checks"]["finite_numeric_values"], "passed")

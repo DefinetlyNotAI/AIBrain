@@ -79,6 +79,63 @@ class NNAnalysisExportTests(unittest.TestCase):
         self.assertEqual(second.frames_seen, 1)
         self.assertTrue(np.array_equal(second.encoder_weights, first.encoder_weights))
 
+    def test_rolling_metrics_and_readiness_persist_with_the_model(self) -> None:
+        report = self.analyzer.maturity_report()
+        restored = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=self.model_path)
+
+        self.assertEqual(report["state"], "Baby")
+        self.assertEqual(report["readiness"], "caution")
+        self.assertEqual(len(restored.reconstruction_history), 1)
+        self.assertEqual(len(restored.novelty_history), 1)
+        self.assertEqual(len(restored.update_magnitude_history), 1)
+
+    def test_maturity_requires_consistency_and_the_adult_frame_floor(self) -> None:
+        self.analyzer.reconstruction_history = [.01] * 96
+        self.analyzer.novelty_history = [.03] * 96
+        self.analyzer.update_magnitude_history = [.002] * 96
+        self.analyzer.frames_seen = 250
+        self.analyzer._advance_maturity()
+        self.assertEqual(self.analyzer.maturity_state, "Teen")
+
+        self.analyzer.frames_seen = 4095
+        self.analyzer._advance_maturity()
+        self.assertEqual(self.analyzer.maturity_state, "Teen")
+        self.analyzer.frames_seen = 4096
+        self.analyzer._advance_maturity()
+        self.assertEqual(self.analyzer.maturity_state, "Adult")
+
+    def test_elder_overfit_signal_freezes_training_weights(self) -> None:
+        self.analyzer.maturity_state = "Adult"
+        self.analyzer.frames_seen = 4096
+        self.analyzer.reconstruction_history = [.01] * 48 + [.025] * 48
+        self.analyzer.update_magnitude_history = [.002] * 96
+        self.analyzer._advance_maturity()
+        before = self.analyzer.encoder_weights.copy()
+        self.analyzer.observe(ActivationFrame(3, "frozen", 3, ActivitySource.SIMULATION),
+                              np.array([.4, .1], dtype=np.float32))
+
+        self.assertEqual(self.analyzer.maturity_state, "Elder")
+        self.assertTrue(self.analyzer.weights_frozen)
+        self.assertTrue(np.array_equal(before, self.analyzer.encoder_weights))
+
+    def test_legacy_npz_is_conservatively_migrated_as_baby(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            legacy = Path(directory) / "legacy.npz"
+            np.savez_compressed(
+                legacy,
+                encoder_weights=self.analyzer.encoder_weights,
+                encoder_bias=self.analyzer.encoder_bias,
+                decoder_weights=self.analyzer.decoder_weights,
+                decoder_bias=self.analyzer.decoder_bias,
+                embedding_centroid=self.analyzer.embedding_centroid,
+                frames_seen=np.array(9000),
+            )
+            restored = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=legacy)
+
+        self.assertEqual(restored.frames_seen, 9000)
+        self.assertEqual(restored.maturity_state, "Baby")
+        self.assertFalse(restored.reconstruction_history)
+
     def test_default_memory_path_is_user_writable_not_the_application_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"LOCALAPPDATA": directory}):
             path = ConnectomeAnalyzer.default_model_path()
