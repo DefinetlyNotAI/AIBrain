@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
@@ -87,7 +89,7 @@ class ConsoleUiTests(unittest.TestCase):
         )
         with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty", return_value=True), patch.object(console_ui, "_kernel32_bindings", return_value=kernel32):
             console_ui.clear_screen()
-            self.assertEqual(console_ui.terminal_width(), 80)
+            self.assertEqual(console_ui.terminal_width(), 76)
 
         self.assertEqual(fill_character.calls[0][1], " ")
 
@@ -96,3 +98,43 @@ class ConsoleUiTests(unittest.TestCase):
 
         self.assertIn("ctypes.WINFUNCTYPE", source)
         self.assertNotIn("ctypes.windll", source)
+
+    def test_terminal_width_reserves_four_columns_at_the_right_edge(self) -> None:
+        with patch.object(console_ui.os, "name", "posix"), patch.object(console_ui.shutil, "get_terminal_size", return_value=os.terminal_size((100, 24))):
+            self.assertEqual(console_ui.terminal_width(), 96)
+
+    def test_command_preview_wraps_with_aligned_continuations(self) -> None:
+        output = StringIO()
+        command = [
+            r".\.venv\Scripts\python.exe",
+            "-m",
+            "nuitka",
+            "--standalone",
+            "--enable-plugin=pyside6",
+            "--windows-console-mode=attach",
+        ]
+
+        with patch.object(console_ui, "terminal_width", return_value=58), redirect_stdout(output):
+            console_ui.command_preview(command)
+
+        lines = [console_ui.strip_ansi(line) for line in output.getvalue().splitlines() if line]
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(lines[0].startswith("  " + console_ui.PROMPT + " .\\.venv"))
+        self.assertTrue(all(line.startswith("     ") for line in lines[1:]))
+        self.assertTrue(all(len(line) <= 58 for line in lines))
+        self.assertFalse(any(line.endswith("...") for line in lines))
+
+    def test_executable_path_shortening_requires_an_exact_path_match(self) -> None:
+        local_executable = Path(sys.executable).resolve()
+        with patch.object(console_ui.shutil, "which", return_value=str(local_executable)):
+            self.assertEqual(
+                console_ui.shorten_command_argument(str(local_executable)),
+                r".\.venv\Scripts\python.exe",
+            )
+
+        executable = Path(sys._base_executable).resolve()
+        with patch.object(console_ui.shutil, "which", return_value=str(executable)):
+            self.assertEqual(console_ui.shorten_command_argument(str(executable)), executable.name)
+
+        with patch.object(console_ui.shutil, "which", return_value=None):
+            self.assertEqual(console_ui.shorten_command_argument(str(executable)), str(executable))

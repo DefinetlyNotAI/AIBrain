@@ -15,6 +15,7 @@ from typing import Callable, TextIO, cast
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
+RIGHT_EDGE_MARGIN = 4
 COMMAND_INDENT = 2
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -157,7 +158,7 @@ def terminal_width() -> int:
                 width = info.window.right - info.window.left + 1
         except (AttributeError, OSError):
             pass
-    return max(width, MIN_WIDTH)
+    return max(width - RIGHT_EDGE_MARGIN, MIN_WIDTH)
 
 
 def clear_screen() -> None:
@@ -219,6 +220,19 @@ def shorten_command_argument(argument: str) -> str:
     if normalized.lower().startswith(root_text.lower()):
         relative = normalized[len(root_text):].lstrip("\\/")
         return rf".\{relative}" if relative else "."
+
+    # Omit an absolute executable path only when PATH resolves its basename to
+    # the exact same file.  A local venv Python must remain explicit when a
+    # different global Python is on PATH.
+    path = Path(argument)
+    if path.suffix.lower() == ".exe" and path.is_file():
+        resolved_on_path = shutil.which(path.name)
+        if resolved_on_path:
+            try:
+                if Path(resolved_on_path).resolve() == path.resolve():
+                    return path.name
+            except OSError:
+                pass
     return argument
 
 
@@ -245,6 +259,28 @@ def wrap_console_line(text: str, width: int) -> list[str]:
         lines.append(text[:split_at].rstrip())
         text = text[split_at:].lstrip()
     return [*lines, text]
+
+
+def wrap_prefixed_text(prefix: str, text: str, *, width: int, continuation: str | None = None) -> list[str]:
+    """Wrap text with a stable continuation indentation and no ellipsis."""
+    continuation_prefix = continuation if continuation is not None else " " * len(prefix)
+    available = max(width - len(prefix), 1)
+    continuation_available = max(width - len(continuation_prefix), 1)
+    lines: list[str] = []
+    remaining = text.strip()
+    current_prefix = prefix
+    current_width = available
+
+    while len(remaining) > current_width:
+        split_at = remaining.rfind(" ", 0, current_width + 1)
+        if split_at <= 0:
+            split_at = current_width
+        lines.append(current_prefix + remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip()
+        current_prefix = continuation_prefix
+        current_width = continuation_available
+    lines.append(current_prefix + remaining)
+    return lines
 
 
 def _box_line(content: str, *, width: int, tone: str) -> None:
@@ -280,7 +316,10 @@ def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = Non
         _box_line(subtitle.center(inner), width=width, tone=tone)
     print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
     for label, value in rows:
-        _box_line(visible_trim(f"  {label:<{label_width}}  {value}", inner), width=width, tone=tone)
+        prefix = f"  {label:<{label_width}}  "
+        continuation = " " * len(prefix)
+        for line in wrap_prefixed_text(prefix, value, width=inner, continuation=continuation):
+            _box_line(line, width=width, tone=tone)
     if footer:
         print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
         _box_line(visible_trim(footer, inner), width=width, tone=tone)
@@ -313,7 +352,9 @@ def error(message: str) -> None:
 
 
 def detail(label: str, value: str) -> None:
-    print(f"     {color(label.ljust(12), Color.GRAY)}{color(visible_trim(value, max(terminal_width() - 20, 10)), Color.WHITE)}")
+    prefix = "     " + label.ljust(12)
+    for line in wrap_prefixed_text(prefix, value, width=terminal_width()):
+        print(color(line[:len(prefix)], Color.GRAY) + color(line[len(prefix):], Color.WHITE))
 
 
 def status(label: str, message: str, tone: str = Color.CYAN) -> None:
@@ -321,8 +362,20 @@ def status(label: str, message: str, tone: str = Color.CYAN) -> None:
 
 
 def command_preview(command_line: list[str]) -> None:
-    command_text = visible_trim(display_command(command_line), terminal_width() - COMMAND_INDENT - 2)
-    print("\n" + " " * COMMAND_INDENT + color(PROMPT, Color.MAGENTA, Color.BOLD) + " " + color(command_text, Color.DIM, Color.WHITE))
+    prefix = " " * COMMAND_INDENT + PROMPT + " "
+    continuation = " " * (COMMAND_INDENT + len(PROMPT) + 2)
+    lines = wrap_prefixed_text(
+        prefix,
+        display_command(command_line),
+        width=terminal_width(),
+        continuation=continuation,
+    )
+    print()
+    for index, line in enumerate(lines):
+        if index == 0:
+            print(color(line[:len(prefix) - 1], Color.MAGENTA, Color.BOLD) + " " + color(line[len(prefix):], Color.DIM, Color.WHITE))
+        else:
+            print(color(line, Color.DIM, Color.WHITE))
 
 
 def command_output_box(output: str, *, indent: int = COMMAND_INDENT) -> None:
@@ -336,7 +389,7 @@ def command_output_box(output: str, *, indent: int = COMMAND_INDENT) -> None:
     lines = [line for raw_line in output.splitlines() for line in wrap_console_line(raw_line, content_width)]
     print(prefix + color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, Color.GRAY))
     for line in lines:
-        print(prefix + color(BOX_VERTICAL, Color.GRAY) + " " + color(visible_trim(line, content_width), Color.GRAY) + " " * (content_width - len(visible_trim(line, content_width))) + " " + color(BOX_VERTICAL, Color.GRAY))
+        print(prefix + color(BOX_VERTICAL, Color.GRAY) + " " + color(line, Color.GRAY) + " " * (content_width - len(line)) + " " + color(BOX_VERTICAL, Color.GRAY))
     print(prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, Color.GRAY))
 
 
