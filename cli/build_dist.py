@@ -61,6 +61,23 @@ def _render_new_build_output(output_path: Path, offset: int, pending: str, outpu
     return offset, pending
 
 
+def _stop_interrupted_build(process: subprocess.Popen[object]) -> None:
+    """Stop a directly launched build process before propagating Ctrl+C."""
+    try:
+        if process.poll() is not None:
+            return
+    except KeyboardInterrupt:
+        # A second Ctrl+C can arrive while checking the process state. Treat the
+        # child as still active so cleanup is never skipped.
+        pass
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
 def run(command_line: list[str]) -> None:
     """Run a build command with live boxed output and no inherited output pipe."""
     command_preview(command_line)
@@ -75,16 +92,20 @@ def run(command_line: list[str]) -> None:
                 stdout=output_file,
                 stderr=subprocess.STDOUT,
             )
-            offset = 0
-            pending = ""
-            with CommandOutputBox() as output_box:
-                while process.poll() is None:
+            try:
+                offset = 0
+                pending = ""
+                with CommandOutputBox() as output_box:
+                    while process.poll() is None:
+                        offset, pending = _render_new_build_output(output_path, offset, pending, output_box)
+                        time.sleep(0.05)
                     offset, pending = _render_new_build_output(output_path, offset, pending, output_box)
-                    time.sleep(0.05)
-                offset, pending = _render_new_build_output(output_path, offset, pending, output_box)
-                if pending:
-                    output_box.write(pending)
-            return_code = process.wait()
+                    if pending:
+                        output_box.write(pending)
+                return_code = process.wait()
+            except KeyboardInterrupt:
+                _stop_interrupted_build(process)
+                raise
         captured_output = output_path.read_text(encoding="utf-8", errors="replace").rstrip()
     if return_code:
         raise subprocess.CalledProcessError(return_code, command_line, captured_output)

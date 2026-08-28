@@ -54,6 +54,17 @@ class TestLauncherTests(unittest.TestCase):
             ["discover", "-s", "tests", "-b"],
         )
 
+    @patch("builtins.input", side_effect=EOFError)
+    def test_menu_exits_cleanly_when_interactive_input_is_unavailable(self, _input_mock) -> None:  # type: ignore[no-untyped-def]
+        with redirect_stdout(StringIO()):
+            self.assertIsNone(test.choose_suite())
+
+    @patch("builtins.input", side_effect=KeyboardInterrupt)
+    def test_menu_propagates_keyboard_interrupt_to_the_cli_exit_handler(self, _input_mock) -> None:  # type: ignore[no-untyped-def]
+        with redirect_stdout(StringIO()):
+            with self.assertRaises(KeyboardInterrupt):
+                test.choose_suite()
+
 
 if __name__ == "__main__":
     unittest.main()

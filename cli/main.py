@@ -67,8 +67,13 @@ def _supervise_gpu_launch() -> int:
         try:
             exit_code = child.wait()
         except KeyboardInterrupt:
-            child.terminate()
-            child.wait()
+            if child.poll() is None:
+                child.terminate()
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
             return 130
 
         if exit_code != GPU_RELAUNCH_EXIT_CODE:
@@ -112,7 +117,15 @@ def main() -> int:
     app.setFont(QFont("Segoe UI", 10))
     app.setApplicationName("AIBrain")
     app.setOrganizationName("AIBrain")
-    signal.signal(signal.SIGINT, lambda _signal, _frame: app.quit())
+    interrupted = False
+    previous_sigint_handler = signal.getsignal(signal.SIGINT)
+
+    def quit_for_keyboard_interrupt(_signal: int, _frame: object) -> None:
+        nonlocal interrupted
+        interrupted = True
+        app.quit()
+
+    signal.signal(signal.SIGINT, quit_for_keyboard_interrupt)
     interrupt_timer = QTimer(app)
     interrupt_timer.timeout.connect(lambda: None)
     interrupt_timer.start(200)
@@ -202,8 +215,10 @@ def main() -> int:
     QTimer.singleShot(0, startup_thread.start)
     QTimer.singleShot(0, gpu_probe.run)
     try:
-        return app.exec()
+        exit_code = app.exec()
+        return 130 if interrupted else exit_code
     finally:
+        signal.signal(signal.SIGINT, previous_sigint_handler)
         startup_worker.cancel()
         if startup_thread.isRunning():
             startup_thread.quit()
@@ -211,4 +226,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        error("AIBrain cancelled by keyboard interrupt.")
+        raise SystemExit(130)

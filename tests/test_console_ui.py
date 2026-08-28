@@ -62,6 +62,15 @@ class ConsoleUiTests(unittest.TestCase):
                 self.assertIn("clear_screen", content)
                 self.assertIn("clear_screen()", content)
 
+    def test_every_cli_entry_point_handles_keyboard_interrupt(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        for source_file in sorted(
+                path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
+        ):
+            with self.subTest(source_file=source_file):
+                content = source_file.read_text(encoding="utf-8-sig")
+                self.assertIn("except KeyboardInterrupt", content)
+
     def test_cli_sources_do_not_mutate_host_console_encodings(self) -> None:
         root = Path(__file__).resolve().parents[1]
         forbidden = (

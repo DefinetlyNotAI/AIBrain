@@ -210,7 +210,14 @@ def choose_suite() -> str | None:
         footer="Choose a suite number, A, or Q and press Enter.",
     )
 
-    choice = input("  Selection: ").strip().lower()
+    try:
+        choice = input("  Selection: ").strip().lower()
+    except EOFError:
+        error("No interactive input is available. Exiting the test launcher.")
+        return None
+    except KeyboardInterrupt:
+        print()
+        raise
 
     if choice == "q":
         return None
@@ -288,4 +295,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        error("Test run cancelled by keyboard interrupt.")
+        raise SystemExit(130)
