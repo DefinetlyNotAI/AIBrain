@@ -42,7 +42,14 @@ class LoadingWindow(QWidget):
 
     cancelled = Signal()
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        eyebrow_text: str = "AIBRAIN  /  STARTUP",
+        title_text: str = "Preparing your local workspace",
+        subtitle_text: str = "Checking installed GGUF models before opening the connectome.",
+        detail_text: str = "Starting local services",
+    ) -> None:
         super().__init__()
         self._completed = False
         self.setWindowTitle("AIBrain - Preparing local intelligence")
@@ -61,15 +68,15 @@ class LoadingWindow(QWidget):
         layout.setContentsMargins(38, 34, 38, 34)
         layout.setSpacing(10)
 
-        eyebrow = QLabel("AIBRAIN  /  STARTUP")
+        eyebrow = QLabel(eyebrow_text)
         eyebrow.setObjectName("eyebrow")
         layout.addWidget(eyebrow)
 
-        title = QLabel("Preparing your local workspace")
+        title = QLabel(title_text)
         title.setObjectName("title")
         layout.addWidget(title)
 
-        subtitle = QLabel("Checking installed GGUF models before opening the connectome.")
+        subtitle = QLabel(subtitle_text)
         subtitle.setWordWrap(True)
         subtitle.setObjectName("detail")
         layout.addWidget(subtitle)
@@ -81,7 +88,7 @@ class LoadingWindow(QWidget):
         self.progress.setTextVisible(False)
         layout.addWidget(self.progress)
 
-        self.detail = QLabel("Starting local services")
+        self.detail = QLabel(detail_text)
         self.detail.setObjectName("detail")
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)

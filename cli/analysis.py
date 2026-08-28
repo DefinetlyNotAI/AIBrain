@@ -18,8 +18,10 @@ def main() -> int:
     if not require_managed_runtime(ROOT, "analysis"):
         return 1
     clear_screen()
+    from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
     from src.app.analysis_window import AnalysisWindow
+    from src.app.loading_window import LoadingWindow
     from src.app.main_window import STYLESHEET
 
     configure_logging("analysis")
@@ -35,9 +37,23 @@ def main() -> int:
         app.quit()
 
     signal.signal(signal.SIGINT, quit_for_keyboard_interrupt)
-    window = AnalysisWindow()
+    loading = LoadingWindow(
+        eyebrow_text="AIBRAIN  /  ANALYSIS+",
+        title_text="Inspecting learned analysis data",
+        subtitle_text="Checking the persisted Analysis+ autoencoder before opening the inspector.",
+        detail_text="Preparing the model-health report",
+    )
+    window = AnalysisWindow(auto_refresh=False)
     window.setStyleSheet(STYLESHEET)
-    window.show()
+    loading.cancelled.connect(app.quit)
+
+    def open_inspector(_healthy: bool) -> None:
+        loading.finish()
+        window.show()
+
+    window.inspection_finished.connect(open_inspector)
+    loading.show()
+    QTimer.singleShot(0, window.refresh)
     try:
         exit_code = app.exec()
         return 130 if interrupted else exit_code

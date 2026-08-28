@@ -58,16 +58,19 @@ class DiagnosticsWindow(QDialog):
     """Expose model validation findings and user-initiated repair actions."""
 
     _DIAGNOSTIC_ROLE = Qt.ItemDataRole.UserRole
+    inspection_finished = Signal(bool)
 
-    def __init__(self, parent=None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, parent=None, *, auto_refresh: bool = True) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("AIBrain Repair and Diagnostics")
         self.setMinimumSize(780, 500)
         self._repair_process: QProcess | None = None
         self._diagnostics_thread: QThread | None = None
         self._diagnostics_worker: DiagnosticsWorker | None = None
+        self._last_refresh_succeeded = False
         self._build()
-        self.refresh()
+        if auto_refresh:
+            self.refresh()
 
     def _build(self) -> None:
         layout = QVBoxLayout(self)
@@ -125,6 +128,7 @@ class DiagnosticsWindow(QDialog):
         if self._diagnostics_thread is not None:
             return
         self.table.clear()
+        self._last_refresh_succeeded = False
         adapters = discover_render_adapters()
         adapter_text = ", ".join(
             adapter.name for adapter in adapters) if adapters else "No display adapters could be queried"
@@ -160,6 +164,7 @@ class DiagnosticsWindow(QDialog):
             )
             item.setData(0, self._DIAGNOSTIC_ROLE, diagnostic)
             self.table.addTopLevelItem(item)
+        self._last_refresh_succeeded = True
         self.table.resizeColumnToContents(0)
         self.table.resizeColumnToContents(1)
 
@@ -174,6 +179,7 @@ class DiagnosticsWindow(QDialog):
         self._diagnostics_worker = None
         self._set_refreshing(False)
         self._update_actions()
+        self.inspection_finished.emit(self._last_refresh_succeeded)
 
     def _set_refreshing(self, refreshing: bool) -> None:
         self.refresh_button.setEnabled(not refreshing)
