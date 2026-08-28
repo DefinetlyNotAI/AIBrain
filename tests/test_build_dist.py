@@ -13,7 +13,11 @@ from cli import build_dist
 class BuildDistributionTests(unittest.TestCase):
     @patch("cli.build_dist.subprocess.run")
     def test_build_command_output_uses_shared_framed_panel(self, run_mock) -> None:  # type: ignore[no-untyped-def]
-        run_mock.return_value = subprocess.CompletedProcess(["tool"], 0, "compiled", "warning")
+        def emit_output(*_args, **kwargs):  # type: ignore[no-untyped-def]
+            kwargs["stdout"].write("compiled\nwarning\n")
+            return subprocess.CompletedProcess(["tool"], 0)
+
+        run_mock.side_effect = emit_output
         output = StringIO()
 
         with redirect_stdout(output):
@@ -26,7 +30,11 @@ class BuildDistributionTests(unittest.TestCase):
 
     @patch("cli.build_dist.subprocess.run")
     def test_failed_build_command_raises_after_rendering_output(self, run_mock) -> None:  # type: ignore[no-untyped-def]
-        run_mock.return_value = subprocess.CompletedProcess(["tool"], 4, "", "broken")
+        def emit_output(*_args, **kwargs):  # type: ignore[no-untyped-def]
+            kwargs["stdout"].write("broken\n")
+            return subprocess.CompletedProcess(["tool"], 4)
+
+        run_mock.side_effect = emit_output
 
         with self.assertRaises(subprocess.CalledProcessError) as raised:
             build_dist.run(["tool"])

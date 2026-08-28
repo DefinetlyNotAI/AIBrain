@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -42,19 +43,28 @@ APPLICATIONS = (
 
 
 def run(command_line: list[str]) -> None:
-    """Run a build command and present its complete output in one shared box."""
+    """Run a build command without leaving Nuitka workers holding a pipe open."""
     command_preview(command_line)
-    result = subprocess.run(
-        command_line,
-        cwd=ROOT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-    )
-    command_output_box("\n".join(part.rstrip() for part in (result.stdout, result.stderr) if part.strip()))
+    # Nuitka keeps compiler workers alive briefly.  With capture_output=True they
+    # inherit the capture pipe, so subprocess.run can wait indefinitely for EOF
+    # after Nuitka itself has completed.  A file keeps the polished final output
+    # while avoiding that Windows pipe-lifetime deadlock.
+    with tempfile.TemporaryDirectory(prefix="aibrain-nuitka-") as temporary_directory:
+        output_path = Path(temporary_directory) / "nuitka-output.txt"
+        with output_path.open("w", encoding="utf-8", errors="replace") as output_file:
+            result = subprocess.run(
+                command_line,
+                cwd=ROOT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=output_file,
+                stderr=subprocess.STDOUT,
+            )
+        captured_output = output_path.read_text(encoding="utf-8", errors="replace").rstrip()
+    command_output_box(captured_output)
     if result.returncode:
-        raise subprocess.CalledProcessError(result.returncode, command_line, result.stdout, result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, command_line, captured_output)
 
 
 def runtime_dlls() -> list[Path]:
