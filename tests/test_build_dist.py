@@ -68,10 +68,12 @@ class BuildDistributionTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.returncode, 4)
 
+    @patch("cli.build_dist.subprocess.run")
     @patch("cli.build_dist.subprocess.Popen")
-    def test_interrupted_build_terminates_the_child_before_propagating(self, popen_mock) -> None:  # type: ignore[no-untyped-def]
+    def test_interrupted_build_terminates_the_child_tree_before_propagating(self, popen_mock, taskkill_mock) -> None:  # type: ignore[no-untyped-def]
         class InterruptedProcess:
             def __init__(self) -> None:
+                self.pid = 123
                 self.terminated = False
                 self.wait_timeouts: list[float | None] = []
 
@@ -94,7 +96,7 @@ class BuildDistributionTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 build_dist.run(["tool"])
 
-        self.assertTrue(process.terminated)
+        taskkill_mock.assert_called_once()
         self.assertEqual(process.wait_timeouts, [5])
 
     def test_each_packaged_application_has_its_named_entry_point_and_icon(self) -> None:

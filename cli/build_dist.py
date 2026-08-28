@@ -63,7 +63,7 @@ def _render_new_build_output(output_path: Path, offset: int, pending: str, outpu
 
 
 def _stop_interrupted_build(process: subprocess.Popen[object]) -> None:
-    """Stop a directly launched build process before propagating Ctrl+C."""
+    """Stop Nuitka and its compiler children before temporary-file cleanup."""
     try:
         if process.poll() is not None:
             return
@@ -71,7 +71,15 @@ def _stop_interrupted_build(process: subprocess.Popen[object]) -> None:
         # A second Ctrl+C can arrive while checking the process state. Treat the
         # child as still active so cleanup is never skipped.
         pass
-    process.terminate()
+    if os.name == "nt" and getattr(process, "pid", None):
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -92,6 +100,7 @@ def run(command_line: list[str]) -> None:
                 cwd=ROOT,
                 stdout=output_file,
                 stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
             try:
                 offset = 0
