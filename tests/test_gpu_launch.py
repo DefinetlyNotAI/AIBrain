@@ -54,3 +54,10 @@ class GpuLaunchTests(unittest.TestCase):
 
     def test_renderer_does_not_own_the_gpu_restart_path(self) -> None:
         self.assertFalse(hasattr(ConnectomeRenderer, "_restart_for_gpu"))
+
+    def test_renderer_requests_a_clean_supervised_restart_for_a_first_gpu_mismatch(self) -> None:
+        source = inspect.getsource(ConnectomeRenderer.initializeGL)
+
+        self.assertIn("can_request_gpu_relaunch()", source)
+        self.assertIn("gpuRestartRequested.emit", source)
+        self.assertIn("restarting through the startup loader", source)

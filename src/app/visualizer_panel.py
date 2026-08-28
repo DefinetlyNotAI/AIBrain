@@ -49,6 +49,8 @@ class NeuronInspectorLabel(QLabel):
 
 
 class VisualizerPanel(QWidget):
+    gpuRestartRequested = Signal(str)
+
     def __init__(self, model_key: str = "default") -> None:
         super().__init__()
         self._model_key = model_key
@@ -76,6 +78,7 @@ class VisualizerPanel(QWidget):
         self.renderer = ConnectomeRenderer(self.graph, self.field)
         self.renderer.nodeSelected.connect(self._inspect)
         self.renderer.backendChanged.connect(self._set_backend)
+        self.renderer.gpuRestartRequested.connect(self.gpuRestartRequested)
 
     def _build_ui(self) -> None:
         self.layout = QVBoxLayout(self)

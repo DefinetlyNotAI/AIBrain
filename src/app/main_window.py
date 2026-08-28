@@ -1,24 +1,23 @@
 from __future__ import annotations
 
 import logging
-import subprocess
-import sys
-from pathlib import Path
 from time import monotonic
 from typing import TypedDict
 
-from PySide6.QtCore import QThread, QTimer, Qt, Signal
+from PySide6.QtCore import QCoreApplication, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSplitter
 
 from .chat_panel import ChatPanel
 from .diagnostics_window import DiagnosticsWindow
+from .loading_window import LoadingWindow
 from .settings import load_generation_settings, save_generation_settings
 from .visualizer_panel import VisualizerPanel
 from ..models.generation_worker import GenerationWorker
 from ..models.infinite_simulation import InfiniteSimulationWorker
 from ..models.llama_backend import LlamaBackend
 from ..models.model_info import ModelInfo
+from ..utils.gpu import GPU_RELAUNCH_EXIT_CODE
 
 LOG = logging.getLogger(__name__)
 
@@ -74,6 +73,7 @@ class MainWindow(QMainWindow):
         self._simulation_bubbles: dict[tuple[str, int], QLabel] = {}
         self.simulation_transcript: list[dict[str, object]] = []
         self._analysis_is_infinite = False
+        self._gpu_relaunching = False
         self._setup_worker()
         self.chat = ChatPanel(self.config)
         self.visualizer = VisualizerPanel()
@@ -96,6 +96,7 @@ class MainWindow(QMainWindow):
         self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
         self.chat.playbackNextRequested.connect(self.visualizer.playback_next)
+        self.visualizer.gpuRestartRequested.connect(self._restart_for_gpu_mismatch)
         self._escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self._escape_shortcut.activated.connect(self._handle_escape)
@@ -174,11 +175,36 @@ class MainWindow(QMainWindow):
 
     def open_diagnostics(self) -> None:
         """Open model recovery without interrupting a currently loaded model."""
-        if self._launch_packaged_utility("diagnostic", "diagnostic.exe"):
+        existing = getattr(self, "_diagnostics_window", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
             return
-        self._diagnostics_window = DiagnosticsWindow(self)
-        self._diagnostics_window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self._diagnostics_window.show()
+        loading = LoadingWindow(
+            eyebrow_text="AIBRAIN  /  DIAGNOSTICS",
+            title_text="Refreshing model health",
+            subtitle_text="Checking local GGUF manifests and backend compatibility in the background.",
+            detail_text="Preparing Repair and Diagnostics",
+        )
+        window = DiagnosticsWindow(self, auto_refresh=False)
+        self._diagnostics_window = window
+        self._diagnostics_loader = loading
+        window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+
+        def show_diagnostics(_healthy: bool) -> None:
+            loading.finish()
+            window.show()
+
+        def forget_diagnostics() -> None:
+            if getattr(self, "_diagnostics_window", None) is window:
+                self._diagnostics_window = None
+            self._diagnostics_loader = None
+
+        window.inspection_finished.connect(show_diagnostics)
+        window.destroyed.connect(forget_diagnostics)
+        loading.cancelled.connect(window.close)
+        loading.show()
+        QTimer.singleShot(0, window.refresh)
 
     def open_analysis(self) -> None:
         if self.current_model is None:
@@ -188,21 +214,15 @@ class MainWindow(QMainWindow):
         else:
             self.visualizer.run_session_analysis()
 
-    @staticmethod
-    def _launch_packaged_utility(directory: str, executable: str) -> bool:
-        """Start a sibling utility from a standalone distribution when present."""
-        if "__compiled__" not in globals():
-            return False
-        candidate = Path(sys.executable).resolve().parent.parent / directory / executable
-        if not candidate.is_file():
-            LOG.warning("Packaged utility is unavailable: %s", candidate)
-            return False
-        try:
-            subprocess.Popen([str(candidate)], close_fds=False)
-        except OSError as exc:
-            LOG.error("Could not start packaged utility %s: %s", candidate, exc)
-            return False
-        return True
+    def _restart_for_gpu_mismatch(self, message: str) -> None:
+        """Close the main UI cleanly so the supervisor returns to the loader."""
+        if self._gpu_relaunching:
+            return
+        self._gpu_relaunching = True
+        LOG.warning("%s; closing the current window before supervised restart", message)
+        self.chat.stats.setText("GPU mismatch detected. Returning to the startup loader…")
+        QCoreApplication.exit(GPU_RELAUNCH_EXIT_CODE)
+        self.close()
 
     def _show_repairable_error(self, title: str, message: str) -> None:
         dialog = QMessageBox(self)

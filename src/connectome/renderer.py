@@ -11,7 +11,7 @@ from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
 from ..native.wrapper.connectome_kernels import native
-from ..utils.gpu import should_prefer_high_performance_gpu
+from ..utils.gpu import can_request_gpu_relaunch, should_prefer_high_performance_gpu
 
 LOG = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     nodeSelected = Signal(object)
     backendChanged = Signal(str)
+    gpuRestartRequested = Signal(str)
 
     def __init__(self, graph: ConnectomeGraph, field: ActivityField) -> None:
         super().__init__()
@@ -102,8 +103,15 @@ class ConnectomeRenderer(QOpenGLWidget):
             is_nvidia = "nvidia" in f"{vendor} {renderer_name}".lower()
             if not is_nvidia:
                 requested = should_prefer_high_performance_gpu()
+                if requested and can_request_gpu_relaunch():
+                    message = f"GPU mismatch: OpenGL selected {vendor} - {renderer_name}, expected NVIDIA"
+                    renderer_name += "; GPU mismatch; restarting through the startup loader"
+                    LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
+                    self.backendChanged.emit("GPU mismatch detected — restarting through the startup loader…")
+                    self.gpuRestartRequested.emit(message)
+                    return
                 if requested:
-                    renderer_name += "; GPU mismatch (expected NVIDIA); open Repair & Diagnostics"
+                    renderer_name += "; GPU mismatch (NVIDIA retry already attempted)"
                     LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
                 else:
                     renderer_name += " · Windows system-default GPU"
