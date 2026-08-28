@@ -233,17 +233,45 @@ def _clear_native_console() -> bool:
         if owns_handle:
             kernel32.close_handle(handle)
 
+_ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+
+def _enable_virtual_terminal() -> bool:
+    if os.name != "nt":
+        return True
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+
+    mode = wintypes.DWORD()
+
+    if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+        return False
+
+    if mode.value & _ENABLE_VIRTUAL_TERMINAL_PROCESSING:
+        return True
+
+    return bool(
+        kernel32.SetConsoleMode(
+            handle,
+            mode.value | _ENABLE_VIRTUAL_TERMINAL_PROCESSING,
+        )
+    )
+
 
 def clear_screen() -> None:
-    """Clear an attached terminal without invoking cmd.exe or a shell command."""
+    """Clear the visible terminal and its scrollback where supported."""
+    if sys.stdout.isatty():
+        if os.name != "nt" or _enable_virtual_terminal():
+            sys.stdout.write("\x1b[2J\x1b[3J\x1b[H")
+            sys.stdout.flush()
+            return
+
     if os.name == "nt":
         try:
-            if _clear_native_console():
-                return
+            _clear_native_console()
         except (AttributeError, OSError):
             pass
-    if sys.stdout.isatty():
-        print("\x1b[2J\x1b[H", end="", flush=True)
 
 
 def rule(char: str = BOX_HORIZONTAL) -> str:
