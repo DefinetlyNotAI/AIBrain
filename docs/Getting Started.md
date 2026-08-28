@@ -61,13 +61,16 @@ Build a normal, self-contained directory distribution—never a single-file exec
 .\.venv\Scripts\python.exe cli\build_dist.py
 ```
 
-The result is `dist\AIBrain_YYYYMMDD_HHMMSS\AIBrain.exe` plus Qt, Python, llama.cpp, native connectome, and required
-Visual C++ runtime files. It runs from that folder without activating the development `.venv`.
+The result is `dist\AIBrain_YYYYMMDD_HHMMSS\` with three self-contained application folders:
+`ai_brain\ai_brain.exe`, `diagnostic\diagnostic.exe`, and `analysis\analysis.exe`. Each contains its Qt, Python,
+llama.cpp, native connectome, and required Visual C++ runtime files, and runs without activating the development
+`.venv`.
 
 ## First run
 
-At launch, AIBrain scans the local Ollama manifests and blobs, then validates each candidate GGUF with the installed
-backend in a background thread. Choose a validated model from the selector, enter a prompt, and send it. The chat pane
-shows `Thinking…` until the first generated token arrives.
+At launch, AIBrain first shows a loading window while it scans local Ollama manifests and blobs, validates each
+candidate GGUF with the installed backend in a background thread, and checks the selected OpenGL adapter. The main
+window opens only after startup completes. Choose a validated model from the selector, enter a prompt, and send it.
+The chat pane shows `Thinking…` until the first generated token arrives.
 
 If no model is listed, see [Troubleshooting](Troubleshooting.md#no-models-are-listed).

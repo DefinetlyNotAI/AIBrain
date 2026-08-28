@@ -30,8 +30,9 @@ high-performance renderer.
 
 ## Logging
 
-AIBrain configures concise one-line logs for the terminal and a file handler when the user's writable log location is
-available. Messages are normalized to a single terminal-width line and include time, level, logger, and message.
+AIBrain writes `logs\aibrain.log` and `logs\crash.log` below the project or packaged application root. Both files are
+reset at startup and bounded to 5 MiB while a run is active. Terminal and file records include time, level, logger, and
+message; multi-line records preserve their lines with an aligned continuation gutter rather than being truncated.
 
-For diagnosis, launch AIBrain from an activated PowerShell terminal and retain the relevant one-line log entries with
-the error text.
+For diagnosis, launch AIBrain from an activated PowerShell terminal and retain the relevant log entries with the error
+text.

@@ -30,9 +30,9 @@ so a region retains the exact same color across graph rebuilds, replay, and the 
 rendered as batched draw calls.
 
 The renderer reports the actual OpenGL renderer in its overlay. AIBrain writes its high-performance preference and
-relaunches before Qt creates an OpenGL context; the standalone builder records the same preference for its packaged
-`AIBrain.exe`. If the overlay still reports a non-NVIDIA renderer, it explicitly calls out the mismatch. On hybrid
-laptops, set the active `python.exe` or packaged `AIBrain.exe` to **High-performance NVIDIA processor** in **NVIDIA
+relaunches before Qt creates an OpenGL context; the standalone builder records the same preference for packaged
+`ai_brain.exe`. If the overlay still reports a non-NVIDIA renderer, it explicitly calls out the mismatch. On hybrid
+laptops, set the active `python.exe` or packaged `ai_brain.exe` to **High-performance NVIDIA processor** in **NVIDIA
 Control Panel > Manage 3D settings > Program Settings**, then restart; Windows Graphics settings are a secondary
 fallback.
 

@@ -9,7 +9,7 @@ Activate the managed environment before launching:
 python cli\main.py
 ```
 
-If `.venv` does not exist, create it with `py -3.11 install.py`.
+If `.venv` does not exist, create it with `py cli\installer.py`.
 
 ## PowerShell blocks activation
 
@@ -43,7 +43,7 @@ the Windows high-performance preference for the active Python or packaged execut
 re-applies it if a mismatch is detected. An existing OpenGL context cannot migrate adapters. If the overlay still
 reports `vendor=Intel` while an NVIDIA GPU is installed, the Qt/WGL hybrid-GPU driver decision overrode that request:
 open **NVIDIA Control Panel > Manage 3D settings > Program Settings**, add the active `python.exe` (or packaged
-`AIBrain.exe`), choose **High-performance NVIDIA processor**, apply, and restart.
+`ai_brain.exe`), choose **High-performance NVIDIA processor**, apply, and restart.
 
 If the overlay still identifies the integrated renderer, open **Windows Settings > System > Display > Graphics**, add
 the project `.venv\Scripts\python.exe`, select **Options**, choose **High performance**, and restart AIBrain. The

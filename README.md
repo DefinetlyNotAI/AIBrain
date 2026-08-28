@@ -42,8 +42,8 @@ been enabled.
 # Rebuild and verify the native DLL after editing its C source.
 py cli\build_native.py --clean
 
-# Create dist\AIBrain_YYYYMMDD_HHMMSS\AIBrain.exe and all required files.
-python cli\build_dist.py
+# Build self-contained ai_brain, diagnostic, and analysis application folders.
+.\.venv\Scripts\python.exe cli\build_dist.py
 
 # Verify Python syntax from the managed environment.
 python -m compileall -q cli src tests

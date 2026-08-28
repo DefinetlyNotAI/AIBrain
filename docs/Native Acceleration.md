@@ -30,7 +30,7 @@ The tool is color-coded in an interactive terminal and:
 2. compiles the x64 Windows DLL with warnings enabled and optimized release flags;
 3. checks that the output is a valid-sized `MZ`/PE file;
 4. loads it through `ctypes.WinDLL`; and
-5. verifies `decay_and_count` and `edge_activity` are exported.
+5. verifies `decay_and_count`, `edge_activity`, and `region_activity` are exported.
 
 Useful options:
 

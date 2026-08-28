@@ -31,8 +31,8 @@ field.
 | Path                               | Responsibility                                                                |
 |------------------------------------|-------------------------------------------------------------------------------|
 | `cli/installer.py`                 | Creates and populates the managed Python virtual environment.                 |
-| `cli/ui.py`                        | Shared terminal presentation for installation and native/distribution builds. |
-| `cli/build_dist.py`                | Creates a timestamped Nuitka standalone distribution.                         |
+| `src/utils/console_ui.py`          | Shared terminal presentation, native console clearing, and safe output wrapping. |
+| `cli/build_dist.py`                | Creates timestamped self-contained ai_brain, diagnostic, and analysis distributions. |
 | `src/models/ollama_discovery.py`   | Finds and performs lightweight validation of local Ollama blobs.              |
 | `src/models/model_validator.py`    | Validates candidates against the installed llama.cpp backend.                 |
 | `src/models/llama_backend.py`      | Loads, streams, tokenizes, and unloads GGUF models.                           |
