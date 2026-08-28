@@ -31,19 +31,30 @@ rendered as batched draw calls.
 
 The renderer reports the actual OpenGL renderer in its overlay. AIBrain writes its high-performance preference and
 relaunches before Qt creates an OpenGL context; the standalone builder records the same preference for packaged
-`ai_brain.exe`. If the overlay still reports a non-NVIDIA renderer, it explicitly calls out the mismatch. On hybrid
+`ai_brain.exe`. If the actual renderer still differs on the first attempt, AIBrain closes the main window cleanly and
+returns to the loader for one supervised retry. On hybrid
 laptops, set the active `python.exe` or packaged `ai_brain.exe` to **High-performance NVIDIA processor** in **NVIDIA
 Control Panel > Manage 3D settings > Program Settings**, then restart; Windows Graphics settings are a secondary
 fallback.
 
+Use **3D View** for the normal depth-aware map. Toggle it to **2D View** for a flat map, then choose either **Full 2D**
+or **Sector 2D**. Sector mode provides a region selector and filters both drawing and neuron selection to that region.
+
 ## Analysis
 
-**NN Analysis+** runs an actual online NumPy autoencoder over every visual frame, then creates a compact JSON data file.
+**Analysis** is available after a completed normal chat and exports `aibrain.session-analysis.v1`: conversation,
+generation/visual summary, graph metadata, and recorded-frame summary. It deliberately contains no learned-network
+findings. **Analysis+** is available after a completed Infinite-mode run and exports
+`aibrain.infinite-analysis-plus.v1`, adding compact autoencoder findings.
+
+Analysis+ runs an actual online NumPy autoencoder over every visual frame, then creates a compact JSON data file.
 The network uses region-density and temporal-change features, a tanh encoder, sigmoid decoder, and per-frame
 gradient-descent reconstruction training. Every recorded frame is atomically saved immediately, so its learned weights
-survive an unexpected close as well as a normal exit. The NPZ lives in `%LOCALAPPDATA%\AIBrain\analysis_model\` rather
-than the application folder, so upgrades and standalone releases keep the same per-user memory; an older project-local
-NPZ is migrated automatically on first use. Region-density normalization removes static cluster-size and global
+survive an unexpected close as well as a normal exit. The model is stored at
+`models\aibrain.analyser.npz` and is intentionally gitignored. The older
+`%LOCALAPPDATA%\AIBrain\analysis_model\connectome_autoencoder_v1.npz` location is imported once when present.
+The standalone `analysis.py` tool reads this NPZ without loading a GGUF or renderer and reports its integrity, age,
+architecture, tensor statistics, and transparent learning-maturity estimate. Region-density normalization removes static cluster-size and global
 renderer-amplitude bias; findings remain analysis of procedural visual signals, not measured transformer activations.
 The export contains the complete session conversation, network architecture and fit metrics, regional profile, pattern
 segments, and a bounded set of high-novelty events. It intentionally excludes massive per-neuron frame dumps.

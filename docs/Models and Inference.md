@@ -18,6 +18,11 @@ chat. This avoids a selector full of known-broken entries.
 
 ## Loading and lifecycle
 
+Validation saves profile-specific results in `.cache/aibrain.<model_name>.cache`. A cached result is reused only when
+the exact blob path, size, and modification timestamp match and the requested validation profile is the same. Changing
+the blob automatically invalidates that entry; a structural header check never substitutes for a requested full
+`llama-cpp-python` compatibility check.
+
 AIBrain loads a selected GGUF directly from its Ollama blob path using `llama-cpp-python`. It does not call the Ollama
 server, duplicate a model file, or require Ollama to remain running. Switching models unloads the previous backend,
 clears chat history, and rebuilds the deterministic visual graph for the new model key.

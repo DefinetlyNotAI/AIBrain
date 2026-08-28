@@ -38,7 +38,7 @@ class ApplicationTarget:
 APPLICATIONS = (
     ApplicationTarget("ai_brain", "ai_brain.exe", ROOT / "cli" / "main.py", ROOT / "ico" / "brain.ico", "attach"),
     ApplicationTarget("diagnostic", "diagnostic.exe", ROOT / "cli" / "diagnostic.py", ROOT / "ico" / "diagnostic.ico",
-                      "disable"),
+                      "attach"),
     ApplicationTarget("analysis", "analysis.exe", ROOT / "cli" / "analysis.py", ROOT / "ico" / "analysis.ico",
                       "attach"),
 )

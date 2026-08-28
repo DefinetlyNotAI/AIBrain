@@ -67,5 +67,6 @@ See [Native acceleration](Native%20Acceleration.md) for supported toolchains and
 
 ## NN Analysis+ does nothing
 
-Generate a response first. NN Analysis+ processes the session's recorded visual frames through its online autoencoder.
-Changing model, quality, or spacing discards old replay/analysis data to prevent mixing incompatible graph layouts.
+Complete an Infinite-mode run first. Analysis+ processes the session's recorded visual frames through its online
+autoencoder. Complete a normal chat to enable the separate non-NN **Analysis** export. Changing model, quality, or
+spacing discards old replay/analysis data to prevent mixing incompatible graph layouts.

@@ -16,8 +16,11 @@ cli/main.py
                  └─ ConnectomeAnalyzer / exporter
 ```
 
-`cli/main.py` checks the virtual environment before importing GUI dependencies, requests desktop OpenGL, configures
-logging, creates the QApplication, and installs SIGINT handling.
+Every GUI entry point except the installer checks the managed virtual environment before importing application modules.
+`cli/main.py`, `cli/diagnostic.py`, and `cli/analysis.py` show the shared loader while their first background validation
+runs, retain their attached console for runtime output, configure feature-scoped logs (`aibrain.<feature>.log`), and
+create a detailed `crash.<feature>.log` only after an uncaught exception. `cli/main.py` additionally requests desktop
+OpenGL and installs SIGINT handling.
 
 `MainWindow` owns conversation state and coordinates UI signals. It discovers and validates models, owns the worker
 thread, updates the thinking indicator, and saves generation settings.
@@ -34,11 +37,11 @@ field.
 | `src/utils/console_ui.py`          | Shared terminal presentation, native console clearing, and safe output wrapping. |
 | `cli/build_dist.py`                | Creates timestamped self-contained ai_brain, diagnostic, and analysis distributions. |
 | `src/models/ollama_discovery.py`   | Finds and performs lightweight validation of local Ollama blobs.              |
-| `src/models/model_validator.py`    | Validates candidates against the installed llama.cpp backend.                 |
+| `src/models/model_validator.py`    | Validates candidates against llama.cpp and caches profile-scoped GGUF results. |
 | `src/models/llama_backend.py`      | Loads, streams, tokenizes, and unloads GGUF models.                           |
 | `src/connectome/generator.py`      | Creates deterministic visual graph topology.                                  |
 | `src/connectome/activity.py`       | Holds decaying activity, peaks, silencing, and importance state.              |
-| `src/connectome/renderer.py`       | Batched ModernGL draw pipeline and interaction.                               |
+| `src/connectome/renderer.py`       | Batched ModernGL 3D/2D draw pipeline, sector filtering, and interaction.     |
 | `src/connectome/analysis.py`       | Online derived visual-stream analysis.                                        |
 | `src/native/c/connectome_kernels.c` | Optional native hot-path implementation.                                      |
 | `src/native/wrapper/connectome_kernels.py` | ctypes contract and NumPy fallback for `dll/aibrain.connectome.dll`.          |

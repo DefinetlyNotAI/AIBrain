@@ -19,6 +19,10 @@ python cli\main.py
 AIBrain only runs from its managed virtual environment. The installer creates and populates `.venv`, checks NVIDIA/CUDA
 capability before choosing an inference wheel, and never installs packages into the system Python.
 
+The GUI tools (`main.py`, `diagnostic.py`, and `analysis.py`) keep their attached console for compact runtime messages and
+open a loader window before their first background validation completes. Logs are feature-scoped under `logs/` (for
+example, `aibrain.main.log`); a detailed `crash.<feature>.log` is created only after an uncaught exception.
+
 ## Documentation
 
 The complete documentation is in [`docs/`](docs/Home.md):
