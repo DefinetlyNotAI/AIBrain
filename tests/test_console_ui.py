@@ -12,7 +12,7 @@ from src.utils.console_ui import Color, panel
 
 
 class ConsoleUiTests(unittest.TestCase):
-    def test_panel_uses_clean_box_drawing_without_source_mojibake(self) -> None:
+    def test_panel_uses_the_selected_safe_border_glyphs(self) -> None:
         output = StringIO()
 
         with redirect_stdout(output):
@@ -24,9 +24,9 @@ class ConsoleUiTests(unittest.TestCase):
             )
 
         rendered = output.getvalue()
-        self.assertIn(chr(0x256D), rendered)
-        self.assertIn(chr(0x2500), rendered)
-        self.assertIn(chr(0x2570), rendered)
+        self.assertIn(console_ui.BOX_TOP_LEFT, rendered)
+        self.assertIn(console_ui.BOX_HORIZONTAL, rendered)
+        self.assertIn(console_ui.BOX_BOTTOM_LEFT, rendered)
         self.assertNotIn("\ufffd", rendered)
 
     def test_cli_sources_contain_no_common_mojibake_markers(self) -> None:
@@ -49,18 +49,15 @@ class ConsoleUiTests(unittest.TestCase):
                 self.assertIn("clear_screen", content)
                 self.assertIn("clear_screen()", content)
 
-    def test_only_the_shared_console_ui_configures_windows_output_encoding(self) -> None:
+    def test_cli_sources_do_not_mutate_host_console_encodings(self) -> None:
         root = Path(__file__).resolve().parents[1]
         forbidden = ("SetConsoleOutputCP", "SetConsoleCP", ".reconfigure(")
 
-        for source_file in sorted((root / "cli").glob("*.py")):
+        source_files = [*sorted((root / "cli").glob("*.py")), root / "src" / "utils" / "console_ui.py"]
+        for source_file in source_files:
             with self.subTest(source_file=source_file):
                 content = source_file.read_text(encoding="utf-8")
                 self.assertFalse(any(marker in content for marker in forbidden))
-
-        shared_ui = (root / "src" / "utils" / "console_ui.py").read_text(encoding="utf-8")
-        self.assertIn("SetConsoleOutputCP(65001)", shared_ui)
-        self.assertIn("stream.reconfigure(encoding=\"utf-8\"", shared_ui)
 
     def test_native_clear_passes_a_wchar_value_not_a_string_pointer(self) -> None:
         class Call:

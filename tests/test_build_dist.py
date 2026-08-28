@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from cli import build_dist
+from src.utils.console_ui import BOX_TOP_LEFT
 
 
 class BuildDistributionTests(unittest.TestCase):
@@ -26,7 +27,7 @@ class BuildDistributionTests(unittest.TestCase):
         rendered = output.getvalue()
         self.assertIn("compiled", rendered)
         self.assertIn("warning", rendered)
-        self.assertIn(chr(0x256D), rendered)
+        self.assertIn(BOX_TOP_LEFT, rendered)
 
     @patch("cli.build_dist.subprocess.run")
     def test_failed_build_command_raises_after_rendering_output(self, run_mock) -> None:  # type: ignore[no-untyped-def]

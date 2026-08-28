@@ -106,7 +106,7 @@ def main() -> int:
     parser.add_argument("--clean", action="store_true", help="Remove the compiled DLL before building")
     arguments = parser.parse_args()
     clear_screen()
-    header("AIBrain", "Native connectome build tool · x64 Windows")
+    header("AIBrain", "Native connectome build tool - x64 Windows")
     section("Compile native acceleration", 1)
     if not SOURCE.is_file():
         line("ERROR", f"Missing source: {SOURCE}", Colour.RED)
@@ -116,7 +116,7 @@ def main() -> int:
         line("CLEAN", f"Removed {OUTPUT.name}", Colour.YELLOW)
     try:
         compiler = discover_compiler(arguments.compiler)
-        line("TOOLCHAIN", f"{compiler.family.upper()} · {compiler.path}", Colour.GREEN)
+        line("TOOLCHAIN", f"{compiler.family.upper()} - {compiler.path}", Colour.GREEN)
         compile_library(compiler, arguments.debug)
         verify_library()
         commit_regenerated_library()

@@ -41,34 +41,28 @@ class _ConsoleScreenBufferInfo(ctypes.Structure):
         ("maximum_window_size", _ConsoleCoord),
     ]
 
-BOX_HORIZONTAL = "\N{BOX DRAWINGS LIGHT HORIZONTAL}"
-BOX_VERTICAL = "\N{BOX DRAWINGS LIGHT VERTICAL}"
-BOX_TOP_LEFT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}"
-BOX_TOP_RIGHT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND LEFT}"
-BOX_BOTTOM_LEFT = "\N{BOX DRAWINGS LIGHT ARC UP AND RIGHT}"
-BOX_BOTTOM_RIGHT = "\N{BOX DRAWINGS LIGHT ARC UP AND LEFT}"
-BOX_MID_LEFT = "\N{BOX DRAWINGS LIGHT VERTICAL AND RIGHT}"
-BOX_MID_RIGHT = "\N{BOX DRAWINGS LIGHT VERTICAL AND LEFT}"
-BULLET = "\N{BLACK CIRCLE}"
-CHECK = "\N{CHECK MARK}"
-CROSS = "\N{MULTIPLICATION X}"
-PROMPT = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
-
-
-# Python uses the active Windows legacy code page for redirected output on
-# some hosts.  Configure UTF-8 once in the shared UI module; the actual console
-# code page must match before print() writes the box-drawing glyphs.
-if os.name == "nt":
-    try:
-        kernel32 = ctypes.windll.kernel32
-        if sys.stdout.isatty():
-            kernel32.SetConsoleOutputCP(65001)
-            kernel32.SetConsoleCP(65001)
-        for stream in (sys.stdout, sys.stderr):
-            if hasattr(stream, "reconfigure"):
-                stream.reconfigure(encoding="utf-8", errors="backslashreplace")
-    except (AttributeError, OSError):
-        pass
+try:
+    "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}".encode(sys.stdout.encoding or "utf-8")
+except (LookupError, UnicodeEncodeError):
+    # Do not mutate an IDE, pipe, or redirected stream.  Hosts that cannot
+    # encode box drawing receive the same layout with portable ASCII glyphs.
+    BOX_HORIZONTAL, BOX_VERTICAL = "-", "|"
+    BOX_TOP_LEFT = BOX_TOP_RIGHT = BOX_BOTTOM_LEFT = BOX_BOTTOM_RIGHT = "+"
+    BOX_MID_LEFT = BOX_MID_RIGHT = "+"
+    BULLET, CHECK, CROSS, PROMPT = "*", "OK", "X", ">"
+else:
+    BOX_HORIZONTAL = "\N{BOX DRAWINGS LIGHT HORIZONTAL}"
+    BOX_VERTICAL = "\N{BOX DRAWINGS LIGHT VERTICAL}"
+    BOX_TOP_LEFT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}"
+    BOX_TOP_RIGHT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND LEFT}"
+    BOX_BOTTOM_LEFT = "\N{BOX DRAWINGS LIGHT ARC UP AND RIGHT}"
+    BOX_BOTTOM_RIGHT = "\N{BOX DRAWINGS LIGHT ARC UP AND LEFT}"
+    BOX_MID_LEFT = "\N{BOX DRAWINGS LIGHT VERTICAL AND RIGHT}"
+    BOX_MID_RIGHT = "\N{BOX DRAWINGS LIGHT VERTICAL AND LEFT}"
+    BULLET = "\N{BLACK CIRCLE}"
+    CHECK = "\N{CHECK MARK}"
+    CROSS = "\N{MULTIPLICATION X}"
+    PROMPT = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 
 
 class Color:
