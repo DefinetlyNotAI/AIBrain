@@ -15,7 +15,10 @@ class AnalysisCliTests(unittest.TestCase):
             manifest.touch()
             self.assertEqual(relative_age(manifest), "less than one minute")
 
-            old = manifest.stat().st_mtime - 2 * 86_400
+            # Keep the fixture beyond the integer-second boundary used by the
+            # human-readable formatter so normal test execution latency cannot
+            # turn this into "1 day 23 hours".
+            old = manifest.stat().st_mtime - 2 * 86_400 - 5
             os.utime(manifest, (old, old))
             self.assertTrue(relative_age(manifest).startswith("2 days"))
 
