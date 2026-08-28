@@ -9,7 +9,7 @@ from src.utils.console_ui import Color, panel
 
 
 class ConsoleUiTests(unittest.TestCase):
-    def test_panel_uses_canonical_box_drawing_characters(self) -> None:
+    def test_panel_is_ascii_safe_for_every_windows_console_code_page(self) -> None:
         output = StringIO()
 
         with redirect_stdout(output):
@@ -21,10 +21,10 @@ class ConsoleUiTests(unittest.TestCase):
             )
 
         rendered = output.getvalue()
-        self.assertIn(chr(0x256d), rendered)
-        self.assertIn(chr(0x2500), rendered)
-        self.assertIn(chr(0x2570), rendered)
-        self.assertNotIn("\ufffd", rendered)
+        self.assertIn("+", rendered)
+        self.assertIn("-", rendered)
+        self.assertIn("|", rendered)
+        self.assertTrue(rendered.isascii())
 
     def test_cli_sources_contain_no_common_mojibake_markers(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -45,3 +45,13 @@ class ConsoleUiTests(unittest.TestCase):
                 content = source_file.read_text(encoding="utf-8")
                 self.assertIn("clear_screen", content)
                 self.assertIn("clear_screen()", content)
+
+    def test_cli_sources_do_not_change_console_code_pages_or_stream_encodings(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        forbidden = ("SetConsoleOutputCP", "SetConsoleCP", ".reconfigure(")
+        source_files = [*sorted((root / "cli").glob("*.py")), root / "src" / "utils" / "console_ui.py"]
+
+        for source_file in source_files:
+            with self.subTest(source_file=source_file):
+                content = source_file.read_text(encoding="utf-8")
+                self.assertFalse(any(marker in content for marker in forbidden))

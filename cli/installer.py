@@ -23,10 +23,6 @@ if str(ROOT) not in sys.path:
 from src.utils.console_ui import Color, clear_screen, color, command_preview, command_output_box, detail, error, header, info, \
 panel, relative_path, section, success, warning
 
-for _stream in (sys.stdout, sys.stderr):
-    if hasattr(_stream, "reconfigure"):
-        _stream.reconfigure(encoding="utf-8", errors="replace")
-
 VENV_DIR = ROOT / ".venv"
 
 WHEEL_ROOT = "https://abetlen.github.io/llama-cpp-python/whl"

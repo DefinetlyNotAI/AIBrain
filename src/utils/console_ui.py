@@ -16,36 +16,21 @@ MIN_WIDTH = 60
 COMMAND_INDENT = 2
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
-BOX_HORIZONTAL = "\N{BOX DRAWINGS LIGHT HORIZONTAL}"
-BOX_VERTICAL = "\N{BOX DRAWINGS LIGHT VERTICAL}"
-BOX_TOP_LEFT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}"
-BOX_TOP_RIGHT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND LEFT}"
-BOX_BOTTOM_LEFT = "\N{BOX DRAWINGS LIGHT ARC UP AND RIGHT}"
-BOX_BOTTOM_RIGHT = "\N{BOX DRAWINGS LIGHT ARC UP AND LEFT}"
-BOX_MID_LEFT = "\N{BOX DRAWINGS LIGHT VERTICAL AND RIGHT}"
-BOX_MID_RIGHT = "\N{BOX DRAWINGS LIGHT VERTICAL AND LEFT}"
-BULLET = "\N{BLACK CIRCLE}"
-CHECK = "\N{CHECK MARK}"
-CROSS = "\N{MULTIPLICATION X}"
-PROMPT = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
-
-
-def enable_windows_utf8_console() -> None:
-    """Configure Windows' real console and redirected streams for UTF-8."""
-    if os.name != "nt":
-        return
-    try:
-        kernel32 = __import__("ctypes").windll.kernel32
-        if sys.stdout.isatty():
-            kernel32.SetConsoleOutputCP(65001)
-            kernel32.SetConsoleCP(65001)
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except (AttributeError, OSError):
-        return
-
-
-enable_windows_utf8_console()
+# Keep every character emitted by the shared CLI renderer ASCII.  Windows
+# terminals disagree on how redirected output and code-page changes interact;
+# ASCII avoids that entire class of corrupted glyphs while preserving layout.
+BOX_HORIZONTAL = "-"
+BOX_VERTICAL = "|"
+BOX_TOP_LEFT = "+"
+BOX_TOP_RIGHT = "+"
+BOX_BOTTOM_LEFT = "+"
+BOX_BOTTOM_RIGHT = "+"
+BOX_MID_LEFT = "+"
+BOX_MID_RIGHT = "+"
+BULLET = "*"
+CHECK = "OK"
+CROSS = "X"
+PROMPT = ">"
 
 
 class Color:

@@ -26,7 +26,7 @@ class BuildDistributionTests(unittest.TestCase):
         rendered = output.getvalue()
         self.assertIn("compiled", rendered)
         self.assertIn("warning", rendered)
-        self.assertIn(chr(0x256D), rendered)
+        self.assertIn("+", rendered)
 
     @patch("cli.build_dist.subprocess.run")
     def test_failed_build_command_raises_after_rendering_output(self, run_mock) -> None:  # type: ignore[no-untyped-def]
