@@ -67,8 +67,11 @@ def _supervise_gpu_launch() -> int:
         try:
             exit_code = child.wait()
         except KeyboardInterrupt:
-            if child.poll() is None:
+            try:
                 child.terminate()
+            except OSError:
+                pass
+            else:
                 try:
                     child.wait(timeout=5)
                 except subprocess.TimeoutExpired:
