@@ -1,11 +1,13 @@
 """The shared terminal presentation library for all AIBrain CLI commands."""
 from __future__ import annotations
 
+import ctypes
 import os
 import re
 import shutil
 import subprocess
 import sys
+from ctypes import wintypes
 from pathlib import Path
 from typing import TextIO
 
@@ -15,6 +17,29 @@ DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
 COMMAND_INDENT = 2
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+class _ConsoleCoord(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
+
+
+class _ConsoleSmallRect(ctypes.Structure):
+    _fields_ = [
+        ("left", ctypes.c_short),
+        ("top", ctypes.c_short),
+        ("right", ctypes.c_short),
+        ("bottom", ctypes.c_short),
+    ]
+
+
+class _ConsoleScreenBufferInfo(ctypes.Structure):
+    _fields_ = [
+        ("size", _ConsoleCoord),
+        ("cursor", _ConsoleCoord),
+        ("attributes", ctypes.c_ushort),
+        ("window", _ConsoleSmallRect),
+        ("maximum_window_size", _ConsoleCoord),
+    ]
 
 BOX_HORIZONTAL = "\N{BOX DRAWINGS LIGHT HORIZONTAL}"
 BOX_VERTICAL = "\N{BOX DRAWINGS LIGHT VERTICAL}"
@@ -35,8 +60,6 @@ PROMPT = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
 # code page must match before print() writes the box-drawing glyphs.
 if os.name == "nt":
     try:
-        import ctypes
-
         kernel32 = ctypes.windll.kernel32
         if sys.stdout.isatty():
             kernel32.SetConsoleOutputCP(65001)
@@ -72,18 +95,7 @@ def terminal_width() -> int:
     width = shutil.get_terminal_size((DEFAULT_WIDTH, 24)).columns
     if os.name == "nt":
         try:
-            import ctypes
-
-            class Coord(ctypes.Structure):
-                _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
-
-            class SmallRect(ctypes.Structure):
-                _fields_ = [("left", ctypes.c_short), ("top", ctypes.c_short), ("right", ctypes.c_short), ("bottom", ctypes.c_short)]
-
-            class ConsoleScreenBufferInfo(ctypes.Structure):
-                _fields_ = [("size", Coord), ("cursor", Coord), ("attributes", ctypes.c_ushort), ("window", SmallRect), ("maximum_window_size", Coord)]
-
-            info = ConsoleScreenBufferInfo()
+            info = _ConsoleScreenBufferInfo()
             handle = ctypes.windll.kernel32.GetStdHandle(-11)
             if handle and ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
                 width = info.window.right - info.window.left + 1
@@ -98,18 +110,6 @@ def clear_screen() -> None:
         return
     if os.name == "nt":
         try:
-            import ctypes
-            from ctypes import wintypes
-
-            class Coord(ctypes.Structure):
-                _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
-
-            class SmallRect(ctypes.Structure):
-                _fields_ = [("left", ctypes.c_short), ("top", ctypes.c_short), ("right", ctypes.c_short), ("bottom", ctypes.c_short)]
-
-            class ConsoleScreenBufferInfo(ctypes.Structure):
-                _fields_ = [("size", Coord), ("cursor", Coord), ("attributes", ctypes.c_ushort), ("window", SmallRect), ("maximum_window_size", Coord)]
-
             kernel32 = ctypes.windll.kernel32
             # The second parameter is a 16-bit WCHAR value, not a string
             # pointer.  Without argtypes ctypes passes a pointer to " ", and
@@ -119,14 +119,14 @@ def clear_screen() -> None:
             kernel32.GetStdHandle.restype = wintypes.HANDLE
             kernel32.GetConsoleScreenBufferInfo.argtypes = (
                 wintypes.HANDLE,
-                ctypes.POINTER(ConsoleScreenBufferInfo),
+                ctypes.POINTER(_ConsoleScreenBufferInfo),
             )
             kernel32.GetConsoleScreenBufferInfo.restype = wintypes.BOOL
             kernel32.FillConsoleOutputCharacterW.argtypes = (
                 wintypes.HANDLE,
                 ctypes.c_wchar,
                 wintypes.DWORD,
-                Coord,
+                _ConsoleCoord,
                 ctypes.POINTER(wintypes.DWORD),
             )
             kernel32.FillConsoleOutputCharacterW.restype = wintypes.BOOL
@@ -134,18 +134,18 @@ def clear_screen() -> None:
                 wintypes.HANDLE,
                 wintypes.WORD,
                 wintypes.DWORD,
-                Coord,
+                _ConsoleCoord,
                 ctypes.POINTER(wintypes.DWORD),
             )
             kernel32.FillConsoleOutputAttribute.restype = wintypes.BOOL
-            kernel32.SetConsoleCursorPosition.argtypes = (wintypes.HANDLE, Coord)
+            kernel32.SetConsoleCursorPosition.argtypes = (wintypes.HANDLE, _ConsoleCoord)
             kernel32.SetConsoleCursorPosition.restype = wintypes.BOOL
             handle = kernel32.GetStdHandle(-11)
-            info = ConsoleScreenBufferInfo()
+            info = _ConsoleScreenBufferInfo()
             if handle and kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
                 cells = info.size.x * info.size.y
                 written = wintypes.DWORD()
-                origin = Coord(0, 0)
+                origin = _ConsoleCoord(0, 0)
                 kernel32.FillConsoleOutputCharacterW(handle, " ", cells, origin, ctypes.byref(written))
                 kernel32.FillConsoleOutputAttribute(handle, info.attributes, cells, origin, ctypes.byref(written))
                 kernel32.SetConsoleCursorPosition(handle, origin)

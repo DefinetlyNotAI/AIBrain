@@ -74,6 +74,8 @@ class ConsoleUiTests(unittest.TestCase):
                     info = args[1]._obj
                     info.size.x = 80
                     info.size.y = 25
+                    info.window.left = 0
+                    info.window.right = 79
                 return self.result
 
         get_handle = Call(1)
@@ -88,5 +90,6 @@ class ConsoleUiTests(unittest.TestCase):
         )
         with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty", return_value=True), patch("ctypes.windll", SimpleNamespace(kernel32=kernel32)):
             console_ui.clear_screen()
+            self.assertEqual(console_ui.terminal_width(), 80)
 
         self.assertEqual(fill_character.calls[0][1], " ")
