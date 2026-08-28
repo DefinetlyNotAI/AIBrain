@@ -152,6 +152,7 @@ class AnalysisWindow(QMainWindow):
         self.resize(970, 700)
         self._inspection_thread: QThread | None = None
         self._inspection_worker: AnalysisInspectionWorker | None = None
+        self._closing = False
         page = QWidget()
         layout = QVBoxLayout(page)
         title = QLabel("Analysis+ learned model inspector")
@@ -179,7 +180,7 @@ class AnalysisWindow(QMainWindow):
             QTimer.singleShot(0, self.refresh)
 
     def refresh(self) -> None:
-        if self._inspection_thread is not None:
+        if self._closing or self._inspection_thread is not None:
             return
         path = ConnectomeAnalyzer.default_model_path()
         if not path.is_file():
@@ -218,7 +219,19 @@ class AnalysisWindow(QMainWindow):
     def _inspection_finished(self) -> None:
         self._inspection_thread = None
         self._inspection_worker = None
+        if self._closing:
+            QTimer.singleShot(0, self.close)
+            return
         self.inspection_finished.emit("Status: Healthy" in self.summary.toPlainText())
+
+    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        if self._inspection_thread is not None:
+            self._closing = True
+            self._inspection_thread.quit()
+            self.hide()
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     def inspect_export(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(

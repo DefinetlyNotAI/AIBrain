@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from threading import Event
 
-from PySide6.QtCore import QObject, QProcess, QThread, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QProcess, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
@@ -68,6 +68,7 @@ class DiagnosticsWindow(QDialog):
         self._diagnostics_thread: QThread | None = None
         self._diagnostics_worker: DiagnosticsWorker | None = None
         self._last_refresh_succeeded = False
+        self._closing = False
         self._build()
         if auto_refresh:
             self.refresh()
@@ -125,7 +126,7 @@ class DiagnosticsWindow(QDialog):
         self._update_actions()
 
     def refresh(self) -> None:
-        if self._diagnostics_thread is not None:
+        if self._closing or self._diagnostics_thread is not None:
             return
         self.table.clear()
         self._last_refresh_succeeded = False
@@ -179,6 +180,9 @@ class DiagnosticsWindow(QDialog):
         self._diagnostics_worker = None
         self._set_refreshing(False)
         self._update_actions()
+        if self._closing:
+            QTimer.singleShot(0, self.close)
+            return
         self.inspection_finished.emit(self._last_refresh_succeeded)
 
     def _set_refreshing(self, refreshing: bool) -> None:
@@ -272,6 +276,12 @@ class DiagnosticsWindow(QDialog):
         if self._diagnostics_worker is not None:
             self._diagnostics_worker.cancel()
         if self._diagnostics_thread is not None:
+            # Do not wait from closeEvent: a backend load can take longer than
+            # an event-loop turn. Hide now and close for real after the worker
+            # returns and its QThread has finished.
+            self._closing = True
             self._diagnostics_thread.quit()
-            self._diagnostics_thread.wait(10_000)
+            self.hide()
+            event.ignore()
+            return
         super().closeEvent(event)

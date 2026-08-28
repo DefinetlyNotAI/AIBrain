@@ -18,7 +18,7 @@ def main() -> int:
     if not require_managed_runtime(ROOT, "analysis"):
         return 1
     clear_screen()
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import QTimer, Qt
     from PySide6.QtWidgets import QApplication
     from src.app.analysis_window import AnalysisWindow
     from src.app.loading_window import LoadingWindow
@@ -27,6 +27,7 @@ def main() -> int:
     configure_logging("analysis")
     header("AIBrain", "Persisted analysis-model inspector")
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("AIBrain Analysis")
     interrupted = False
     previous_sigint_handler = signal.getsignal(signal.SIGINT)
@@ -45,7 +46,9 @@ def main() -> int:
     )
     window = AnalysisWindow(auto_refresh=False)
     window.setStyleSheet(STYLESHEET)
-    loading.cancelled.connect(app.quit)
+    window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    loading.cancelled.connect(window.close)
+    window.destroyed.connect(app.quit)
 
     def open_inspector(_healthy: bool) -> None:
         loading.finish()

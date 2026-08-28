@@ -18,13 +18,14 @@ def main() -> int:
     if not require_managed_runtime(ROOT, "diagnostic"):
         return 1
     clear_screen()
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import QTimer, Qt
     from PySide6.QtWidgets import QApplication
     from src.app.diagnostics_window import DiagnosticsWindow
     from src.app.loading_window import LoadingWindow
 
     configure_logging("diagnostic")
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("AIBrain Repair and Diagnostics")
     interrupted = False
     previous_sigint_handler = signal.getsignal(signal.SIGINT)
@@ -42,8 +43,9 @@ def main() -> int:
         detail_text="Inspecting local Ollama models",
     )
     window = DiagnosticsWindow(auto_refresh=False)
+    window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     loading.cancelled.connect(window.close)
-    loading.cancelled.connect(app.quit)
+    window.destroyed.connect(app.quit)
 
     def open_diagnostics(_healthy: bool) -> None:
         loading.finish()

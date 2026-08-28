@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import struct
 import tempfile
@@ -8,7 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.models.diagnostics import OllamaDiagnostics
-from src.app.diagnostics_window import normalize_process_output
+from src.app.analysis_window import AnalysisWindow
+from src.app.diagnostics_window import DiagnosticsWindow, normalize_process_output
 from src.models.model_info import ModelInfo
 
 
@@ -16,6 +18,14 @@ class ModelDiagnosticsTests(unittest.TestCase):
     def test_process_output_removes_terminal_control_sequences(self) -> None:
         rendered = normalize_process_output("writing manifest \x1b[K\rsuccess \x1b[K\x1b[?25h\x1b[?2026l")
         self.assertEqual(rendered, "writing manifest \nsuccess ")
+
+    def test_inspection_windows_defer_close_until_their_worker_has_finished(self) -> None:
+        diagnostics_close = inspect.getsource(DiagnosticsWindow.closeEvent)
+        analysis_close = inspect.getsource(AnalysisWindow.closeEvent)
+
+        self.assertIn("event.ignore()", diagnostics_close)
+        self.assertNotIn(".wait(", diagnostics_close)
+        self.assertIn("event.ignore()", analysis_close)
     def _write_manifest(self, root: Path, *, blob_data: bytes) -> Path:
         manifest = root / "manifests" / "registry.ollama.ai" / "library" / "demo" / "latest"
         blob = root / "blobs" / "sha256-demo"
