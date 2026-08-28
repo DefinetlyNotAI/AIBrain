@@ -16,21 +16,36 @@ MIN_WIDTH = 60
 COMMAND_INDENT = 2
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
-# Keep every character emitted by the shared CLI renderer ASCII.  Windows
-# terminals disagree on how redirected output and code-page changes interact;
-# ASCII avoids that entire class of corrupted glyphs while preserving layout.
-BOX_HORIZONTAL = "-"
-BOX_VERTICAL = "|"
-BOX_TOP_LEFT = "+"
-BOX_TOP_RIGHT = "+"
-BOX_BOTTOM_LEFT = "+"
-BOX_BOTTOM_RIGHT = "+"
-BOX_MID_LEFT = "+"
-BOX_MID_RIGHT = "+"
-BULLET = "*"
-CHECK = "OK"
-CROSS = "X"
-PROMPT = ">"
+BOX_HORIZONTAL = "\N{BOX DRAWINGS LIGHT HORIZONTAL}"
+BOX_VERTICAL = "\N{BOX DRAWINGS LIGHT VERTICAL}"
+BOX_TOP_LEFT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}"
+BOX_TOP_RIGHT = "\N{BOX DRAWINGS LIGHT ARC DOWN AND LEFT}"
+BOX_BOTTOM_LEFT = "\N{BOX DRAWINGS LIGHT ARC UP AND RIGHT}"
+BOX_BOTTOM_RIGHT = "\N{BOX DRAWINGS LIGHT ARC UP AND LEFT}"
+BOX_MID_LEFT = "\N{BOX DRAWINGS LIGHT VERTICAL AND RIGHT}"
+BOX_MID_RIGHT = "\N{BOX DRAWINGS LIGHT VERTICAL AND LEFT}"
+BULLET = "\N{BLACK CIRCLE}"
+CHECK = "\N{CHECK MARK}"
+CROSS = "\N{MULTIPLICATION X}"
+PROMPT = "\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}"
+
+
+# Python uses the active Windows legacy code page for redirected output on
+# some hosts.  Configure UTF-8 once in the shared UI module; the actual console
+# code page must match before print() writes the box-drawing glyphs.
+if os.name == "nt":
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        if sys.stdout.isatty():
+            kernel32.SetConsoleOutputCP(65001)
+            kernel32.SetConsoleCP(65001)
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, OSError):
+        pass
 
 
 class Color:
@@ -84,6 +99,7 @@ def clear_screen() -> None:
     if os.name == "nt":
         try:
             import ctypes
+            from ctypes import wintypes
 
             class Coord(ctypes.Structure):
                 _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
@@ -95,11 +111,40 @@ def clear_screen() -> None:
                 _fields_ = [("size", Coord), ("cursor", Coord), ("attributes", ctypes.c_ushort), ("window", SmallRect), ("maximum_window_size", Coord)]
 
             kernel32 = ctypes.windll.kernel32
+            # The second parameter is a 16-bit WCHAR value, not a string
+            # pointer.  Without argtypes ctypes passes a pointer to " ", and
+            # Windows fills the console with the low word of that address
+            # (observed as repeated CJK glyphs such as U+4A00).
+            kernel32.GetStdHandle.argtypes = (ctypes.c_long,)
+            kernel32.GetStdHandle.restype = wintypes.HANDLE
+            kernel32.GetConsoleScreenBufferInfo.argtypes = (
+                wintypes.HANDLE,
+                ctypes.POINTER(ConsoleScreenBufferInfo),
+            )
+            kernel32.GetConsoleScreenBufferInfo.restype = wintypes.BOOL
+            kernel32.FillConsoleOutputCharacterW.argtypes = (
+                wintypes.HANDLE,
+                ctypes.c_wchar,
+                wintypes.DWORD,
+                Coord,
+                ctypes.POINTER(wintypes.DWORD),
+            )
+            kernel32.FillConsoleOutputCharacterW.restype = wintypes.BOOL
+            kernel32.FillConsoleOutputAttribute.argtypes = (
+                wintypes.HANDLE,
+                wintypes.WORD,
+                wintypes.DWORD,
+                Coord,
+                ctypes.POINTER(wintypes.DWORD),
+            )
+            kernel32.FillConsoleOutputAttribute.restype = wintypes.BOOL
+            kernel32.SetConsoleCursorPosition.argtypes = (wintypes.HANDLE, Coord)
+            kernel32.SetConsoleCursorPosition.restype = wintypes.BOOL
             handle = kernel32.GetStdHandle(-11)
             info = ConsoleScreenBufferInfo()
             if handle and kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
                 cells = info.size.x * info.size.y
-                written = ctypes.c_ulong()
+                written = wintypes.DWORD()
                 origin = Coord(0, 0)
                 kernel32.FillConsoleOutputCharacterW(handle, " ", cells, origin, ctypes.byref(written))
                 kernel32.FillConsoleOutputAttribute(handle, info.attributes, cells, origin, ctypes.byref(written))
