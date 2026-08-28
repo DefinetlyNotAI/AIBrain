@@ -62,14 +62,16 @@ class ModelDiagnosticsTests(unittest.TestCase):
             self.assertTrue(blob.exists())
 
     @patch("src.models.diagnostics.ModelValidator.validate")
-    def test_backend_diagnostics_report_a_model_that_cannot_load(self, validate) -> None:  # type: ignore[no-untyped-def]
+    def test_backend_diagnostics_report_a_model_that_cannot_load(self,
+                                                                 validate) -> None:  # type: ignore[no-untyped-def]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._write_manifest(root, blob_data=b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
 
             def failed_validation(models, *_args, **_kwargs):  # type: ignore[no-untyped-def]
                 model = models[0]
-                return [ModelInfo(model.name, model.tag, model.blob_path, available=False, error="llama.cpp rejected model")]
+                return [ModelInfo(model.name, model.tag, model.blob_path, available=False,
+                                  error="llama.cpp rejected model")]
 
             validate.side_effect = failed_validation
             diagnostics = OllamaDiagnostics(root).inspect(verify_backend=True)

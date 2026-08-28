@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QFrame, Q
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
 
-
 _SELECTABLE_TEXT_FLAGS = Qt.TextInteractionFlag(
     Qt.TextInteractionFlag.TextSelectableByMouse.value
     | Qt.TextInteractionFlag.TextSelectableByKeyboard.value
@@ -81,7 +80,8 @@ class ChatPanel(QWidget):
         self.models.currentIndexChanged.connect(lambda _: self.modelChanged.emit(self.models.currentData()))
         layout.addWidget(self.models)
         self.diagnostics = QPushButton("Repair and Diagnostics")
-        self.diagnostics.setToolTip("Inspect invalid Ollama manifests, repair a selected model, or remove a stale manifest")
+        self.diagnostics.setToolTip(
+            "Inspect invalid Ollama manifests, repair a selected model, or remove a stale manifest")
         self.diagnostics.clicked.connect(self.diagnosticsRequested)
         layout.addWidget(self.diagnostics)
         self.messages_layout = QVBoxLayout()

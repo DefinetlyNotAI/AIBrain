@@ -33,6 +33,8 @@ def gpu_relaunch_attempt() -> int:
 def can_request_gpu_relaunch() -> bool:
     """Allow one renderer-triggered restart after a wrong adapter is detected."""
     return sys.platform == "win32" and gpu_relaunch_attempt() < _MAX_GPU_RELAUNCH_ATTEMPTS
+
+
 def discover_render_adapters() -> list[RenderAdapter]:
     """Discover Windows display adapters; Qt/OpenGL makes the final device choice."""
     command = ["powershell", "-NoProfile", "-Command",
@@ -140,5 +142,3 @@ def should_prefer_high_performance_gpu() -> bool:
     except (FileNotFoundError, OSError):
         # AIBrain defaults to the discrete/high-performance renderer.
         return True
-
-

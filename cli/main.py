@@ -1,11 +1,11 @@
 """AIBrain desktop entry point."""
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import subprocess
 import sys
-import logging
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -168,10 +168,10 @@ def main() -> int:
 
         def _show_main_when_ready(self) -> None:
             if (
-                self._gpu_relaunch_requested
-                or not loading.isVisible()
-                or self._models is None
-                or not self._gpu_checked
+                    self._gpu_relaunch_requested
+                    or not loading.isVisible()
+                    or self._models is None
+                    or not self._gpu_checked
             ):
                 return
             window = MainWindow(self._models)

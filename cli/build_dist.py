@@ -12,14 +12,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.utils.console_ui import Color, CommandOutputBox, clear_screen, command_preview, error, header, panel, section
 from src.utils.gpu import set_windows_executable_gpu_preference
-
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
@@ -38,12 +36,15 @@ class ApplicationTarget:
 
 APPLICATIONS = (
     ApplicationTarget("ai_brain", "ai_brain.exe", ROOT / "cli" / "main.py", ROOT / "ico" / "brain.ico", "attach"),
-    ApplicationTarget("diagnostic", "diagnostic.exe", ROOT / "cli" / "diagnostic.py", ROOT / "ico" / "diagnostic.ico", "disable"),
-    ApplicationTarget("analysis", "analysis.exe", ROOT / "cli" / "analysis.py", ROOT / "ico" / "analysis.ico", "attach"),
+    ApplicationTarget("diagnostic", "diagnostic.exe", ROOT / "cli" / "diagnostic.py", ROOT / "ico" / "diagnostic.ico",
+                      "disable"),
+    ApplicationTarget("analysis", "analysis.exe", ROOT / "cli" / "analysis.py", ROOT / "ico" / "analysis.ico",
+                      "attach"),
 )
 
 
-def _render_new_build_output(output_path: Path, offset: int, pending: str, output_box: CommandOutputBox) -> tuple[int, str]:
+def _render_new_build_output(output_path: Path, offset: int, pending: str, output_box: CommandOutputBox) -> tuple[
+    int, str]:
     """Render only completed lines appended to Nuitka's redirected output file."""
     output = output_path.read_text(encoding="utf-8", errors="replace")
     if len(output) <= offset:

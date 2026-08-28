@@ -14,7 +14,8 @@ from src.utils.console_ui import BOX_TOP_LEFT
 class BuildDistributionTests(unittest.TestCase):
     @patch("cli.build_dist.time.sleep")
     @patch("cli.build_dist.subprocess.Popen")
-    def test_build_command_streams_output_inside_shared_framed_panel(self, popen_mock, sleep_mock) -> None:  # type: ignore[no-untyped-def]
+    def test_build_command_streams_output_inside_shared_framed_panel(self, popen_mock,
+                                                                     sleep_mock) -> None:  # type: ignore[no-untyped-def]
         class StreamingProcess:
             def __init__(self, output_file) -> None:  # type: ignore[no-untyped-def]
                 self.output_file = output_file
@@ -47,7 +48,8 @@ class BuildDistributionTests(unittest.TestCase):
 
     @patch("cli.build_dist.time.sleep")
     @patch("cli.build_dist.subprocess.Popen")
-    def test_failed_build_command_raises_after_rendering_output(self, popen_mock, _sleep_mock) -> None:  # type: ignore[no-untyped-def]
+    def test_failed_build_command_raises_after_rendering_output(self, popen_mock,
+                                                                _sleep_mock) -> None:  # type: ignore[no-untyped-def]
         class FailedProcess:
             def __init__(self, output_file) -> None:  # type: ignore[no-untyped-def]
                 output_file.write("broken\n")

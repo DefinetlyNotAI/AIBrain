@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 _APP_ROOT = (
     Path(sys.argv[0]).resolve().parent
     if "__compiled__" in globals()

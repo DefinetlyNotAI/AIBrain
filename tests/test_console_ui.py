@@ -44,7 +44,7 @@ class ConsoleUiTests(unittest.TestCase):
     def test_every_cli_entry_point_uses_the_native_clear_screen_api(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for source_file in sorted(
-            path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
+                path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
         ):
             with self.subTest(source_file=source_file):
                 content = source_file.read_text(encoding="utf-8")
@@ -87,7 +87,10 @@ class ConsoleUiTests(unittest.TestCase):
             fill_console_output_attribute=Call(1),
             set_console_cursor_position=Call(1),
         )
-        with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty", return_value=True), patch.object(console_ui, "_kernel32_bindings", return_value=kernel32):
+        with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty",
+                                                                     return_value=True), patch.object(console_ui,
+                                                                                                      "_kernel32_bindings",
+                                                                                                      return_value=kernel32):
             console_ui.clear_screen()
             self.assertEqual(console_ui.terminal_width(), 76)
 
@@ -123,7 +126,10 @@ class ConsoleUiTests(unittest.TestCase):
             set_console_cursor_position=Mock(return_value=1),
         )
 
-        with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty", return_value=False), patch.object(console_ui, "_kernel32_bindings", return_value=kernel32):
+        with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty",
+                                                                     return_value=False), patch.object(console_ui,
+                                                                                                       "_kernel32_bindings",
+                                                                                                       return_value=kernel32):
             console_ui.clear_screen()
 
         self.assertEqual(create_file.call_args.args[0], "CONOUT$")
@@ -137,7 +143,8 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("ctypes.windll", source)
 
     def test_terminal_width_reserves_four_columns_at_the_right_edge(self) -> None:
-        with patch.object(console_ui.os, "name", "posix"), patch.object(console_ui.shutil, "get_terminal_size", return_value=os.terminal_size((100, 24))):
+        with patch.object(console_ui.os, "name", "posix"), patch.object(console_ui.shutil, "get_terminal_size",
+                                                                        return_value=os.terminal_size((100, 24))):
             self.assertEqual(console_ui.terminal_width(), 96)
 
     def test_command_preview_wraps_with_aligned_continuations(self) -> None:

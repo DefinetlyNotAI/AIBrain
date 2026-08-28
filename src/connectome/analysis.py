@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import os
-from pathlib import Path
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TypedDict
 
 import numpy as np
 
 from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome_kernels import native
-
-from typing import TypedDict
-
 
 LOG = logging.getLogger(__name__)
 MODEL_FILENAME = "connectome_autoencoder_v1.npz"

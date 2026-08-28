@@ -5,7 +5,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -23,7 +22,8 @@ def relative_age(path: Path) -> str:
         amount, remainder = divmod(seconds, length)
         if amount:
             suffix = "" if amount == 1 else "s"
-            return f"{amount} {unit}{suffix}" + (f" {remainder // 60} minutes" if unit == "day" and remainder >= 60 else "")
+            return f"{amount} {unit}{suffix}" + (
+                f" {remainder // 60} minutes" if unit == "day" and remainder >= 60 else "")
     return "unknown"
 
 
@@ -55,7 +55,8 @@ def main() -> int:
                     (f"{item.reference} features", f"GGUF blob, {size}"),
                 ]
             )
-        panel("LOCAL MODEL HEALTH", rows, footer="Health includes a direct llama.cpp compatibility load.", tone=Color.GREEN if available else Color.YELLOW)
+        panel("LOCAL MODEL HEALTH", rows, footer="Health includes a direct llama.cpp compatibility load.",
+              tone=Color.GREEN if available else Color.YELLOW)
     else:
         status("INFO", "No local Ollama manifests were found", Color.YELLOW)
     info(f"Validated local GGUF models available for analysis: {len(available)}")

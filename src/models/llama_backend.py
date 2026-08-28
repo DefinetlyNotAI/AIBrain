@@ -25,9 +25,9 @@ def _handle_native_log(_level: int, text: bytes | None, _user_data: object) -> N
         message = text.decode("utf-8", errors="replace").strip()
         lower = message.lower()
         if message and message.strip(".") and (
-            "error" in lower
-            or "failed" in lower
-            or "unknown model architecture" in lower
+                "error" in lower
+                or "failed" in lower
+                or "unknown model architecture" in lower
         ):
             LOG.error("llama.cpp: %s", message)
     except Exception:

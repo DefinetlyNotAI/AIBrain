@@ -11,7 +11,6 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Callable, TextIO, cast
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
@@ -128,6 +127,7 @@ def _kernel32_bindings() -> _Kernel32Bindings:
     """Return explicitly typed Kernel32 callables without dynamic DLL attributes."""
     return _Kernel32Bindings()
 
+
 try:
     "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}".encode(sys.stdout.encoding or "utf-8")
 except (LookupError, UnicodeEncodeError):
@@ -216,7 +216,8 @@ def _clear_native_console() -> bool:
         written = wintypes.DWORD()
         origin = _ConsoleCoord(0, 0)
         characters_cleared = kernel32.fill_console_output_character(handle, " ", cells, origin, ctypes.byref(written))
-        attributes_cleared = kernel32.fill_console_output_attribute(handle, info.attributes, cells, origin, ctypes.byref(written))
+        attributes_cleared = kernel32.fill_console_output_attribute(handle, info.attributes, cells, origin,
+                                                                    ctypes.byref(written))
         cursor_reset = kernel32.set_console_cursor_position(handle, origin)
         return bool(characters_cleared and attributes_cleared and cursor_reset)
     finally:
@@ -333,7 +334,8 @@ def wrap_prefixed_text(prefix: str, text: str, *, width: int, continuation: str 
 
 
 def _box_line(content: str, *, width: int, tone: str) -> None:
-    print(color(BOX_VERTICAL, tone) + " " + color(content.ljust(width - 2), Color.WHITE) + " " + color(BOX_VERTICAL, tone))
+    print(color(BOX_VERTICAL, tone) + " " + color(content.ljust(width - 2), Color.WHITE) + " " + color(BOX_VERTICAL,
+                                                                                                       tone))
 
 
 def header(title: str = "AIBrain", subtitle: str = "Neural Runtime Installer") -> None:
@@ -353,7 +355,8 @@ def section(title: str, number: int) -> None:
     print(color(rule(), Color.GRAY))
 
 
-def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = None, footer: str | None = None, tone: str = Color.CYAN) -> None:
+def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = None, footer: str | None = None,
+          tone: str = Color.CYAN) -> None:
     """Render a labelled summary panel shared by installer and build tools."""
     width = terminal_width()
     inner = width - 2
@@ -380,7 +383,8 @@ def instruction_list(steps: list[tuple[str, str, str]], *, stream: TextIO | None
     output = stream or sys.stdout
     print(file=output)
     for number, description, command_text in steps:
-        print("  " + color(number, Color.CYAN, Color.BOLD) + " " + color(description, Color.GRAY) + "   " + color(command_text, Color.WHITE, Color.BOLD), file=output)
+        print("  " + color(number, Color.CYAN, Color.BOLD) + " " + color(description, Color.GRAY) + "   " + color(
+            command_text, Color.WHITE, Color.BOLD), file=output)
     print(file=output)
 
 
@@ -422,7 +426,8 @@ def command_preview(command_line: list[str]) -> None:
     print()
     for index, line in enumerate(lines):
         if index == 0:
-            print(color(line[:len(prefix) - 1], Color.MAGENTA, Color.BOLD) + " " + color(line[len(prefix):], Color.DIM, Color.WHITE))
+            print(color(line[:len(prefix) - 1], Color.MAGENTA, Color.BOLD) + " " + color(line[len(prefix):], Color.DIM,
+                                                                                         Color.WHITE))
         else:
             print(color(line, Color.DIM, Color.WHITE))
 
@@ -472,7 +477,8 @@ class CommandOutputBox:
     def close(self) -> None:
         if not self._is_open:
             return
-        print(self.prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * self.inner + BOX_BOTTOM_RIGHT, Color.GRAY), flush=True)
+        print(self.prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * self.inner + BOX_BOTTOM_RIGHT, Color.GRAY),
+              flush=True)
         self._is_open = False
 
 

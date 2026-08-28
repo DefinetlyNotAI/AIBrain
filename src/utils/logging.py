@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAX_LOG_BYTES = 5 * 1024 * 1024
 
@@ -75,7 +74,7 @@ class BoundedFileHandler(logging.FileHandler):
 
 
 def _uncaught_exception(
-    exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
+        exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
 ) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         return

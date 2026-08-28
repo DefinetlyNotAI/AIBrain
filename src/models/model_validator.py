@@ -16,11 +16,11 @@ class ModelValidator:
 
     @staticmethod
     def validate(
-        candidates: list[ModelInfo],
-        cancelled: Event,
-        report: Callable[[int, int, str], None],
-        *,
-        verify_backend: bool = True,
+            candidates: list[ModelInfo],
+            cancelled: Event,
+            report: Callable[[int, int, str], None],
+            *,
+            verify_backend: bool = True,
     ) -> list[ModelInfo]:
         """Confirm that each unique GGUF has a valid header and loads in llama.cpp."""
         validated: list[ModelInfo] = []

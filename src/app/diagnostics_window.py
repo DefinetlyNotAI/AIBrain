@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from PySide6.QtCore import QProcess, Qt
-from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -23,7 +22,6 @@ from PySide6.QtWidgets import (
 from ..models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from ..utils.gpu import discover_render_adapters, should_prefer_high_performance_gpu
 from ..utils.logging import PROJECT_ROOT
-
 
 LOG = logging.getLogger(__name__)
 
@@ -96,7 +94,8 @@ class DiagnosticsWindow(QDialog):
     def refresh(self) -> None:
         self.table.clear()
         adapters = discover_render_adapters()
-        adapter_text = ", ".join(adapter.name for adapter in adapters) if adapters else "No display adapters could be queried"
+        adapter_text = ", ".join(
+            adapter.name for adapter in adapters) if adapters else "No display adapters could be queried"
         preference = "high-performance GPU requested" if should_prefer_high_performance_gpu() else "Windows system-default GPU requested"
         self.system_status.setText(f"Render diagnostics: {preference}. Detected adapters: {adapter_text}.")
         try:
