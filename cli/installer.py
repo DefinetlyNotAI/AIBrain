@@ -121,7 +121,7 @@ def detect_nvidia() -> GpuCapability | None:
 
     match = re.search(
         r"CUDA Version:\s*(\d+)\.(\d+)",
-        status.stdout,
+        status.stdout + "\n" + status.stderr,
     )
 
     return GpuCapability(
