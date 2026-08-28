@@ -29,7 +29,16 @@ QLabel#title { font-size: 22px; font-weight: 650; color: #f2f8fb; }
 QLabel#muted { color: #88a0ae; }
 QLabel#mode { background: #123849; color: #82e7ff; border-radius: 9px; padding: 4px 8px; font-weight: 700; }
 QFrame#runtimeCard, QFrame#actionCard, QGroupBox { background: #0d202b; border: 1px solid #1d3b49; border-radius: 9px; }
+QFrame#metricCard { background: #0d202b; border: 1px solid #1d3b49; border-radius: 9px; }
 QFrame#runtimeCard, QFrame#actionCard { padding: 4px; }
+QLabel#cardLabel { color: #88a0ae; font-size: 9px; font-weight: 700; }
+QLabel#cardValue { color: #f2f8fb; font-size: 18px; font-weight: 700; }
+QLabel#statusBadge_neutral, QLabel#statusBadge_ready, QLabel#statusBadge_caution { border-radius: 8px; padding: 4px 8px; font-weight: 700; }
+QLabel#statusBadge_neutral { background: #123849; color: #82e7ff; }
+QLabel#statusBadge_ready { background: #164831; color: #8df3ba; }
+QLabel#statusBadge_caution { background: #4a3b19; color: #ffe08b; }
+QProgressBar { background: #09131c; border: 1px solid #264553; border-radius: 5px; text-align: center; min-height: 16px; }
+QProgressBar::chunk { background: #1b879b; border-radius: 4px; }
 QGroupBox { margin-top: 10px; padding: 10px 8px 6px 8px; font-weight: 650; color: #8cdeef; }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
 QLabel#overlay { background: #0c1e2a; border: 1px solid #193746; border-radius: 8px; padding: 8px; color: #9ac4d4; }
@@ -96,6 +105,7 @@ class MainWindow(QMainWindow):
         self.chat.infiniteRequested.connect(self.start_infinite_simulation)
         self.chat.diagnosticsRequested.connect(self.open_diagnostics)
         self.chat.analysisRequested.connect(self.open_analysis)
+        self.chat.modeChanged.connect(self._change_mode)
         self.chat.modelChanged.connect(self.select_model)
         self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
@@ -145,7 +155,7 @@ class MainWindow(QMainWindow):
         self.chat.set_models(models)
         available = [model for model in models if model.available]
         if available:
-            self.chat.stats.setText(f"Validated {len(available)} GGUF model(s); select one to begin.")
+            self.chat.stats.setText("Select a local GGUF model to begin.")
         else:
             self.chat.stats.setText(
                 "No usable GGUF blob found in %USERPROFILE%\\.ollama\\models. "
@@ -158,24 +168,34 @@ class MainWindow(QMainWindow):
         self.unloadModel.emit()
         self.simulation_worker.unload()
         self.current_model = model
+        self.chat.set_model_available(bool(model and model.available and model.blob_path))
         self.chat.set_analysis_available(False)
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
             self.visualizer.set_conversation(self.history)
             self.chat.clear_messages()
-            self.chat.stats.setText(
-                "Selected "
-                + model.label
-                + ("" if model.available else f" — {model.error or 'Unknown error'}")
-                + " · conversation and connectome refreshed"
+            self.chat.models.setToolTip(
+                f"{model.label}\n{model.blob_path}" + (f"\n{model.error}" if model.error else "")
             )
+            self.chat.stats.setText("Conversation and connectome refreshed.")
 
     def _handle_escape(self) -> None:
-        if self.chat.stop.isEnabled():
+        if self.chat.send.text() == "Stop":
             self.stop()
         else:
             self.chat.stats.setText("Escape interrupts an active generation.")
+
+    def _change_mode(self, infinite: bool) -> None:
+        """Switching modes is intentionally a clean conversation/replay boundary."""
+        self.history.clear()
+        self.simulation_transcript.clear()
+        self._analysis_is_infinite = infinite
+        self.visualizer.begin_recording()
+        self.visualizer.set_conversation([])
+        self.chat.set_analysis_mode(infinite)
+        self.chat.set_analysis_available(False)
+        self.chat.stats.setText("Infinite Mode ready." if infinite else "Normal Chat ready.")
 
     def open_diagnostics(self) -> None:
         """Open model recovery without interrupting a currently loaded model."""
@@ -197,7 +217,7 @@ class MainWindow(QMainWindow):
 
         def show_diagnostics(_healthy: bool) -> None:
             loading.finish()
-            window.show()
+            window.showMaximized()
 
         def forget_diagnostics() -> None:
             if getattr(self, "_diagnostics_window", None) is window:
@@ -267,12 +287,12 @@ class MainWindow(QMainWindow):
         self.chat.stats.setText("Stopping after the current generated token…")
 
     def start_infinite_simulation(self, seed: str) -> None:
-        self._analysis_is_infinite = True
-        self.chat.set_analysis_mode(True)
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
             QMessageBox.warning(self, "Model unavailable",
                                 "Choose an available GGUF model discovered from Ollama first.")
             return
+        self._analysis_is_infinite = True
+        self.chat.set_analysis_mode(True)
         self.config = self.chat.config()
         save_generation_settings(self.config)
         self.unloadModel.emit()

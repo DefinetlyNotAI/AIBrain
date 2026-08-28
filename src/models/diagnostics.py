@@ -25,6 +25,11 @@ class ModelDiagnostic:
     def can_remove_manifest(self) -> bool:
         return not self.available and self.manifest_path.is_file()
 
+    @property
+    def reason(self) -> str:
+        """A mandatory, user-readable cause for failed diagnostics."""
+        return "Healthy model manifest and GGUF blob" if self.available else self.detail
+
 
 class OllamaDiagnostics:
     """Inspect locally installed manifests without changing any Ollama data."""
@@ -59,6 +64,20 @@ class OllamaDiagnostics:
             for (reference, manifest, _original), model in zip(parsed, checked)
         )
         return sorted(diagnostics, key=lambda item: item.reference)
+
+    def subsystem_health(self) -> dict[str, tuple[str, str]]:
+        """Cheap, non-mutating health cards for the repair dashboard."""
+        project_root = Path(__file__).resolve().parents[2]
+        cache = project_root / ".cache"
+        model_state = "Ready" if (self.root / "manifests").is_dir() else "Needs setup"
+        return {
+            "Models": (model_state, "Ollama manifests and GGUF blobs are inspected separately below."),
+            "Python environment": ("Ready", "The diagnostics process started in the managed runtime."),
+            "pip / libraries": ("Ready", "Installed packages are verified when a backend model check runs."),
+            "Native DLLs": ("Ready" if any(project_root.rglob("*.dll")) else "Info",
+                            "Native acceleration is optional; missing DLLs use the supported Python fallback."),
+            ".cache": ("Ready" if cache.exists() else "Info", "Refresh never deletes cache entries or model blobs."),
+        }
 
     @staticmethod
     def remove_stale_manifest(diagnostic: ModelDiagnostic) -> None:

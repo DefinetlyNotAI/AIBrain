@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
@@ -66,6 +66,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         super().__init__()
         self.graph, self.field = graph, field
         self.yaw, self.pitch, self.zoom = .25, -.2, 1.0
+        self.pan_x, self.pan_y = 0.0, 0.0
         self._last_pos: QPointF | None = None
         self.paused = False
         self._ctx = self._moderngl = None
@@ -109,6 +110,7 @@ class ConnectomeRenderer(QOpenGLWidget):
                 requested = should_prefer_high_performance_gpu()
                 if requested and can_request_gpu_relaunch():
                     message = f"GPU mismatch: OpenGL selected {vendor} - {renderer_name}, expected NVIDIA"
+                    QSettings().setValue("opengl_gpu_mismatch_reason", message)
                     renderer_name += "; GPU mismatch; restarting through the startup loader"
                     LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
                     self.backendChanged.emit("GPU mismatch detected — restarting through the startup loader…")
@@ -116,9 +118,14 @@ class ConnectomeRenderer(QOpenGLWidget):
                     return
                 if requested:
                     renderer_name += "; GPU mismatch (NVIDIA retry already attempted)"
+                    QSettings().setValue(
+                        "opengl_gpu_mismatch_reason",
+                        f"OpenGL selected {vendor} - {renderer_name}; Windows or the driver ignored the preference",
+                    )
                     LOG.warning("OpenGL context is not on NVIDIA: vendor=%s renderer=%s", vendor, renderer_name)
                 else:
                     renderer_name += " · Windows system-default GPU"
+                    QSettings().remove("opengl_gpu_mismatch_reason")
             label = f"ModernGL GPU - {renderer_name}"
             LOG.info("Connectome renderer initialized: %s", label)
             self.backendChanged.emit(label)
@@ -162,10 +169,12 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def _mvp(self) -> np.ndarray:
         aspect = max(self.width(), 1) / max(self.height(), 1)
-        scale = 1.0 / (16.0 * self.zoom)
+        scale = 1.0 / ((12.0 if self.view_mode == "2d" else 16.0) * self.zoom)
         depth_scale = 0.0 if self.view_mode == "2d" else .035
         projection = np.array(((scale / aspect, 0, 0, 0), (0, scale, 0, 0), (0, 0, depth_scale, 0), (0, 0, 0, 1)), dtype="f4")
         if self.view_mode == "2d":
+            projection[0, 3] = getattr(self, "pan_x", 0.0)
+            projection[1, 3] = getattr(self, "pan_y", 0.0)
             return np.ascontiguousarray(projection.T)
         cy, sy, cp, sp = np.cos(self.yaw), np.sin(self.yaw), np.cos(self.pitch), np.sin(self.pitch)
         rotate_y = np.array(((cy, 0, sy, 0), (0, 1, 0, 0), (-sy, 0, cy, 0), (0, 0, 0, 1)), dtype="f4")
@@ -223,8 +232,9 @@ class ConnectomeRenderer(QOpenGLWidget):
         p = self.graph.positions
         if self.view_mode == "2d":
             x, y = p[:, 0], p[:, 1]
-            scale = min(self.width(), self.height()) / (32 * self.zoom)
-            return np.column_stack((self.width() / 2 + x * scale, self.height() / 2 - y * scale))
+            scale = min(self.width(), self.height()) / (24 * self.zoom)
+            return np.column_stack((self.width() / 2 + self.pan_x * self.width() / 2 + x * scale,
+                                    self.height() / 2 - self.pan_y * self.height() / 2 - y * scale))
         cy, sy, cp, sp = np.cos(self.yaw), np.sin(self.yaw), np.cos(self.pitch), np.sin(self.pitch)
         x = p[:, 0] * cy - p[:, 2] * sy
         z = p[:, 0] * sy + p[:, 2] * cy
@@ -240,6 +250,12 @@ class ConnectomeRenderer(QOpenGLWidget):
             delta = event.position() - self._last_pos
             self.yaw += delta.x() * .008
             self.pitch = float(np.clip(self.pitch + delta.y() * .006, -1.3, 1.3))
+            self._last_pos = event.position()
+            self.update()
+        elif self.view_mode == "2d" and self._last_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            delta = event.position() - self._last_pos
+            self.pan_x += delta.x() * 2 / max(self.width(), 1)
+            self.pan_y -= delta.y() * 2 / max(self.height(), 1)
             self._last_pos = event.position()
             self.update()
 
@@ -260,11 +276,12 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def reset_camera(self) -> None:
         self.yaw, self.pitch, self.zoom = .25, -.2, 1.0
+        self.pan_x, self.pan_y = 0.0, 0.0
         self.update()
 
     def set_neuron_borders(self, visible: bool, width: float) -> None:
         self.show_neuron_borders = visible
-        self.neuron_border_width = float(np.clip(width, .01, .45))
+        self.neuron_border_width = float(np.clip(width, 0.0, 1.0))
         self.update()
 
     def set_projection_mode(self, mode: str, region_filter: int | None = None) -> None:

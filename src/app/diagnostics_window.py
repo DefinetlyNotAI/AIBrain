@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from threading import Event
 
-from PySide6.QtCore import QObject, QProcess, QThread, QTimer, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QProcess, QSettings, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
@@ -24,6 +24,7 @@ from ..models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from ..utils.gpu import discover_render_adapters, should_prefer_high_performance_gpu
 from ..utils.logging import PROJECT_ROOT
 from ..utils.console_ui import strip_ansi
+from .dashboard import metric_card, metric_grid
 
 LOG = logging.getLogger(__name__)
 
@@ -31,6 +32,32 @@ LOG = logging.getLogger(__name__)
 def normalize_process_output(output: str) -> str:
     """Convert terminal-oriented process output into readable Qt text."""
     return strip_ansi(output).replace("\r\n", "\n").replace("\r", "\n")
+
+
+class LiveOutputBuffer:
+    """Keep completed lines separate from a carriage-return progress line."""
+
+    def __init__(self) -> None:
+        self.completed_lines: list[str] = []
+        self.current_line = ""
+
+    def clear(self) -> None:
+        self.completed_lines.clear()
+        self.current_line = ""
+
+    def feed(self, output: str) -> None:
+        for character in strip_ansi(output):
+            if character == "\r":
+                self.current_line = ""
+            elif character == "\n":
+                self.completed_lines.append(self.current_line)
+                self.current_line = ""
+            else:
+                self.current_line += character
+        del self.completed_lines[:-499]
+
+    def render(self) -> str:
+        return "\n".join((*self.completed_lines, self.current_line)).rstrip("\n")
 
 
 class DiagnosticsWorker(QObject):
@@ -69,6 +96,7 @@ class DiagnosticsWindow(QDialog):
         self._diagnostics_worker: DiagnosticsWorker | None = None
         self._last_refresh_succeeded = False
         self._closing = False
+        self._live_output = LiveOutputBuffer()
         self._build()
         if auto_refresh:
             self.refresh()
@@ -85,6 +113,13 @@ class DiagnosticsWindow(QDialog):
         help_text.setWordWrap(True)
         help_text.setObjectName("muted")
         layout.addWidget(help_text)
+        self.subsystem_cards = {}
+        cards = QHBoxLayout()
+        for title in ("Models", "GPU / CUDA", "OpenGL rendering", "Python environment", "pip / libraries", "Native DLLs", ".cache"):
+            card, value, detail = metric_card(title, "Checking…")
+            cards.addWidget(card)
+            self.subsystem_cards[title] = (value, detail)
+        layout.addLayout(cards)
         self.system_status = QLabel()
         self.system_status.setObjectName("muted")
         self.system_status.setWordWrap(True)
@@ -112,6 +147,10 @@ class DiagnosticsWindow(QDialog):
         self.repair_button = QPushButton("Repair selected")
         self.remove_button = QPushButton("Remove stale manifest")
         self.open_logs_button = QPushButton("Open logs")
+        self.refresh_button.setToolTip("Re-run health checks without deleting any data")
+        self.repair_button.setToolTip("Re-download only the selected model through Ollama")
+        self.remove_button.setToolTip("Permanently remove only the selected invalid manifest after confirmation")
+        self.open_logs_button.setToolTip("Open the feature-specific console and crash logs")
         self.refresh_button.clicked.connect(self.refresh)
         self.repair_button.clicked.connect(self.repair_selected)
         self.remove_button.clicked.connect(self.remove_selected)
@@ -137,6 +176,7 @@ class DiagnosticsWindow(QDialog):
         self.system_status.setText(f"Render diagnostics: {preference}. Detected adapters: {adapter_text}.")
         self.system_status.setText(self.system_status.text() + "\nChecking local GGUF compatibility in the background…")
         self._set_refreshing(True)
+        self._refresh_subsystem_cards(adapters)
         thread = QThread(self)
         worker = DiagnosticsWorker()
         worker.moveToThread(thread)
@@ -160,8 +200,9 @@ class DiagnosticsWindow(QDialog):
             self.table.addTopLevelItem(item)
         for diagnostic in diagnostics:
             status = "Ready" if diagnostic.available else "Needs repair"
+            details = diagnostic.detail if diagnostic.available else f"{diagnostic.detail}\nREASON: {diagnostic.reason}"
             item = QTreeWidgetItem(
-                [diagnostic.reference, status, diagnostic.detail, str(diagnostic.manifest_path)]
+                [diagnostic.reference, status, details, str(diagnostic.manifest_path)]
             )
             item.setData(0, self._DIAGNOSTIC_ROLE, diagnostic)
             self.table.addTopLevelItem(item)
@@ -216,25 +257,30 @@ class DiagnosticsWindow(QDialog):
         process.errorOccurred.connect(self._repair_error)
         process.finished.connect(self._repair_finished)
         self._repair_process = process
+        self._live_output.clear()
         self.output.clear()
-        self.output.appendPlainText(f"Starting: ollama pull {diagnostic.reference}")
+        self._live_output.feed(f"Starting: ollama pull {diagnostic.reference}\n")
+        self.output.setPlainText(self._live_output.render())
         process.start()
         self._update_actions()
 
     def _append_repair_output(self) -> None:
         if self._repair_process is None:
             return
-        output = normalize_process_output(bytes(self._repair_process.readAllStandardOutput()).decode("utf-8", errors="replace"))
+        output = bytes(self._repair_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        self._live_output.feed(output)
+        self.output.setPlainText(self._live_output.render())
         self.output.moveCursor(QTextCursor.MoveOperation.End)
-        self.output.insertPlainText(output)
 
     def _repair_error(self, _error: QProcess.ProcessError) -> None:
         if self._repair_process is not None:
-            self.output.appendPlainText(f"Repair command error: {self._repair_process.errorString()}")
+            self._live_output.feed(f"Repair command error: {self._repair_process.errorString()}\n")
+            self.output.setPlainText(self._live_output.render())
 
     def _repair_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
         self._append_repair_output()
-        self.output.appendPlainText(f"Repair command finished with exit code {exit_code}.")
+        self._live_output.feed(f"Repair command finished with exit code {exit_code}.\n")
+        self.output.setPlainText(self._live_output.render())
         self._repair_process = None
         self._update_actions()
         self.refresh()
@@ -268,6 +314,20 @@ class DiagnosticsWindow(QDialog):
         logs = PROJECT_ROOT / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(logs)))
+
+    def _refresh_subsystem_cards(self, adapters: list[object]) -> None:
+        checks = OllamaDiagnostics().subsystem_health()
+        checks["GPU / CUDA"] = ("Ready" if adapters else "Info", "Adapter discovery is a preference signal; actual OpenGL is verified at launch.")
+        mismatch = str(QSettings().value("opengl_gpu_mismatch_reason", ""))
+        checks["OpenGL rendering"] = (
+            "Needs repair" if mismatch else "Checking",
+            mismatch or "The main window records the actual OpenGL vendor and renderer.",
+        )
+        for title, (value, detail) in checks.items():
+            labels = self.subsystem_cards.get(title)
+            if labels is not None:
+                labels[0].setText(value)
+                labels[1].setText(detail)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._repair_process is not None:

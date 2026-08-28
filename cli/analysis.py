@@ -52,10 +52,10 @@ def main() -> int:
 
     def open_inspector(_healthy: bool) -> None:
         loading.finish()
-        window.show()
+        window.showMaximized()
 
     window.inspection_finished.connect(open_inspector)
-    loading.show()
+    loading.showMaximized()
     QTimer.singleShot(0, window.refresh)
     try:
         exit_code = app.exec()

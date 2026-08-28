@@ -60,10 +60,14 @@ class ChatPanel(QWidget):
     infiniteRequested = Signal(str)
     diagnosticsRequested = Signal()
     analysisRequested = Signal()
+    modeChanged = Signal(bool)
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
         self._analysis_available = False
+        self._model_available = False
+        self._infinite_mode = False
+        self._running = False
         self._build(config)
         self._playback_controls: QWidget | None = None
 
@@ -92,6 +96,17 @@ class ChatPanel(QWidget):
         model_row.addWidget(self.diagnostics)
         runtime_layout.addLayout(model_row)
         layout.addWidget(runtime_card)
+
+        mode_row = QHBoxLayout()
+        self.normal_mode = QPushButton("Normal Chat")
+        self.infinite_mode = QPushButton("Infinite Mode")
+        for button, infinite in ((self.normal_mode, False), (self.infinite_mode, True)):
+            button.setCheckable(True)
+            button.setToolTip("Switch modes and clear the current conversation and replay")
+            button.clicked.connect(lambda checked=False, value=infinite: self._set_mode(value))
+            mode_row.addWidget(button)
+        self.normal_mode.setChecked(True)
+        layout.addLayout(mode_row)
 
         conversation_heading = QLabel("Conversation")
         conversation_heading.setObjectName("mode")
@@ -123,41 +138,33 @@ class ChatPanel(QWidget):
         action_card.setObjectName("actionCard")
         action_layout = QVBoxLayout(action_card)
         action_layout.setContentsMargins(10, 8, 10, 8)
-        normal_label = QLabel("CHAT ACTIONS")
+        normal_label = QLabel("MODE ACTIONS")
         normal_label.setObjectName("muted")
         action_layout.addWidget(normal_label)
         buttons = QHBoxLayout()
-        self.send = QPushButton("Send")
-        self.stop = QPushButton("Stop")
+        self.send = QPushButton("Start")
+        self.send.setToolTip("Start the selected mode; changes to Stop while generation is running")
         self.regenerate = QPushButton("Regenerate")
-        self.infinite = QPushButton("∞ Infinite mode")
-        self.infinite.setToolTip(
-            "Start an open-ended world/participant roleplay simulation using two local model instances")
+        self.infinite = QPushButton("Continue")
+        self.infinite.setToolTip("Continue the current Infinite Mode scenario after it has stopped")
         self.clear = QPushButton("Clear")
         self.open_analysis = QPushButton("Analysis")
         self.open_analysis.setToolTip("Export NN Analysis+ for recorded frames from the selected model")
         self.open_analysis.setEnabled(False)
-        self.stop.setEnabled(False)
-        # noinspection DuplicatedCode
-        self.send.clicked.connect(self._send)
-        self.stop.clicked.connect(self.stopRequested)
+        self.send.clicked.connect(self._start_or_stop)
         self.regenerate.clicked.connect(self.regenerateRequested)
         self.infinite.clicked.connect(self._start_infinite)
         self.clear.clicked.connect(self.clearRequested)
         self.open_analysis.clicked.connect(self.analysisRequested)
-        for button in (self.send, self.stop, self.regenerate, self.open_analysis, self.clear):
+        for button in (self.send, self.regenerate, self.open_analysis, self.clear, self.infinite):
             buttons.addWidget(button)
         action_layout.addLayout(buttons)
-        infinite_row = QHBoxLayout()
-        infinite_label = QLabel("INFINITE-MODE ACTION")
-        infinite_label.setObjectName("muted")
-        infinite_row.addWidget(infinite_label)
-        infinite_row.addWidget(self.infinite)
-        infinite_row.addStretch(1)
-        action_layout.addLayout(infinite_row)
         layout.addWidget(action_card)
 
         advanced_group = QGroupBox("Advanced generation controls")
+        advanced_group.setCheckable(True)
+        advanced_group.setChecked(False)
+        advanced_group.setToolTip("Optional generation settings; collapsed by default")
         advanced = QFormLayout(advanced_group)
         self.temperature = QDoubleSpinBox()
         self.temperature.setRange(0, 2)
@@ -195,7 +202,17 @@ class ChatPanel(QWidget):
         advanced.addRow("Context", self.context)
         advanced.addRow("GPU layers (-1 auto)", self.gpu_layers)
         advanced.addRow("Generation speed", speed_row)
+        self.regenerate.setToolTip("Generate a new answer for the most recent normal-chat prompt")
+        self.clear.setToolTip("Clear the current conversation and recorded replay")
+        self.models.setToolTip("Select an available local GGUF model")
+        self.temperature.setToolTip("Sampling randomness for Normal Chat")
+        self.top_p.setToolTip("Nucleus sampling limit for Normal Chat")
+        self.max_tokens.setToolTip("Maximum generated tokens per Normal Chat response")
+        self.context.setToolTip("Local model context window size")
+        self.gpu_layers.setToolTip("Number of layers requested on the GPU; -1 is automatic")
+        self.speed.setToolTip("Replay presentation speed")
         layout.addWidget(advanced_group)
+        self._refresh_actions()
 
     def _send(self) -> None:
         text = self.input.toPlainText().strip()
@@ -203,10 +220,34 @@ class ChatPanel(QWidget):
             self.input.clear()
             self.sendRequested.emit(text)
 
+    def _start_or_stop(self) -> None:
+        if self._running:
+            self.stopRequested.emit()
+            return
+        if self._infinite_mode:
+            self._start_infinite()
+        else:
+            self._send()
+
     def _start_infinite(self) -> None:
         seed = self.input.toPlainText().strip() or "Begin an ordinary day in a new embodied world."
         self.input.clear()
         self.infiniteRequested.emit(seed)
+
+    def _set_mode(self, infinite: bool) -> None:
+        if self._infinite_mode == infinite:
+            return
+        self._infinite_mode = infinite
+        self.normal_mode.setChecked(not infinite)
+        self.infinite_mode.setChecked(infinite)
+        self.input.setPlaceholderText("Describe a world opening…" if infinite else "Message your local model…  (Ctrl+Enter to send)")
+        self.regenerate.setVisible(not infinite)
+        self.infinite.setVisible(infinite)
+        self.open_analysis.setText("Analysis+" if infinite else "Analysis")
+        self.clear_messages()
+        self.clear_latest_playback()
+        self.modeChanged.emit(infinite)
+        self._refresh_actions()
 
     def config(self) -> GenerationConfig:
         return GenerationConfig(self.temperature.value(), self.top_p.value(), self.max_tokens.value(),
@@ -224,12 +265,14 @@ class ChatPanel(QWidget):
             self.models.addItem(model.label, model)
         self.models.blockSignals(False)
         self.models.setEnabled(bool(available))
+        self._model_available = False
         self._analysis_available = False
         self.open_analysis.setEnabled(False)
+        self._refresh_actions()
 
     def set_analysis_available(self, available: bool) -> None:
         self._analysis_available = available
-        self.open_analysis.setEnabled(available and not self.stop.isEnabled())
+        self._refresh_actions()
 
     def set_validating_models(self, text: str) -> None:
         self.models.blockSignals(True)
@@ -315,12 +358,9 @@ class ChatPanel(QWidget):
                 widget.deleteLater()
 
     def generating(self, running: bool) -> None:
-        self.send.setEnabled(not running)
-        self.stop.setEnabled(running)
-        self.regenerate.setEnabled(not running)
-        self.infinite.setEnabled(not running)
-        self.models.setEnabled(not running)
-        self.open_analysis.setEnabled(not running and self._analysis_available)
+        self._running = running
+        self.send.setText("Stop" if running else "Start")
+        self._refresh_actions()
 
     def set_analysis_mode(self, infinite: bool) -> None:
         self.open_analysis.setText("Analysis+" if infinite else "Analysis")
@@ -328,3 +368,16 @@ class ChatPanel(QWidget):
             "Export compact neural findings for an Infinite simulation" if infinite
             else "Export normal chat session data without neural-network findings"
         )
+
+    def set_model_available(self, available: bool) -> None:
+        self._model_available = available
+        self._refresh_actions()
+
+    def _refresh_actions(self) -> None:
+        ready = self._model_available
+        self.send.setEnabled(self._running or ready)
+        self.regenerate.setEnabled(ready and not self._running and not self._infinite_mode)
+        self.infinite.setEnabled(ready and not self._running and self._infinite_mode)
+        self.clear.setEnabled(not self._running)
+        self.models.setEnabled(not self._running and self.models.count() > 1)
+        self.open_analysis.setEnabled(ready and not self._running and self._analysis_available)

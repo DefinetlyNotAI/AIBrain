@@ -194,7 +194,9 @@ def main() -> int:
                 return
             window = MainWindow(self._models)
             app.main_window = window  # type: ignore[attr-defined]
-            window.show()
+            # Maximize as an ordinary resizable desktop window; never enter
+            # borderless/fullscreen mode, so system controls remain available.
+            window.showMaximized()
             loading.finish()
             startup_thread.quit()
 
@@ -216,7 +218,7 @@ def main() -> int:
     loading.cancelled.connect(startup_worker.cancel)
     loading.cancelled.connect(startup_thread.quit)
     loading.cancelled.connect(app.quit)
-    loading.show()
+    loading.showMaximized()
     QTimer.singleShot(0, startup_thread.start)
     QTimer.singleShot(0, gpu_probe.run)
     try:

@@ -6,7 +6,7 @@ from time import monotonic
 
 import numpy as np
 from PySide6.QtCore import QSettings, QTimer, Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, \
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, \
     QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget, QInputDialog
 
 from ..connectome.activity import ActivityField
@@ -132,7 +132,7 @@ class VisualizerPanel(QWidget):
         self.neuron_borders.toggled.connect(self._set_neuron_borders)
 
         self.border_width = QDoubleSpinBox()
-        self.border_width.setRange(.01, .45)
+        self.border_width.setRange(0, 1)
         self.border_width.setSingleStep(.01)
         self.border_width.setDecimals(2)
 
@@ -149,9 +149,6 @@ class VisualizerPanel(QWidget):
                 self.neuron_borders.isChecked()
             )
         )
-
-        self.pause = QPushButton("Pause")
-        self.pause.clicked.connect(self._toggle_pause)
 
         self.analysis = QPushButton("NN Analysis+")
         self.analysis.setToolTip(
@@ -174,33 +171,47 @@ class VisualizerPanel(QWidget):
         self.region_selector.hide()
         self._populate_region_selector()
 
-        reset = QPushButton("Reset view")
-        reset.clicked.connect(lambda: self.renderer.reset_camera())
+        self.reset_view = QPushButton("Reset view")
+        self.reset_view.setToolTip("Restore the default 2D or 3D camera position and zoom")
+        self.reset_view.clicked.connect(lambda: self.renderer.reset_camera())
+        self.settings_toggle = QPushButton("View settings")
+        self.settings_toggle.setCheckable(True)
+        self.settings_toggle.setToolTip("Show or hide rendering and presentation settings")
+        self.settings_toggle.toggled.connect(self._set_settings_visible)
 
         spacing_label = QLabel("Spacing")
         importance_label = QLabel("Importance")
 
         header.addWidget(title, 0, 0)
         header.addWidget(self.mode, 0, 1)
-        header.addWidget(self.quality, 0, 2)
-        header.addWidget(self.render_gpu, 0, 3, 1, 3)
-
-        header.addWidget(spacing_label, 1, 0)
-        header.addWidget(self.spacing, 1, 1, 1, 2)
-        header.addWidget(self.spacing_value, 1, 3)
-        header.addWidget(self.neuron_borders, 1, 4)
-        header.addWidget(self.border_width, 1, 5)
-
-        header.addWidget(self.analysis, 2, 0, 1, 2)
-        header.addWidget(self.view_toggle, 2, 2)
-        header.addWidget(self.two_d_mode, 2, 3)
-        header.addWidget(self.region_selector, 2, 4)
-        header.addWidget(self.pause, 2, 5)
-        header.addWidget(reset, 2, 6)
-
-        header.setColumnStretch(3, 1)
+        header.addWidget(self.view_toggle, 0, 2)
+        header.addWidget(self.settings_toggle, 0, 3)
+        header.addWidget(self.two_d_mode, 1, 1)
+        header.addWidget(self.region_selector, 1, 2)
+        header.addWidget(self.analysis, 1, 3)
+        header.setColumnStretch(0, 1)
 
         self.layout.addLayout(header)
+        self.settings_panel = QWidget()
+        settings_layout = QFormLayout(self.settings_panel)
+        settings_layout.setContentsMargins(0, 2, 0, 6)
+        settings_layout.addRow("Simulation Performance", self.quality)
+        settings_layout.addRow("Rendering GPU", self.render_gpu)
+        spacing_row = QWidget()
+        spacing_row_layout = QHBoxLayout(spacing_row)
+        spacing_row_layout.setContentsMargins(0, 0, 0, 0)
+        spacing_row_layout.addWidget(self.spacing)
+        spacing_row_layout.addWidget(self.spacing_value)
+        settings_layout.addRow(spacing_label, spacing_row)
+        borders_row = QWidget()
+        borders_layout = QHBoxLayout(borders_row)
+        borders_layout.setContentsMargins(0, 0, 0, 0)
+        borders_layout.addWidget(self.neuron_borders)
+        borders_layout.addWidget(self.border_width)
+        settings_layout.addRow("Neuron Borders (0–1)", borders_row)
+        settings_layout.addRow("", self.reset_view)
+        self.settings_panel.setVisible(False)
+        self.layout.addWidget(self.settings_panel)
         self.layout.addWidget(self.renderer, 1)
 
         selectable_text_flags = Qt.TextInteractionFlag(
@@ -261,9 +272,9 @@ class VisualizerPanel(QWidget):
         self.layout.insertWidget(index, self.renderer, 1)
         self._refresh_overlay()
 
-    def _toggle_pause(self) -> None:
-        self.renderer.paused = not self.renderer.paused
-        self.pause.setText("Resume" if self.renderer.paused else "Pause")
+    def _set_settings_visible(self, visible: bool) -> None:
+        self.settings_panel.setVisible(visible)
+        self.settings_toggle.setText("Hide view settings" if visible else "View settings")
 
     def _populate_region_selector(self) -> None:
         selected = self.region_selector.currentData()
@@ -288,6 +299,9 @@ class VisualizerPanel(QWidget):
         selected = self.region_selector.currentData()
         region = int(selected) if sector and selected is not None else None
         self.renderer.set_projection_mode("2d" if two_dimensional else "3d", region)
+        self.spacing.setEnabled(not two_dimensional)
+        self.spacing.setToolTip("Cluster spacing is unavailable in 2D because the flat projection uses a fixed readable layout."
+                                if two_dimensional else "Cluster spacing")
         self._refresh_overlay()
 
     def apply_frame(self, frame: ActivationFrame, *, record: bool = True) -> None:
@@ -320,8 +334,6 @@ class VisualizerPanel(QWidget):
         if not self._playback:
             return
         self._playback_index = -1
-        self.renderer.paused = True
-        self.pause.setText("Resume")
         self._playback_timer.start(max(35, round(110 / max(.1, speed))))
 
     def playback_next(self) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from hashlib import blake2b
 from threading import Event
 from time import monotonic
 
@@ -23,6 +24,36 @@ clearly labelled local simulation, not statements about real-world consciousness
 LIKE YOU ARE A LIVING HUMAN BEING THATS NOT AN AI AND FULLY IMMERSE YOURSELF IN THAT ROLE"""
 
 _CONTEXT_TURNS = 24
+WORLD_OPENINGS = (
+    "Rain begins over a midnight street market as every vendor suddenly lowers their lights.",
+    "A quiet commuter train stops between stations and a child points at a door that was not there before.",
+    "At sunrise, a coastal town finds a handwritten map nailed to every front door.",
+    "The museum alarm sounds once, then reveals a new exhibit containing a room exactly like this one.",
+    "A power cut turns a crowded apartment building into a chorus of neighbours sharing candlelight.",
+    "A research vessel receives a friendly distress call from coordinates that are moving inland.",
+    "The first snow of the year falls warm, and the city radio asks everyone to stay calm.",
+    "A small diner opens for breakfast to discover its regulars remember a day that has not happened yet.",
+    "A local festival pauses when the parade route becomes covered in fresh footprints leading the wrong way.",
+    "A library book returns itself overnight with one new page addressed to the reader.",
+)
+
+
+def select_world_opening(seed: str) -> str:
+    """Choose one stable, pregenerated opening without relying on Python hash randomisation."""
+    digest = blake2b(seed.encode("utf-8"), digest_size=2).digest()
+    return WORLD_OPENINGS[int.from_bytes(digest, "big") % len(WORLD_OPENINGS)]
+
+
+def infinite_generation_config(config: GenerationConfig) -> GenerationConfig:
+    """Infinite Mode intentionally uses a high-randomness local configuration."""
+    return GenerationConfig(
+        temperature=max(1.25, config.temperature),
+        top_p=max(.96, config.top_p),
+        max_tokens=min(config.max_tokens, 512),
+        context_length=config.context_length,
+        gpu_layers=config.gpu_layers,
+        speed=config.speed,
+    )
 
 
 class InfiniteSimulationWorker(QObject):
@@ -43,9 +74,11 @@ class InfiniteSimulationWorker(QObject):
     @Slot(object, object, object)
     def run(self, seed: str, config: GenerationConfig, model_path: Path) -> None:
         self._cancelled.clear()
+        config = infinite_generation_config(config)
         started = monotonic()
         participant_tokens = 0
         turn = 0
+        opening = select_world_opening(seed)
         world_history = [
             {
                 "role": "system",
@@ -55,18 +88,38 @@ class InfiniteSimulationWorker(QObject):
                 "role": "user",
                 "content": (
                     f"[SIMULATION DIRECTION]\n"
-                    f"{seed}\n"
+                    f"Participant direction: {seed}\n"
+                    f"Deterministic world opening: {opening}\n"
                     f"[END SIMULATION DIRECTION]\n"
                     f"Write the opening WORLD EVENT only."
                 )
             }
         ]
-        participant_history = [{"role": "system", "content": PARTICIPANT_SYSTEM}]
+        participant_history = [
+            {"role": "system", "content": PARTICIPANT_SYSTEM},
+            {"role": "user", "content": (
+                f"[SCENARIO]\n{seed}\n\n{opening}\n[END SCENARIO]\n"
+                "Begin the scenario as the PARTICIPANT. Write your first response only."
+            )},
+        ]
         try:
             # Separate backend objects intentionally deploy two copies of the
             # same selected model: one produces the world, one is the actor.
             self.world.load(model_path, config)
             self.participant.load(model_path, config)
+            # The participant begins the scenario; afterward the world reacts
+            # and both roles alternate for as long as the user leaves it live.
+            participant_text, token_count = self._generate_participant(participant_history, config, 1, 0)
+            participant_tokens += token_count
+            if not participant_text or self._cancelled.is_set():
+                if not self._cancelled.is_set():
+                    raise RuntimeError("Participant model returned no text")
+            else:
+                participant_history.append({"role": "assistant", "content": participant_text})
+                world_history.append({"role": "user", "content": (
+                    f"[PARTICIPANT RESPONSE]\n{participant_text}\n[END PARTICIPANT RESPONSE]\n"
+                    "Write the opening WORLD EVENT only."
+                )})
             while not self._cancelled.is_set():
                 turn += 1
                 world_text = self._generate("world", self.world, world_history, config, turn)
@@ -90,7 +143,7 @@ class InfiniteSimulationWorker(QObject):
                 participant_text, token_count = self._generate_participant(
                     participant_history,
                     config,
-                    turn,
+                    turn + 1,
                     participant_tokens
                 )
 

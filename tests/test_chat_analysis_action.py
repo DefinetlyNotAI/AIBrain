@@ -20,6 +20,8 @@ class ChatAnalysisActionTests(unittest.TestCase):
         panel = ChatPanel(GenerationConfig())
 
         self.assertFalse(panel.open_analysis.isEnabled())
+        self.assertFalse(panel.send.isEnabled())
+        panel.set_model_available(True)
         panel.set_analysis_available(True)
         self.assertTrue(panel.open_analysis.isEnabled())
         panel.generating(True)
@@ -28,6 +30,18 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertTrue(panel.open_analysis.isEnabled())
         panel.set_analysis_available(False)
         self.assertFalse(panel.open_analysis.isEnabled())
+        panel.deleteLater()
+
+    def test_mode_switch_clears_messages_and_changes_the_available_actions(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        panel.set_model_available(True)
+        panel.add_message("user", "A prior conversation")
+        panel.infinite_mode.click()
+
+        self.assertFalse(panel.infinite.isHidden())
+        self.assertTrue(panel.regenerate.isHidden())
+        self.assertEqual(panel.messages_layout.count(), 1)
+        self.assertEqual(panel.open_analysis.text(), "Analysis+")
         panel.deleteLater()
 
 

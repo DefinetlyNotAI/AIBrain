@@ -3,7 +3,8 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from src.models.infinite_simulation import InfiniteSimulationWorker, _CONTEXT_TURNS
+from src.models.infinite_simulation import InfiniteSimulationWorker, WORLD_OPENINGS, _CONTEXT_TURNS, \
+    infinite_generation_config, select_world_opening
 from src.models.llama_backend import GenerationConfig
 
 
@@ -68,12 +69,25 @@ class InfiniteSimulationContextTests(unittest.TestCase):
 
         self.assertEqual(world.loaded, [Path("model.gguf")])
         self.assertEqual(participant.loaded, [Path("model.gguf")])
-        self.assertIn("[WORLD EVENT]", participant.calls[0][-1]["content"])
+        self.assertIn("Begin the scenario", participant.calls[0][-1]["content"])
+        self.assertIn("[WORLD EVENT]", participant.calls[1][-1]["content"])
         self.assertIn("[PARTICIPANT RESPONSE]", world.calls[1][-1]["content"])
         self.assertNotIn("[WORLD EVENT]", world.calls[1][-1]["content"])
         self.assertEqual(frames[0].step, 1)
         self.assertTrue(finished[0]["cancelled"])
         self.assertTrue(world.unloaded and participant.unloaded)
+
+    def test_opening_selection_is_stable_and_uses_the_pregenerated_set(self) -> None:
+        self.assertEqual(select_world_opening("same direction"), select_world_opening("same direction"))
+        self.assertIn(select_world_opening("same direction"), WORLD_OPENINGS)
+        self.assertEqual(len(WORLD_OPENINGS), 10)
+
+    def test_infinite_mode_overrides_low_randomness_settings(self) -> None:
+        effective = infinite_generation_config(GenerationConfig(temperature=.1, top_p=.2, max_tokens=2048))
+
+        self.assertGreaterEqual(effective.temperature, 1.25)
+        self.assertGreaterEqual(effective.top_p, .96)
+        self.assertEqual(effective.max_tokens, 512)
 
 
 if __name__ == "__main__":

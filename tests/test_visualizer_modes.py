@@ -18,6 +18,14 @@ class VisualizerModeTests(unittest.TestCase):
         self.assertEqual(matrix[2, 2], 0.0)
         self.assertEqual(matrix[0, 2], 0.0)
 
+    def test_flat_projection_carries_pan_offsets(self) -> None:
+        renderer = SimpleNamespace(view_mode="2d", zoom=1.0, pan_x=.2, pan_y=-.3, width=lambda: 800, height=lambda: 600)
+
+        matrix = ConnectomeRenderer._mvp(renderer)  # type: ignore[arg-type]
+
+        self.assertEqual(matrix[3, 0], .2)
+        self.assertEqual(matrix[3, 1], -.3)
+
     def test_sector_mode_limits_visible_neurons_and_rejects_invalid_regions(self) -> None:
         renderer = SimpleNamespace(
             graph=SimpleNamespace(

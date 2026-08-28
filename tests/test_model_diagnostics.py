@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from src.models.diagnostics import OllamaDiagnostics
 from src.app.analysis_window import AnalysisWindow
-from src.app.diagnostics_window import DiagnosticsWindow, normalize_process_output
+from src.app.diagnostics_window import DiagnosticsWindow, LiveOutputBuffer, normalize_process_output
 from src.models.model_info import ModelInfo
 
 
@@ -18,6 +18,13 @@ class ModelDiagnosticsTests(unittest.TestCase):
     def test_process_output_removes_terminal_control_sequences(self) -> None:
         rendered = normalize_process_output("writing manifest \x1b[K\rsuccess \x1b[K\x1b[?25h\x1b[?2026l")
         self.assertEqual(rendered, "writing manifest \nsuccess ")
+
+    def test_live_output_replaces_a_carriage_return_progress_line(self) -> None:
+        buffer = LiveOutputBuffer()
+        buffer.feed("pulling 10%\rpulling 20%\ncomplete\n")
+
+        self.assertEqual(buffer.completed_lines, ["pulling 20%", "complete"])
+        self.assertNotIn("10%", buffer.render())
 
     def test_inspection_windows_defer_close_until_their_worker_has_finished(self) -> None:
         diagnostics_close = inspect.getsource(DiagnosticsWindow.closeEvent)
@@ -61,6 +68,7 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertEqual([item.reference for item in diagnostics], ["broken:latest", "demo:latest"])
         self.assertFalse(diagnostics[0].available)
         self.assertIn("Invalid manifest", diagnostics[0].detail)
+        self.assertIn("Invalid manifest", diagnostics[0].reason)
         self.assertTrue(diagnostics[1].available)
 
     def test_remove_stale_manifest_leaves_shared_blob_untouched(self) -> None:
