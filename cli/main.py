@@ -185,7 +185,7 @@ def main() -> int:
             loading.set_progress(1, 1, message)
             self.models_ready([])
 
-    startup_coordinator = StartupCoordinator(app)
+    startup_coordinator = StartupCoordinator()
     app.startup_coordinator = startup_coordinator  # type: ignore[attr-defined]
 
     startup_thread.started.connect(startup_worker.run)

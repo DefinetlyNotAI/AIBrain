@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 import unittest
 from unittest.mock import Mock, patch
@@ -10,6 +11,12 @@ from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE, can_request_gpu_relaunch
 
 
 class GpuLaunchTests(unittest.TestCase):
+    def test_startup_coordinator_uses_its_declared_constructor(self) -> None:
+        source = inspect.getsource(main.main)
+
+        self.assertIn("startup_coordinator = StartupCoordinator()", source)
+        self.assertNotIn("startup_coordinator = StartupCoordinator(app)", source)
+
     def test_renderer_relaunch_is_limited_to_one_retry(self) -> None:
         with patch("src.utils.gpu.sys.platform", "win32"):
             with patch.dict(os.environ, {"AIBRAIN_GPU_RELAUNCH_ATTEMPT": "0"}, clear=False):
