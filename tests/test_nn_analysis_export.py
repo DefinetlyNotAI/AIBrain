@@ -11,7 +11,7 @@ from unittest.mock import patch
 import numpy as np
 
 from src.connectome.analysis import ConnectomeAnalyzer
-from src.connectome.export import export_nn_analysis_plus
+from src.connectome.export import export_nn_analysis_plus, export_session_analysis
 from src.connectome.generator import REGIONS
 from src.connectome.graph import ConnectomeGraph
 from src.models.instrumented_backend import ActivationFrame, ActivitySource
@@ -38,12 +38,23 @@ class NNAnalysisExportTests(unittest.TestCase):
             export_nn_analysis_plus(path, self.graph, self.analyzer, [{"role": "user", "content": "hi"}])
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["schema"], "aibrain.nn-analysis-plus.v2")
+        self.assertEqual(payload["schema"], "aibrain.infinite-analysis-plus.v1")
         self.assertEqual(payload["conversation"][0]["content"], "hi")
         self.assertEqual(payload["smart_analysis"]["frames_processed"], 1)
         self.assertIn("autoencoder", payload["smart_analysis"]["neural_network"]["architecture"])
         self.assertNotIn("brain_signals", payload)
         self.assertNotIn("positions", payload["graph"])
+
+    def test_normal_session_export_excludes_neural_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            export_session_analysis(path, self.graph, self.analyzer, [{"role": "user", "content": "hi"}])
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["schema"], "aibrain.session-analysis.v1")
+        self.assertIn("recorded_frame_summary", payload)
+        self.assertNotIn("smart_analysis", payload)
+        self.assertNotIn("integrity", payload)
 
     def test_gzip_export_is_valid_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
