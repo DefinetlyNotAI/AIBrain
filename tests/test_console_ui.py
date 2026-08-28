@@ -79,14 +79,20 @@ class ConsoleUiTests(unittest.TestCase):
         screen_info = Call(1)
         fill_character = Call(1)
         kernel32 = SimpleNamespace(
-            GetStdHandle=get_handle,
-            GetConsoleScreenBufferInfo=screen_info,
-            FillConsoleOutputCharacterW=fill_character,
-            FillConsoleOutputAttribute=Call(1),
-            SetConsoleCursorPosition=Call(1),
+            get_std_handle=get_handle,
+            get_console_screen_buffer_info=screen_info,
+            fill_console_output_character=fill_character,
+            fill_console_output_attribute=Call(1),
+            set_console_cursor_position=Call(1),
         )
-        with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty", return_value=True), patch("ctypes.windll", SimpleNamespace(kernel32=kernel32)):
+        with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty", return_value=True), patch.object(console_ui, "_kernel32_bindings", return_value=kernel32):
             console_ui.clear_screen()
             self.assertEqual(console_ui.terminal_width(), 80)
 
         self.assertEqual(fill_character.calls[0][1], " ")
+
+    def test_console_ui_avoids_dynamic_ctypes_dll_attributes(self) -> None:
+        source = Path(console_ui.__file__).read_text(encoding="utf-8")
+
+        self.assertIn("ctypes.WINFUNCTYPE", source)
+        self.assertNotIn("ctypes.windll", source)

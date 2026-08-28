@@ -9,7 +9,7 @@ import subprocess
 import sys
 from ctypes import wintypes
 from pathlib import Path
-from typing import TextIO
+from typing import Callable, TextIO, cast
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +40,67 @@ class _ConsoleScreenBufferInfo(ctypes.Structure):
         ("window", _ConsoleSmallRect),
         ("maximum_window_size", _ConsoleCoord),
     ]
+
+
+_GetStdHandle = ctypes.WINFUNCTYPE(wintypes.HANDLE, ctypes.c_long)
+_GetConsoleScreenBufferInfo = ctypes.WINFUNCTYPE(
+    wintypes.BOOL,
+    wintypes.HANDLE,
+    ctypes.POINTER(_ConsoleScreenBufferInfo),
+)
+_FillConsoleOutputCharacter = ctypes.WINFUNCTYPE(
+    wintypes.BOOL,
+    wintypes.HANDLE,
+    ctypes.c_wchar,
+    wintypes.DWORD,
+    _ConsoleCoord,
+    ctypes.POINTER(wintypes.DWORD),
+)
+_FillConsoleOutputAttribute = ctypes.WINFUNCTYPE(
+    wintypes.BOOL,
+    wintypes.HANDLE,
+    wintypes.WORD,
+    wintypes.DWORD,
+    _ConsoleCoord,
+    ctypes.POINTER(wintypes.DWORD),
+)
+_SetConsoleCursorPosition = ctypes.WINFUNCTYPE(
+    wintypes.BOOL,
+    wintypes.HANDLE,
+    _ConsoleCoord,
+)
+
+
+class _Kernel32Bindings:
+    """Explicit callable contracts for the Windows console APIs we use."""
+
+    def __init__(self) -> None:
+        library = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.get_std_handle: Callable[[int], int] = cast(
+            Callable[[int], int],
+            _GetStdHandle(("GetStdHandle", library)),
+        )
+        self.get_console_screen_buffer_info: Callable[..., int] = cast(
+            Callable[..., int],
+            _GetConsoleScreenBufferInfo(("GetConsoleScreenBufferInfo", library)),
+        )
+        self.fill_console_output_character: Callable[..., int] = cast(
+            Callable[..., int],
+            _FillConsoleOutputCharacter(("FillConsoleOutputCharacterW", library)),
+        )
+        self.fill_console_output_attribute: Callable[..., int] = cast(
+            Callable[..., int],
+            _FillConsoleOutputAttribute(("FillConsoleOutputAttribute", library)),
+        )
+        self.set_console_cursor_position: Callable[..., int] = cast(
+            Callable[..., int],
+            _SetConsoleCursorPosition(("SetConsoleCursorPosition", library)),
+        )
+
+
+def _kernel32_bindings() -> _Kernel32Bindings:
+    """Return explicitly typed Kernel32 callables without dynamic DLL attributes."""
+    return _Kernel32Bindings()
 
 try:
     "\N{BOX DRAWINGS LIGHT ARC DOWN AND RIGHT}".encode(sys.stdout.encoding or "utf-8")
@@ -90,8 +151,9 @@ def terminal_width() -> int:
     if os.name == "nt":
         try:
             info = _ConsoleScreenBufferInfo()
-            handle = ctypes.windll.kernel32.GetStdHandle(-11)
-            if handle and ctypes.windll.kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
+            kernel32 = _kernel32_bindings()
+            handle = kernel32.get_std_handle(-11)
+            if handle and kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
                 width = info.window.right - info.window.left + 1
         except (AttributeError, OSError):
             pass
@@ -104,45 +166,20 @@ def clear_screen() -> None:
         return
     if os.name == "nt":
         try:
-            kernel32 = ctypes.windll.kernel32
+            kernel32 = _kernel32_bindings()
             # The second parameter is a 16-bit WCHAR value, not a string
             # pointer.  Without argtypes ctypes passes a pointer to " ", and
             # Windows fills the console with the low word of that address
             # (observed as repeated CJK glyphs such as U+4A00).
-            kernel32.GetStdHandle.argtypes = (ctypes.c_long,)
-            kernel32.GetStdHandle.restype = wintypes.HANDLE
-            kernel32.GetConsoleScreenBufferInfo.argtypes = (
-                wintypes.HANDLE,
-                ctypes.POINTER(_ConsoleScreenBufferInfo),
-            )
-            kernel32.GetConsoleScreenBufferInfo.restype = wintypes.BOOL
-            kernel32.FillConsoleOutputCharacterW.argtypes = (
-                wintypes.HANDLE,
-                ctypes.c_wchar,
-                wintypes.DWORD,
-                _ConsoleCoord,
-                ctypes.POINTER(wintypes.DWORD),
-            )
-            kernel32.FillConsoleOutputCharacterW.restype = wintypes.BOOL
-            kernel32.FillConsoleOutputAttribute.argtypes = (
-                wintypes.HANDLE,
-                wintypes.WORD,
-                wintypes.DWORD,
-                _ConsoleCoord,
-                ctypes.POINTER(wintypes.DWORD),
-            )
-            kernel32.FillConsoleOutputAttribute.restype = wintypes.BOOL
-            kernel32.SetConsoleCursorPosition.argtypes = (wintypes.HANDLE, _ConsoleCoord)
-            kernel32.SetConsoleCursorPosition.restype = wintypes.BOOL
-            handle = kernel32.GetStdHandle(-11)
+            handle = kernel32.get_std_handle(-11)
             info = _ConsoleScreenBufferInfo()
-            if handle and kernel32.GetConsoleScreenBufferInfo(handle, ctypes.byref(info)):
+            if handle and kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
                 cells = info.size.x * info.size.y
                 written = wintypes.DWORD()
                 origin = _ConsoleCoord(0, 0)
-                kernel32.FillConsoleOutputCharacterW(handle, " ", cells, origin, ctypes.byref(written))
-                kernel32.FillConsoleOutputAttribute(handle, info.attributes, cells, origin, ctypes.byref(written))
-                kernel32.SetConsoleCursorPosition(handle, origin)
+                kernel32.fill_console_output_character(handle, " ", cells, origin, ctypes.byref(written))
+                kernel32.fill_console_output_attribute(handle, info.attributes, cells, origin, ctypes.byref(written))
+                kernel32.set_console_cursor_position(handle, origin)
                 return
         except (AttributeError, OSError):
             pass
