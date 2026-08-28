@@ -4,7 +4,7 @@ import html
 import re
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
                                QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
 from ..models.llama_backend import GenerationConfig
@@ -63,27 +63,39 @@ class ChatPanel(QWidget):
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
+        self._analysis_available = False
         self._build(config)
         self._playback_controls: QWidget | None = None
 
     def _build(self, config: GenerationConfig) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
+        runtime_card = QFrame()
+        runtime_card.setObjectName("runtimeCard")
+        runtime_layout = QVBoxLayout(runtime_card)
+        runtime_layout.setContentsMargins(10, 8, 10, 8)
         title = QLabel("AIBrain")
         title.setObjectName("title")
-        layout.addWidget(title)
+        runtime_layout.addWidget(title)
         subtitle = QLabel("Local GGUF chat · direct model loading")
         subtitle.setObjectName("muted")
-        layout.addWidget(subtitle)
+        runtime_layout.addWidget(subtitle)
         self.models = QComboBox()
         self.models.setAccessibleName("Validated local GGUF models")
         self.models.currentIndexChanged.connect(lambda _: self.modelChanged.emit(self.models.currentData()))
-        layout.addWidget(self.models)
         self.diagnostics = QPushButton("Repair and Diagnostics")
         self.diagnostics.setToolTip(
             "Inspect invalid Ollama manifests, repair a selected model, or remove a stale manifest")
         self.diagnostics.clicked.connect(self.diagnosticsRequested)
-        layout.addWidget(self.diagnostics)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.models, 1)
+        model_row.addWidget(self.diagnostics)
+        runtime_layout.addLayout(model_row)
+        layout.addWidget(runtime_card)
+
+        conversation_heading = QLabel("Conversation")
+        conversation_heading.setObjectName("mode")
+        layout.addWidget(conversation_heading)
         self.messages_layout = QVBoxLayout()
         self.messages_layout.addStretch(1)
         container = QWidget()
@@ -100,15 +112,25 @@ class ChatPanel(QWidget):
         self.stats.setWordWrap(True)
         self.stats.setTextInteractionFlags(_SELECTABLE_TEXT_FLAGS)
         layout.addWidget(self.stats)
+        compose_heading = QLabel("Compose")
+        compose_heading.setObjectName("mode")
+        layout.addWidget(compose_heading)
         self.input = QPlainTextEdit()
         self.input.setPlaceholderText("Message your local model…  (Ctrl+Enter to send)")
         self.input.setFixedHeight(92)
         layout.addWidget(self.input)
+        action_card = QFrame()
+        action_card.setObjectName("actionCard")
+        action_layout = QVBoxLayout(action_card)
+        action_layout.setContentsMargins(10, 8, 10, 8)
+        normal_label = QLabel("CHAT ACTIONS")
+        normal_label.setObjectName("muted")
+        action_layout.addWidget(normal_label)
         buttons = QHBoxLayout()
         self.send = QPushButton("Send")
         self.stop = QPushButton("Stop")
         self.regenerate = QPushButton("Regenerate")
-        self.infinite = QPushButton("∞ Inf")
+        self.infinite = QPushButton("∞ Infinite mode")
         self.infinite.setToolTip(
             "Start an open-ended world/participant roleplay simulation using two local model instances")
         self.clear = QPushButton("Clear")
@@ -123,10 +145,20 @@ class ChatPanel(QWidget):
         self.infinite.clicked.connect(self._start_infinite)
         self.clear.clicked.connect(self.clearRequested)
         self.open_analysis.clicked.connect(self.analysisRequested)
-        for button in (self.send, self.stop, self.regenerate, self.infinite, self.open_analysis, self.clear):
+        for button in (self.send, self.stop, self.regenerate, self.open_analysis, self.clear):
             buttons.addWidget(button)
-        layout.addLayout(buttons)
-        advanced = QFormLayout()
+        action_layout.addLayout(buttons)
+        infinite_row = QHBoxLayout()
+        infinite_label = QLabel("INFINITE-MODE ACTION")
+        infinite_label.setObjectName("muted")
+        infinite_row.addWidget(infinite_label)
+        infinite_row.addWidget(self.infinite)
+        infinite_row.addStretch(1)
+        action_layout.addLayout(infinite_row)
+        layout.addWidget(action_card)
+
+        advanced_group = QGroupBox("Advanced generation controls")
+        advanced = QFormLayout(advanced_group)
         self.temperature = QDoubleSpinBox()
         self.temperature.setRange(0, 2)
         self.temperature.setSingleStep(.05)
@@ -163,7 +195,7 @@ class ChatPanel(QWidget):
         advanced.addRow("Context", self.context)
         advanced.addRow("GPU layers (-1 auto)", self.gpu_layers)
         advanced.addRow("Generation speed", speed_row)
-        layout.addLayout(advanced)
+        layout.addWidget(advanced_group)
 
     def _send(self) -> None:
         text = self.input.toPlainText().strip()
@@ -192,10 +224,12 @@ class ChatPanel(QWidget):
             self.models.addItem(model.label, model)
         self.models.blockSignals(False)
         self.models.setEnabled(bool(available))
+        self._analysis_available = False
         self.open_analysis.setEnabled(False)
 
     def set_analysis_available(self, available: bool) -> None:
-        self.open_analysis.setEnabled(available)
+        self._analysis_available = available
+        self.open_analysis.setEnabled(available and not self.stop.isEnabled())
 
     def set_validating_models(self, text: str) -> None:
         self.models.blockSignals(True)
@@ -286,7 +320,7 @@ class ChatPanel(QWidget):
         self.regenerate.setEnabled(not running)
         self.infinite.setEnabled(not running)
         self.models.setEnabled(not running)
-        self.open_analysis.setEnabled(not running and self.models.currentData() is not None)
+        self.open_analysis.setEnabled(not running and self._analysis_available)
 
     def set_analysis_mode(self, infinite: bool) -> None:
         self.open_analysis.setText("Analysis+" if infinite else "Analysis")

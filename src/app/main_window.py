@@ -28,6 +28,10 @@ QWidget { font: 10pt 'Segoe UI'; color: #dceaf1; }
 QLabel#title { font-size: 22px; font-weight: 650; color: #f2f8fb; }
 QLabel#muted { color: #88a0ae; }
 QLabel#mode { background: #123849; color: #82e7ff; border-radius: 9px; padding: 4px 8px; font-weight: 700; }
+QFrame#runtimeCard, QFrame#actionCard, QGroupBox { background: #0d202b; border: 1px solid #1d3b49; border-radius: 9px; }
+QFrame#runtimeCard, QFrame#actionCard { padding: 4px; }
+QGroupBox { margin-top: 10px; padding: 10px 8px 6px 8px; font-weight: 650; color: #8cdeef; }
+QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
 QLabel#overlay { background: #0c1e2a; border: 1px solid #193746; border-radius: 8px; padding: 8px; color: #9ac4d4; }
 QLabel#userBubble, QLabel#assistantBubble { border-radius: 10px; padding: 10px; margin: 3px 0; }
 QLabel#userBubble { background: #143e50; color: #e4f8ff; }
@@ -154,7 +158,7 @@ class MainWindow(QMainWindow):
         self.unloadModel.emit()
         self.simulation_worker.unload()
         self.current_model = model
-        self.chat.set_analysis_available(model is not None and model.available)
+        self.chat.set_analysis_available(False)
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
@@ -243,6 +247,7 @@ class MainWindow(QMainWindow):
         self.config = self.chat.config()
         self._analysis_is_infinite = False
         self.chat.set_analysis_mode(False)
+        self.chat.set_analysis_available(False)
         save_generation_settings(self.config)
         self.history.append({"role": "user", "content": prompt})
         self.visualizer.set_conversation(self.history)
@@ -308,6 +313,7 @@ class MainWindow(QMainWindow):
             f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}"
         )
         self.chat.generating(False)
+        self.chat.set_analysis_available(bool(self.visualizer.analyzer.records) and not stats["cancelled"])
 
     def _simulation_failed(self, error: str) -> None:
         LOG.error("%s", error)
@@ -359,6 +365,7 @@ class MainWindow(QMainWindow):
         )
 
         self.chat.generating(False)
+        self.chat.set_analysis_available(bool(text) and text != "Thinking…" and not stats["cancelled"])
         self._assistant_bubble = None
         self._awaiting_first_token = False
 
@@ -366,6 +373,7 @@ class MainWindow(QMainWindow):
         LOG.error("%s", error)
         self.chat.stats.setText(error)
         self.chat.generating(False)
+        self.chat.set_analysis_available(False)
         self._assistant_bubble = None
         self._awaiting_first_token = False
         self._show_repairable_error("Generation error", error)
