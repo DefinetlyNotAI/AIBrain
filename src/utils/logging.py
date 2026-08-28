@@ -10,6 +10,7 @@ from types import TracebackType
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAX_LOG_BYTES = 5 * 1024 * 1024
+MAX_CRASH_LOG_BYTES = 20 * 1024 * 1024
 
 
 class AlignedFormatter(logging.Formatter):
@@ -47,8 +48,8 @@ class AlignedFormatter(logging.Formatter):
 class BoundedFileHandler(logging.FileHandler):
     """Keep the newest log data and discard old complete lines above the cap."""
 
-    def __init__(self, filename: Path, *, max_bytes: int = MAX_LOG_BYTES) -> None:
-        super().__init__(filename, mode="a", encoding="utf-8")
+    def __init__(self, filename: Path, *, max_bytes: int = MAX_LOG_BYTES, delay: bool = False) -> None:
+        super().__init__(filename, mode="a", encoding="utf-8", delay=delay)
         self.max_bytes = max_bytes
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -73,6 +74,15 @@ class BoundedFileHandler(logging.FileHandler):
             return
 
 
+class CrashFileHandler(BoundedFileHandler):
+    """Create a large crash log only for an uncaught exception record."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if not record.exc_info or record.name != "aibrain.crash":
+            return
+        super().emit(record)
+
+
 def _uncaught_exception(
         exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
 ) -> None:
@@ -87,18 +97,21 @@ def _thread_exception(args: threading.ExceptHookArgs) -> None:
     _uncaught_exception(args.exc_type, args.exc_value, args.exc_traceback)
 
 
-def configure_logging(log_directory: Path | None = None) -> tuple[Path, Path]:
+def configure_logging(feature: str | Path = "main", log_directory: Path | None = None) -> tuple[Path, Path]:
     """Start fresh normal and crash logs for this application run.
 
     Both files are bounded while the program runs so a long session preserves
     the newest details instead of consuming disk space indefinitely.
     """
+    if isinstance(feature, Path):
+        log_directory = feature
+        feature = "main"
     directory = log_directory or PROJECT_ROOT / "logs"
     directory.mkdir(parents=True, exist_ok=True)
-    runtime_log = directory / "aibrain.log"
-    crash_log = directory / "crash.log"
-    for path in (runtime_log, crash_log):
-        path.unlink(missing_ok=True)
+    runtime_log = directory / f"aibrain.{feature}.log"
+    crash_log = directory / f"crash.{feature}.log"
+    runtime_log.unlink(missing_ok=True)
+    crash_log.unlink(missing_ok=True)
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
@@ -115,12 +128,11 @@ def configure_logging(log_directory: Path | None = None) -> tuple[Path, Path]:
     runtime_handler.setFormatter(AlignedFormatter(colour=False))
     root.addHandler(runtime_handler)
 
-    crash_handler = BoundedFileHandler(crash_log)
-    crash_handler.setLevel(logging.ERROR)
+    crash_handler = CrashFileHandler(crash_log, max_bytes=MAX_CRASH_LOG_BYTES, delay=True)
+    crash_handler.setLevel(logging.CRITICAL)
     crash_handler.setFormatter(AlignedFormatter(colour=False))
     root.addHandler(crash_handler)
 
     sys.excepthook = _uncaught_exception
     threading.excepthook = _thread_exception
-    logging.getLogger(__name__).info("Logging to %s and %s", runtime_log, crash_log)
     return runtime_log, crash_log

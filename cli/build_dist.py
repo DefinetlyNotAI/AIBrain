@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import Color, CommandOutputBox, clear_screen, command_preview, error, header, panel, section
 from src.utils.gpu import set_windows_executable_gpu_preference
+from src.utils.runtime import require_managed_runtime
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
@@ -190,6 +191,8 @@ def build(timestamp: str | None = None, targets: tuple[ApplicationTarget, ...] =
 
 
 def main() -> int:
+    if not require_managed_runtime(ROOT, "build_dist"):
+        return 1
     parser = argparse.ArgumentParser(description="Build timestamped standalone AIBrain desktop applications.")
     parser.add_argument("--timestamp", help="Override the YYYYMMDD_HHMMSS distribution suffix for reproducible builds")
     parser.add_argument(

@@ -22,6 +22,7 @@ from src.utils.console_ui import (
     section,
     status,
 )
+from src.utils.runtime import require_managed_runtime
 
 SUITES: dict[str, tuple[str, list[str]]] = {
     "1": (
@@ -233,6 +234,8 @@ def choose_suite() -> str | None:
 
 
 def main() -> int:
+    if not require_managed_runtime(ROOT, "test"):
+        return 1
     parser = argparse.ArgumentParser(
         description="Run AIBrain verification suites."
     )

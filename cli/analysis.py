@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import Color, clear_screen, error, header, info, panel, section, status
 from src.utils.logging import configure_logging
+from src.utils.runtime import require_managed_runtime
 
 
 def relative_age(path: Path) -> str:
@@ -29,6 +30,8 @@ def relative_age(path: Path) -> str:
 
 
 def main() -> int:
+    if not require_managed_runtime(ROOT, "analysis"):
+        return 1
     clear_screen()
     from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget
     from src.app.diagnostics_window import DiagnosticsWindow
@@ -36,7 +39,7 @@ def main() -> int:
     from src.app.visualizer_panel import VisualizerPanel
     from src.models.diagnostics import OllamaDiagnostics
 
-    configure_logging()
+    configure_logging("analysis")
     header("AIBrain", "Connectome analysis launcher")
     app = QApplication(sys.argv)
     app.setApplicationName("AIBrain Analysis")

@@ -11,14 +11,17 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import clear_screen, error
 from src.utils.logging import configure_logging
+from src.utils.runtime import require_managed_runtime
 
 
 def main() -> int:
+    if not require_managed_runtime(ROOT, "diagnostic"):
+        return 1
     clear_screen()
     from PySide6.QtWidgets import QApplication
     from src.app.diagnostics_window import DiagnosticsWindow
 
-    configure_logging()
+    configure_logging("diagnostic")
     app = QApplication(sys.argv)
     app.setApplicationName("AIBrain Repair and Diagnostics")
     interrupted = False

@@ -35,6 +35,7 @@ from src.utils.console_ui import (
     section,
     status,
 )
+from src.utils.runtime import require_managed_runtime
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
@@ -306,6 +307,8 @@ def commit_regenerated_library() -> bool:
 
 def main() -> int:
     """Build, verify, and optionally commit the native library."""
+    if not require_managed_runtime(ROOT, "build_native"):
+        return 1
     parser = argparse.ArgumentParser(
         description="Compile AIBrain's optimized native connectome DLL."
     )

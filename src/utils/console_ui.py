@@ -16,7 +16,7 @@ DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
 RIGHT_EDGE_MARGIN = 4
 COMMAND_INDENT = 2
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
 class _ConsoleCoord(ctypes.Structure):
@@ -371,8 +371,9 @@ def wrap_prefixed_text(prefix: str, text: str, *, width: int, continuation: str 
 
 
 def _box_line(content: str, *, width: int, tone: str) -> None:
-    print(color(BOX_VERTICAL, tone) + " " + color(content.ljust(width - 2), Color.WHITE) + " " + color(BOX_VERTICAL,
-                                                                                                       tone))
+    content_width = width - 4
+    print(color(BOX_VERTICAL, tone) + " " + color(content.ljust(content_width), Color.WHITE) + " " + color(BOX_VERTICAL,
+                                                                                                               tone))
 
 
 def header(title: str = "AIBrain", subtitle: str = "Neural Runtime Installer") -> None:
@@ -380,8 +381,8 @@ def header(title: str = "AIBrain", subtitle: str = "Neural Runtime Installer") -
     inner = width - 2
     print()
     print(color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, Color.CYAN))
-    _box_line(f" {title} ".center(inner), width=width, tone=Color.CYAN)
-    _box_line(subtitle.center(inner), width=width, tone=Color.CYAN)
+    _box_line(title.center(width - 4), width=width, tone=Color.CYAN)
+    _box_line(subtitle.center(width - 4), width=width, tone=Color.CYAN)
     print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, Color.CYAN))
     print()
 
@@ -400,18 +401,18 @@ def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = Non
     label_width = max((len(label) for label, _ in rows), default=0)
     print()
     print(color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, tone))
-    _box_line(f" {title} ".center(inner), width=width, tone=tone)
+    _box_line(title.center(width - 4), width=width, tone=tone)
     if subtitle:
-        _box_line(subtitle.center(inner), width=width, tone=tone)
+        _box_line(subtitle.center(width - 4), width=width, tone=tone)
     print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
     for label, value in rows:
         prefix = f"  {label:<{label_width}}  "
         continuation = " " * len(prefix)
-        for line in wrap_prefixed_text(prefix, value, width=inner, continuation=continuation):
+        for line in wrap_prefixed_text(prefix, value, width=width - 4, continuation=continuation):
             _box_line(line, width=width, tone=tone)
     if footer:
         print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
-        _box_line(visible_trim(footer, inner), width=width, tone=tone)
+        _box_line(visible_trim(footer, width - 4), width=width, tone=tone)
     print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, tone))
     print()
 

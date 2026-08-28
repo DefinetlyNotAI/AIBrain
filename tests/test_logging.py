@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.utils.logging import AlignedFormatter, BoundedFileHandler, configure_logging
+from src.utils.logging import AlignedFormatter, BoundedFileHandler, _uncaught_exception, configure_logging
 
 
 class LoggingTests(unittest.TestCase):
@@ -26,11 +26,11 @@ class LoggingTests(unittest.TestCase):
         self.assertTrue(first.endswith("first"))
         self.assertEqual(second, " " * first.index("first") + "second")
 
-    def test_configure_logging_replaces_previous_logs_and_keeps_crash_log(self) -> None:
+    def test_feature_logs_are_scoped_and_crash_logs_are_lazy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log_directory = Path(directory)
-            (log_directory / "aibrain.log").write_text("old", encoding="utf-8")
-            runtime_log, crash_log = configure_logging(log_directory)
+            (log_directory / "aibrain.main.log").write_text("old", encoding="utf-8")
+            runtime_log, crash_log = configure_logging("diagnostic", log_directory)
             logger = logging.getLogger("aibrain.test")
             logger.warning("first line\nsecond line")
             logger.error("recorded failure")
@@ -38,9 +38,16 @@ class LoggingTests(unittest.TestCase):
                 handler.flush()
 
             runtime_text = runtime_log.read_text(encoding="utf-8")
-            self.assertNotIn("old", runtime_text)
+            self.assertEqual(runtime_log.name, "aibrain.diagnostic.log")
+            self.assertEqual(crash_log.name, "crash.diagnostic.log")
             self.assertIn("first line\n", runtime_text)
-            self.assertIn("recorded failure", crash_log.read_text(encoding="utf-8"))
+            self.assertIn("recorded failure", runtime_text)
+            self.assertFalse(crash_log.exists())
+            try:
+                raise RuntimeError("boom")
+            except RuntimeError as exc:
+                _uncaught_exception(type(exc), exc, exc.__traceback__)
+            self.assertIn("RuntimeError: boom", crash_log.read_text(encoding="utf-8"))
             self._close_root_handlers()
 
     def test_bounded_handler_discards_oldest_data(self) -> None:

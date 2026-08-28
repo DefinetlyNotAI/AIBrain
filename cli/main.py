@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import clear_screen, error, header, instruction_list
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
+from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
 
@@ -86,7 +87,8 @@ def _supervise_gpu_launch() -> int:
 
 
 def main() -> int:
-    require_virtual_environment()
+    if not require_managed_runtime(ROOT, "main"):
+        return 1
     clear_screen()
     os.environ.setdefault("QT_OPENGL", "desktop")
     from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, QTimer, Slot
@@ -115,7 +117,7 @@ def main() -> int:
     surface.setSamples(0)
     QSurfaceFormat.setDefaultFormat(surface)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
-    configure_logging()
+    configure_logging("main")
     app = QApplication(sys.argv)
     app.setFont(QFont("Segoe UI", 10))
     app.setApplicationName("AIBrain")
