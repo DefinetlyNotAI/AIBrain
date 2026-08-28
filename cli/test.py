@@ -34,22 +34,38 @@ SUITES: dict[str, tuple[str, list[str]]] = {
         ],
     ),
     "2": (
-        "Desktop UI tests",
+        "Desktop UI and presentation tests",
         [
             "tests.test_chat_scroll",
             "tests.test_cluster_palette",
             "tests.test_cluster_spacing",
             "tests.test_console_ui",
+            "tests.test_markdown",
         ],
     ),
     "3": (
-        "Launch and generation tests",
+        "CLI and application tests",
         [
             "tests.test_cli_main",
+            "tests.test_cli_test",
+            "tests.test_analysis_cli",
             "tests.test_gpu_launch",
             "tests.test_infinite_simulation",
-            "tests.test_markdown",
             "tests.test_nn_analysis_export",
+        ],
+    ),
+    "4": (
+        "Build and packaging tests",
+        [
+            "tests.test_build_dist",
+            "tests.test_packaged_utilities",
+        ],
+    ),
+    "5": (
+        "Infrastructure tests",
+        [
+            "tests.test_logging",
+            "tests.test_source_encoding",
         ],
     ),
 }
@@ -96,10 +112,10 @@ def run_suite(name: str, modules: list[str]) -> int:
             sys.executable,
             "-m",
             "unittest",
-            "-b",
             "discover",
             "-s",
             "tests",
+            "-b",
         ]
         if not modules
         else [
@@ -203,7 +219,7 @@ def choose_suite() -> str | None:
         return "a"
 
     if choice not in SUITES:
-        error("Unknown selection. Choose 1, 2, 3, A, or Q.")
+        error("Unknown selection. Choose 1 to 5, A, or Q.")
         return choose_suite()
 
     return choice
@@ -250,33 +266,24 @@ def main() -> int:
         return 0
 
     if choice == "a":
-        section(
-            "Run tests",
-            2,
-        )
+        all_modules = [
+            module
+            for _name, modules in SUITES.values()
+            for module in modules
+        ]
 
-        return run_suite(
+        return run_separated_suite(
             ALL_TESTS,
-            [],
+            all_modules,
+            start_section=2,
         )
 
     name, modules = SUITES[choice]
 
-    if choice == "3":
-        return run_separated_suite(
-            name,
-            modules,
-            start_section=2,
-        )
-
-    section(
-        "Run tests",
-        2,
-    )
-
-    return run_suite(
+    return run_separated_suite(
         name,
         modules,
+        start_section=2,
     )
 
 
