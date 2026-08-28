@@ -63,8 +63,9 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_native_clear_passes_a_wchar_value_not_a_string_pointer(self) -> None:
         class Call:
-            def __init__(self, result=1) -> None:  # type: ignore[no-untyped-def]
+            def __init__(self, result=1, writes_count=False) -> None:  # type: ignore[no-untyped-def]
                 self.result = result
+                self.writes_count = writes_count
                 self.calls: list[tuple[object, ...]] = []
 
             def __call__(self, *args):  # type: ignore[no-untyped-def]
@@ -75,16 +76,18 @@ class ConsoleUiTests(unittest.TestCase):
                     info.size.y = 25
                     info.window.left = 0
                     info.window.right = 79
+                if self.writes_count:
+                    args[4]._obj.value = args[2]
                 return self.result
 
         get_handle = Call(1)
         screen_info = Call(1)
-        fill_character = Call(1)
+        fill_character = Call(1, writes_count=True)
         kernel32 = SimpleNamespace(
             get_std_handle=get_handle,
             get_console_screen_buffer_info=screen_info,
             fill_console_output_character=fill_character,
-            fill_console_output_attribute=Call(1),
+            fill_console_output_attribute=Call(1, writes_count=True),
             set_console_cursor_position=Call(1),
         )
         with patch.object(console_ui.os, "name", "nt"), patch.object(console_ui.sys.stdout, "isatty",
@@ -114,6 +117,10 @@ class ConsoleUiTests(unittest.TestCase):
                 info.attributes = 7
                 return 1
 
+        def fill(_handle, _character, count, _origin, written) -> int:  # type: ignore[no-untyped-def]
+            written._obj.value = count
+            return 1
+
         create_file = Mock(return_value=99)
         close_handle = Mock(return_value=1)
         kernel32 = SimpleNamespace(
@@ -121,8 +128,8 @@ class ConsoleUiTests(unittest.TestCase):
             get_console_screen_buffer_info=ScreenInfo(),
             create_file=create_file,
             close_handle=close_handle,
-            fill_console_output_character=Mock(return_value=1),
-            fill_console_output_attribute=Mock(return_value=1),
+            fill_console_output_character=Mock(side_effect=fill),
+            fill_console_output_attribute=Mock(side_effect=fill),
             set_console_cursor_position=Mock(return_value=1),
         )
 
@@ -169,7 +176,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertFalse(any(line.endswith("...") for line in lines))
 
     def test_executable_path_shortening_requires_an_exact_path_match(self) -> None:
-        local_executable = Path(sys.executable).resolve()
+        local_executable = Path(console_ui.ROOT) / ".venv" / "Scripts" / "python.exe"
         with patch.object(console_ui.shutil, "which", return_value=str(local_executable)):
             self.assertEqual(
                 console_ui.shorten_command_argument(str(local_executable)),

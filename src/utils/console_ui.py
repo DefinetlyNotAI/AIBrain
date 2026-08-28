@@ -91,6 +91,7 @@ _OPEN_EXISTING = 3
 class _Kernel32Bindings:
     """Explicit callable contracts for the Windows console APIs we use."""
 
+    # noinspection bad-argument-type
     def __init__(self) -> None:
         library = ctypes.WinDLL("kernel32", use_last_error=True)
         self.get_std_handle: Callable[[int], int] = cast(
@@ -213,13 +214,21 @@ def _clear_native_console() -> bool:
         # The second parameter is a 16-bit WCHAR value, not a string pointer.
         # Passing a pointer here produces repeated CJK glyphs from its low word.
         cells = info.size.x * info.size.y
-        written = wintypes.DWORD()
+        characters_written = wintypes.DWORD()
+        attributes_written = wintypes.DWORD()
         origin = _ConsoleCoord(0, 0)
-        characters_cleared = kernel32.fill_console_output_character(handle, " ", cells, origin, ctypes.byref(written))
+        characters_cleared = kernel32.fill_console_output_character(handle, " ", cells, origin,
+                                                                    ctypes.byref(characters_written))
         attributes_cleared = kernel32.fill_console_output_attribute(handle, info.attributes, cells, origin,
-                                                                    ctypes.byref(written))
+                                                                    ctypes.byref(attributes_written))
         cursor_reset = kernel32.set_console_cursor_position(handle, origin)
-        return bool(characters_cleared and attributes_cleared and cursor_reset)
+        return bool(
+            characters_cleared
+            and attributes_cleared
+            and cursor_reset
+            and characters_written.value == cells
+            and attributes_written.value == cells
+        )
     finally:
         if owns_handle:
             kernel32.close_handle(handle)
@@ -357,7 +366,7 @@ def section(title: str, number: int) -> None:
 
 def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = None, footer: str | None = None,
           tone: str = Color.CYAN) -> None:
-    """Render a labelled summary panel shared by installer and build tools."""
+    """Render a labeled summary panel shared by installer and build tools."""
     width = terminal_width()
     inner = width - 2
     label_width = max((len(label) for label, _ in rows), default=0)
