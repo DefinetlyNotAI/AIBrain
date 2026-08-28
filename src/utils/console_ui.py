@@ -473,11 +473,21 @@ def command_preview(command_line: list[str]) -> None:
 class CommandOutputBox:
     """An indented, live-rendered container for subprocess output."""
 
-    def __init__(self, *, indent: int = COMMAND_INDENT) -> None:
+    def __init__(self, *, indent: int = COMMAND_INDENT, live: bool | None = None) -> None:
         self.prefix = " " * indent
         self.inner = max(terminal_width() - indent, 20) - 2
         self.content_width = self.inner - 2
         self._is_open = False
+        self._live = self._can_redraw_live() if live is None else live
+        self._bottom_visible = False
+        self._partial_rows = 0
+
+    @staticmethod
+    def _can_redraw_live() -> bool:
+        """Use cursor control only for a real interactive terminal."""
+        if not sys.stdout.isatty():
+            return False
+        return os.name != "nt" or _enable_virtual_terminal()
 
     def __enter__(self) -> CommandOutputBox:
         self.open()
@@ -491,32 +501,79 @@ class CommandOutputBox:
             return
         print(self.prefix + color(BOX_TOP_LEFT + BOX_HORIZONTAL * self.inner + BOX_TOP_RIGHT, Color.GRAY), flush=True)
         self._is_open = True
+        if self._live:
+            self._print_bottom()
+
+    def _print_bottom(self) -> None:
+        print(self.prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * self.inner + BOX_BOTTOM_RIGHT, Color.GRAY),
+              flush=True)
+        self._bottom_visible = True
+
+    def _erase_live_rows(self, rows: int) -> None:
+        """Remove the visible footer and optional partial rows before redrawing."""
+        if not self._live or not self._bottom_visible:
+            return
+        for _ in range(rows + 1):
+            sys.stdout.write("\x1b[1A\x1b[2K\r")
+        sys.stdout.flush()
+        self._bottom_visible = False
+
+    def _rendered_lines(self, output: str) -> list[str]:
+        rendered = shorten_output_paths(strip_ansi(output)).rstrip("\r\n")
+        if not rendered:
+            return []
+        return [
+            line
+            for raw_line in rendered.splitlines()
+            for line in wrap_console_line(raw_line, self.content_width)
+        ]
+
+    def _print_lines(self, lines: list[str]) -> None:
+        for line in lines:
+            print(
+                self.prefix
+                + color(BOX_VERTICAL, Color.GRAY)
+                + " "
+                + color(line, Color.GRAY)
+                + " " * (self.content_width - len(line))
+                + " "
+                + color(BOX_VERTICAL, Color.GRAY),
+                flush=True,
+            )
 
     def write(self, output: str) -> None:
         """Append output immediately, preserving the framed presentation."""
         if not self._is_open:
             raise RuntimeError("The command output box must be opened before writing output")
-        rendered = shorten_output_paths(strip_ansi(output)).rstrip("\r\n")
-        if not rendered:
+        lines = self._rendered_lines(output)
+        if not lines:
             return
-        for raw_line in rendered.splitlines():
-            for line in wrap_console_line(raw_line, self.content_width):
-                print(
-                    self.prefix
-                    + color(BOX_VERTICAL, Color.GRAY)
-                    + " "
-                    + color(line, Color.GRAY)
-                    + " " * (self.content_width - len(line))
-                    + " "
-                    + color(BOX_VERTICAL, Color.GRAY),
-                    flush=True,
-                )
+        self._erase_live_rows(self._partial_rows)
+        self._partial_rows = 0
+        self._print_lines(lines)
+        if self._live:
+            self._print_bottom()
+
+    def write_partial(self, output: str) -> None:
+        """Redraw an unterminated subprocess line, including progress bars."""
+        if not self._is_open:
+            raise RuntimeError("The command output box must be opened before writing output")
+        # Captured streams cannot erase their previous rows; delaying partial
+        # output prevents duplicate fragments in IDE consoles and log capture.
+        if not self._live:
+            return
+        lines = self._rendered_lines(output)
+        self._erase_live_rows(self._partial_rows)
+        self._partial_rows = len(lines)
+        self._print_lines(lines)
+        if self._live:
+            self._print_bottom()
 
     def close(self) -> None:
         if not self._is_open:
             return
-        print(self.prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * self.inner + BOX_BOTTOM_RIGHT, Color.GRAY),
-              flush=True)
+        if not self._bottom_visible:
+            self._print_bottom()
         self._is_open = False
 
 

@@ -46,19 +46,37 @@ APPLICATIONS = (
 
 def _render_new_build_output(output_path: Path, offset: int, pending: str, output_box: CommandOutputBox) -> tuple[
     int, str]:
-    """Render only completed lines appended to Nuitka's redirected output file."""
-    output = output_path.read_text(encoding="utf-8", errors="replace")
+    """Render completed lines and redraw unterminated progress output immediately."""
+    # Preserve carriage returns. Nuitka and compiler helpers use them for
+    # progress replacement; universal-newline reads would silently turn them
+    # into completed lines before the live frame can render them.
+    with output_path.open("r", encoding="utf-8", errors="replace", newline="") as output_file:
+        output = output_file.read()
     if len(output) <= offset:
         return offset, pending
     new_output = pending + output[offset:]
     offset = len(output)
-    lines = new_output.splitlines(keepends=True)
     pending = ""
-    for line in lines:
-        if line.endswith(("\n", "\r")):
-            output_box.write(line)
-        else:
-            pending = line
+    while new_output:
+        newline = min(
+            (index for index in (new_output.find("\n"), new_output.find("\r")) if index >= 0),
+            default=-1,
+        )
+        if newline < 0:
+            pending = new_output
+            output_box.write_partial(pending)
+            break
+        line, terminator, new_output = new_output[:newline], new_output[newline], new_output[newline + 1:]
+        if terminator == "\r":
+            if new_output.startswith("\n"):
+                output_box.write(line)
+                new_output = new_output[1:]
+                continue
+            # Typical CLI progress uses carriage returns to replace one live
+            # line. Keep it within the frame rather than waiting for a newline.
+            output_box.write_partial(line)
+            continue
+        output_box.write(line)
     return offset, pending
 
 

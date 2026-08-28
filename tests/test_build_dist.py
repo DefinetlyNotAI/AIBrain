@@ -5,6 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+import tempfile
 from unittest.mock import patch
 
 from cli import build_dist
@@ -67,6 +68,33 @@ class BuildDistributionTests(unittest.TestCase):
             build_dist.run(["tool"])
 
         self.assertEqual(raised.exception.returncode, 4)
+
+    def test_tail_renders_unterminated_progress_without_waiting_for_a_newline(self) -> None:
+        class OutputBox:
+            def __init__(self) -> None:
+                self.completed: list[str] = []
+                self.partial: list[str] = []
+
+            def write(self, text: str) -> None:
+                self.completed.append(text)
+
+            def write_partial(self, text: str) -> None:
+                self.partial.append(text)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "nuitka-output.txt"
+            path.write_text("Downloading: 25%", encoding="utf-8")
+            output_box = OutputBox()
+            offset, pending = build_dist._render_new_build_output(path, 0, "", output_box)  # type: ignore[arg-type]
+            self.assertEqual(pending, "Downloading: 25%")
+            self.assertEqual(output_box.partial, ["Downloading: 25%"])
+
+            path.write_text("Downloading: 25%\rDownloading: 50%\rDone\n", encoding="utf-8")
+            _, pending = build_dist._render_new_build_output(path, offset, pending, output_box)  # type: ignore[arg-type]
+
+        self.assertEqual(pending, "")
+        self.assertEqual(output_box.partial, ["Downloading: 25%", "Downloading: 25%", "Downloading: 50%"])
+        self.assertEqual(output_box.completed, ["Done"])
 
     @patch("cli.build_dist.subprocess.run")
     @patch("cli.build_dist.subprocess.Popen")

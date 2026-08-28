@@ -300,6 +300,26 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertTrue(all(len(line) <= 58 for line in lines))
         self.assertFalse(any(line.endswith("...") for line in lines))
 
+    def test_live_command_box_keeps_and_redraws_its_footer_for_partial_output(self) -> None:
+        class InteractiveText(StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        output = InteractiveText()
+        with (
+            patch.object(console_ui.os, "name", "posix"),
+            redirect_stdout(output),
+        ):
+            with console_ui.CommandOutputBox(live=True) as box:
+                box.write_partial("Downloading model: 25%")
+                box.write_partial("Downloading model: 50%")
+                box.write("Download complete")
+
+        rendered = output.getvalue()
+        self.assertIn("\x1b[1A\x1b[2K", rendered)
+        self.assertGreaterEqual(rendered.count(console_ui.BOX_BOTTOM_LEFT), 4)
+        self.assertIn("Download complete", console_ui.strip_ansi(rendered))
+
     def test_executable_path_shortening_requires_an_exact_path_match(
         self,
     ) -> None:
