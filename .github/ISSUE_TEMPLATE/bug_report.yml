@@ -1,0 +1,51 @@
+name: Bug report
+description: Report reproducible AIBrain behavior that is not working correctly.
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include screenshots, logs, or errors where safe.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. ...\n2. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AIBrain version or commit
+*** Add File: C:\Users\Hp\Desktop\AIBrain\.github\ISSUE_TEMPLATE\feature_request.yml
+name: Feature request
+description: Propose a concrete AIBrain improvement.
+title: "feature: "
+labels: [feature]
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What user need is not met today?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed outcome
+      description: Describe the behavior and success criteria.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives considered
