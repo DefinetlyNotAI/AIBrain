@@ -33,7 +33,7 @@ class OllamaDiagnostics:
         self.root = root or Path.home() / ".ollama" / "models"
         self._discovery = OllamaDiscovery(self.root)
 
-    def inspect(self, *, verify_backend: bool = False) -> list[ModelDiagnostic]:
+    def inspect(self, *, verify_backend: bool = False, cancelled: Event | None = None) -> list[ModelDiagnostic]:
         manifest_root = self.root / "manifests"
         if not manifest_root.is_dir():
             return []
@@ -51,7 +51,7 @@ class OllamaDiagnostics:
                 )
         models = [model for _reference, _manifest, model in parsed]
         if verify_backend and models:
-            checked = ModelValidator.validate(models, Event(), lambda _current, _total, _detail: None)
+            checked = ModelValidator.validate(models, cancelled or Event(), lambda _current, _total, _detail: None)
         else:
             checked = models
         diagnostics.extend(

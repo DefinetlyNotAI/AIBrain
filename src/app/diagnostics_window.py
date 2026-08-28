@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from threading import Event
 
 from PySide6.QtCore import QObject, QProcess, QThread, Qt, Signal, Slot
 from PySide6.QtCore import QUrl
@@ -38,10 +39,17 @@ class DiagnosticsWorker(QObject):
     completed = Signal(object)
     failed = Signal(str)
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._cancelled = Event()
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+
     @Slot()
     def run(self) -> None:
         try:
-            self.completed.emit(OllamaDiagnostics().inspect(verify_backend=True))
+            self.completed.emit(OllamaDiagnostics().inspect(verify_backend=True, cancelled=self._cancelled))
         except OSError as exc:
             self.failed.emit(str(exc))
 
@@ -57,6 +65,7 @@ class DiagnosticsWindow(QDialog):
         self.setMinimumSize(780, 500)
         self._repair_process: QProcess | None = None
         self._diagnostics_thread: QThread | None = None
+        self._diagnostics_worker: DiagnosticsWorker | None = None
         self._build()
         self.refresh()
 
@@ -135,6 +144,7 @@ class DiagnosticsWindow(QDialog):
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._diagnostics_finished)
         self._diagnostics_thread = thread
+        self._diagnostics_worker = worker
         thread.start()
 
     @Slot(object)
@@ -161,6 +171,7 @@ class DiagnosticsWindow(QDialog):
     @Slot()
     def _diagnostics_finished(self) -> None:
         self._diagnostics_thread = None
+        self._diagnostics_worker = None
         self._set_refreshing(False)
         self._update_actions()
 
@@ -247,3 +258,14 @@ class DiagnosticsWindow(QDialog):
         logs = PROJECT_ROOT / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(logs)))
+
+    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        if self._repair_process is not None:
+            self._repair_process.kill()
+            self._repair_process.waitForFinished(2_000)
+        if self._diagnostics_worker is not None:
+            self._diagnostics_worker.cancel()
+        if self._diagnostics_thread is not None:
+            self._diagnostics_thread.quit()
+            self._diagnostics_thread.wait(10_000)
+        super().closeEvent(event)
