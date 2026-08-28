@@ -30,8 +30,9 @@ class AlignedFormatter(logging.Formatter):
         self.colour = colour
 
     def format(self, record: logging.LogRecord) -> str:
-        timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S.%f")[:-3]
-        prefix = f"{timestamp} | {record.levelname:<8} | {record.name:<28} | "
+        timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
+        source = record.name.removeprefix("src.").removeprefix("aibrain.")
+        prefix = f"  {timestamp}  {record.levelname:<8} {source}  "
         message = record.getMessage()
         if record.exc_info:
             message = f"{message}\n{self.formatException(record.exc_info)}"
