@@ -18,3 +18,5 @@ dist/
 .coverage
 htmlcov/
 analysis_model/
+logs/
+*.log
