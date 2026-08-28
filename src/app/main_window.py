@@ -175,7 +175,9 @@ class MainWindow(QMainWindow):
         """Open model recovery without interrupting a currently loaded model."""
         if self._launch_packaged_utility("diagnostic", "diagnostic.exe"):
             return
-        DiagnosticsWindow(self).exec()
+        self._diagnostics_window = DiagnosticsWindow(self)
+        self._diagnostics_window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self._diagnostics_window.show()
 
     def open_analysis(self) -> None:
         if self.current_model is None:

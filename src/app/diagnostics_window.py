@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QObject, QProcess, QThread, Qt, Signal, Slot
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
@@ -22,8 +22,28 @@ from PySide6.QtWidgets import (
 from ..models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from ..utils.gpu import discover_render_adapters, should_prefer_high_performance_gpu
 from ..utils.logging import PROJECT_ROOT
+from ..utils.console_ui import strip_ansi
 
 LOG = logging.getLogger(__name__)
+
+
+def normalize_process_output(output: str) -> str:
+    """Convert terminal-oriented process output into readable Qt text."""
+    return strip_ansi(output).replace("\r\n", "\n").replace("\r", "\n")
+
+
+class DiagnosticsWorker(QObject):
+    """Run expensive backend validation away from the GUI thread."""
+
+    completed = Signal(object)
+    failed = Signal(str)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            self.completed.emit(OllamaDiagnostics().inspect(verify_backend=True))
+        except OSError as exc:
+            self.failed.emit(str(exc))
 
 
 class DiagnosticsWindow(QDialog):
@@ -36,6 +56,7 @@ class DiagnosticsWindow(QDialog):
         self.setWindowTitle("AIBrain Repair and Diagnostics")
         self.setMinimumSize(780, 500)
         self._repair_process: QProcess | None = None
+        self._diagnostics_thread: QThread | None = None
         self._build()
         self.refresh()
 
@@ -92,18 +113,33 @@ class DiagnosticsWindow(QDialog):
         self._update_actions()
 
     def refresh(self) -> None:
+        if self._diagnostics_thread is not None:
+            return
         self.table.clear()
         adapters = discover_render_adapters()
         adapter_text = ", ".join(
             adapter.name for adapter in adapters) if adapters else "No display adapters could be queried"
         preference = "high-performance GPU requested" if should_prefer_high_performance_gpu() else "Windows system-default GPU requested"
         self.system_status.setText(f"Render diagnostics: {preference}. Detected adapters: {adapter_text}.")
-        try:
-            diagnostics = OllamaDiagnostics().inspect(verify_backend=True)
-        except OSError as exc:
-            LOG.exception("Unable to inspect Ollama models")
-            QMessageBox.critical(self, "Diagnostics error", str(exc))
-            return
+        self.system_status.setText(self.system_status.text() + "\nChecking local GGUF compatibility in the background…")
+        self._set_refreshing(True)
+        thread = QThread(self)
+        worker = DiagnosticsWorker()
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.completed.connect(self._diagnostics_ready)
+        worker.failed.connect(self._diagnostics_failed)
+        worker.completed.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._diagnostics_finished)
+        self._diagnostics_thread = thread
+        thread.start()
+
+    @Slot(object)
+    def _diagnostics_ready(self, result: object) -> None:
+        diagnostics = result if isinstance(result, list) else []
         if not diagnostics:
             item = QTreeWidgetItem(["No local manifests found", "Info", "Install a model with ollama pull", ""])
             self.table.addTopLevelItem(item)
@@ -116,7 +152,22 @@ class DiagnosticsWindow(QDialog):
             self.table.addTopLevelItem(item)
         self.table.resizeColumnToContents(0)
         self.table.resizeColumnToContents(1)
+
+    @Slot(str)
+    def _diagnostics_failed(self, message: str) -> None:
+        LOG.error("Unable to inspect Ollama models: %s", message)
+        QMessageBox.critical(self, "Diagnostics error", message)
+
+    @Slot()
+    def _diagnostics_finished(self) -> None:
+        self._diagnostics_thread = None
+        self._set_refreshing(False)
         self._update_actions()
+
+    def _set_refreshing(self, refreshing: bool) -> None:
+        self.refresh_button.setEnabled(not refreshing)
+        self.repair_button.setEnabled(not refreshing and self.selected_diagnostic() is not None)
+        self.remove_button.setEnabled(not refreshing and bool(self.selected_diagnostic()))
 
     def selected_diagnostic(self) -> ModelDiagnostic | None:
         item = self.table.currentItem()
@@ -152,7 +203,7 @@ class DiagnosticsWindow(QDialog):
     def _append_repair_output(self) -> None:
         if self._repair_process is None:
             return
-        output = bytes(self._repair_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        output = normalize_process_output(bytes(self._repair_process.readAllStandardOutput()).decode("utf-8", errors="replace"))
         self.output.moveCursor(QTextCursor.MoveOperation.End)
         self.output.insertPlainText(output)
 
