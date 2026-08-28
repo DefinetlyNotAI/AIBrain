@@ -7,6 +7,11 @@ the chat pane while the connectome responds to each received token.
 
 ### Infinite simulation
 
+Infinite Mode uses a deterministic selection from ten pregenerated world openings and asks the participant to begin the
+scenario. It applies an internal high-randomness configuration (temperature at least 1.25 and top-p at least .96),
+regardless of the Normal Chat controls. Switching between Normal Chat and Infinite Mode clears both the conversation and
+the replay. Start becomes Stop while either mode is running; Continue is available only for a stopped Infinite scenario.
+
 Press **∞ Inf** to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the
 **World** produces only external events; the **Participant** produces only first-person responses. Every stream update
 is tied to both its role and turn number, so World tokens cannot append to a Participant bubble. The UI clearly labels
@@ -46,6 +51,9 @@ The controls at the bottom of the chat pane are saved in Windows application set
 | Generation speed | UI token pacing from 0.1x to 1.0x. It does not change model sampling.                                          |
 
 ## Connectome controls
+
+Open **View settings** for Simulation Performance, Rendering GPU, Spacing, Neuron Borders (0–1), and Reset View. The
+settings are collapsed by default. In 2D, drag to pan and use the wheel to zoom; picking follows the translated view.
 
 The right pane is a native `QOpenGLWidget` renderer. It supports left-drag to orbit, mouse-wheel zoom, and **Reset
 view** to restore the camera. **Pause** stops visual updates; press **Resume** to continue. **Low**, **Medium**, and

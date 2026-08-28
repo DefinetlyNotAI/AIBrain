@@ -31,6 +31,7 @@ The complete documentation is in [`docs/`](docs/Home.md):
 - [User guide](docs/User%20Guide.md)
 - [Models and inference](docs/Models%20and%20Inference.md)
 - [Connectome and analysis](docs/Connectome%20and%20Analysis.md)
+- [JSON reference](docs/JSON%20Reference.md)
 - [Native acceleration](docs/Native%20Acceleration.md)
 - [Architecture and development](docs/Architecture.md)
 - [Configuration](docs/Configuration.md)

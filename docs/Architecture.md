@@ -31,6 +31,12 @@ field.
 
 ## Key modules
 
+The dashboard primitives in `src/app/dashboard.py` are shared by inspection surfaces. `ConnectomeAnalyzer` owns the
+version-tolerant NPZ contract and automatic maturity transitions. Diagnostics separates current dynamic process output
+from completed output lines so carriage-return progress does not become duplicate log text. Repairs are targeted:
+refreshing validation does not delete models, DLLs, or broad cache directories; stale-manifest removal is the only
+destructive action and always requires confirmation.
+
 | Path                               | Responsibility                                                                |
 |------------------------------------|-------------------------------------------------------------------------------|
 | `cli/installer.py`                 | Creates and populates the managed Python virtual environment.                 |

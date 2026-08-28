@@ -38,6 +38,11 @@ system Python.
 
 ## The renderer uses an integrated GPU
 
+The Windows adapter preference is only a preference signal. The startup loader and live overlay record the actual
+OpenGL vendor/renderer, which is the source of truth. If AIBrain reports a mismatch after a restart, add the exact
+Python or packaged executable in **Windows Settings > System > Display > Graphics**, choose High performance, update the
+driver, then restart. The diagnostics dashboard records the same repair path.
+
 Choose the NVIDIA/high-performance adapter in AIBrain and restart the entire application. AIBrain writes and reads back
 the Windows high-performance preference for the active Python or packaged executable before OpenGL is created, and
 re-applies it if a mismatch is detected. An existing OpenGL context cannot migrate adapters. If the overlay still

@@ -42,6 +42,15 @@ or **Sector 2D**. Sector mode provides a region selector and filters both drawin
 
 ## Analysis
 
+Analysis+ persists rolling reconstruction error, novelty, and update magnitude inside its compressed NPZ model. The
+dashboard reports Baby/Teen/Adult/Elder state, unmet automatic-transition conditions, persistence age, and whether an
+Elder model has frozen weights. These are learning-health signals, not measured model accuracy. Full export semantics
+are in the [JSON reference](JSON%20Reference.md).
+
+The 2D map supports drag panning, wheel zoom, and pan-aware picking. Its intentionally larger flat presentation uses a
+fixed readable layout, so cluster spacing is disabled while 2D is selected. Replay and token navigation remain usable
+in both projection modes and do not depend on renderer pause state.
+
 **Analysis** is available after a completed normal chat and exports `aibrain.session-analysis.v1`: conversation,
 generation/visual summary, graph metadata, and recorded-frame summary. It deliberately contains no learned-network
 findings. **Analysis+** is available after a completed Infinite-mode run and exports

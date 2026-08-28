@@ -18,6 +18,7 @@ analysis are clearly labelled simulation or derived data, never measured model i
 ## Reference
 
 - [Connectome and analysis](Connectome%20and%20Analysis.md)
+- [JSON reference](JSON%20Reference.md)
 - [Configuration](Configuration.md)
 - [Native acceleration](Native%20Acceleration.md)
 - [Architecture](Architecture.md)
