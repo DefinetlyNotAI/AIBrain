@@ -138,9 +138,9 @@ class MainWindow(QMainWindow):
 
     def _set_models(self, models: list[ModelInfo]) -> None:
         self.chat.set_models(models)
-        if models:
-            self.select_model(models[0])
-            self.chat.stats.setText(f"Validated {len(models)} GGUF model(s); select one to begin.")
+        available = [model for model in models if model.available]
+        if available:
+            self.chat.stats.setText(f"Validated {len(available)} GGUF model(s); select one to begin.")
         else:
             self.chat.stats.setText(
                 "No usable GGUF blob found in %USERPROFILE%\\.ollama\\models. "
@@ -259,7 +259,7 @@ class MainWindow(QMainWindow):
         self._simulation_bubbles.clear()
         self.chat.generating(True)
         self.chat.stats.setText(
-            "∞ Simulation loading two local model instances; the right pane is the participant brain.")
+            "∞ Simulation Thinking… loading two local model instances; the right pane is the participant brain.")
         self.startInfiniteSimulation.emit(seed, self.config, self.current_model.blob_path)
 
     def _simulation_turn_started(self, role: str, turn: int) -> None:

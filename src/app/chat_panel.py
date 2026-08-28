@@ -18,7 +18,7 @@ _SELECTABLE_TEXT_FLAGS = Qt.TextInteractionFlag(
 
 def markdown_to_html(markdown: str) -> str:
     """Render the useful Markdown subset safely inside selectable Qt labels."""
-    escaped = html.escape(markdown)
+    escaped = html.escape(html.unescape(markdown))
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", escaped)
@@ -186,13 +186,13 @@ class ChatPanel(QWidget):
     def set_models(self, models: list[ModelInfo]) -> None:
         self.models.blockSignals(True)
         self.models.clear()
-        if not models:
-            self.models.addItem("No Ollama GGUF models discovered", None)
-        for model in (model for model in models if model.available):
+        available = [model for model in models if model.available]
+        self.models.addItem("No model selected", None)
+        for model in available:
             self.models.addItem(model.label, model)
         self.models.blockSignals(False)
-        self.models.setEnabled(bool(models))
-        self.open_analysis.setEnabled(bool(models))
+        self.models.setEnabled(bool(available))
+        self.open_analysis.setEnabled(False)
 
     def set_analysis_available(self, available: bool) -> None:
         self.open_analysis.setEnabled(available)
