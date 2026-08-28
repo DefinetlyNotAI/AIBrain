@@ -1,26 +1,23 @@
 from __future__ import annotations
 
-import os
+import numpy as np
 import tempfile
 import unittest
 from pathlib import Path
 
-from cli.analysis import relative_age
+from src.app.analysis_window import inspect_npz_model
 
 
 class AnalysisCliTests(unittest.TestCase):
-    def test_relative_age_reports_recent_and_older_manifests(self) -> None:
+    def test_npz_inspector_reports_persisted_tensor_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            manifest = Path(directory) / "manifest"
-            manifest.touch()
-            self.assertEqual(relative_age(manifest), "less than one minute")
+            path = Path(directory) / "analysis.npz"
+            np.savez(path, encoder_weights=np.ones((2, 3)), encoder_bias=np.ones(3), decoder_weights=np.ones((3, 2)),
+                     decoder_bias=np.ones(2), embedding_centroid=np.ones(3), frames_seen=np.array(7))
+            metadata = inspect_npz_model(path)
 
-            # Keep the fixture beyond the integer-second boundary used by the
-            # human-readable formatter so normal test execution latency cannot
-            # turn this into "1 day 23 hours".
-            old = manifest.stat().st_mtime - 2 * 86_400 - 5
-            os.utime(manifest, (old, old))
-            self.assertTrue(relative_age(manifest).startswith("2 days"))
+        self.assertEqual(metadata["frames_seen"], 7)
+        self.assertEqual(metadata["tensors"]["encoder_weights"], [2, 3])
 
 
 if __name__ == "__main__":
