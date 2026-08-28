@@ -60,7 +60,7 @@ class LlamaBackend:
             from llama_cpp import Llama, llama_log_callback, llama_log_set
         except ImportError as exc:
             raise RuntimeError(
-                "llama-cpp-python is not installed. Run: py -3.11 install.py"
+                "llama-cpp-python is not installed. Run: python install.py"
             ) from exc
 
         LOG.info(
