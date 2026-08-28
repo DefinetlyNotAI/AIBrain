@@ -2,13 +2,53 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+import json
 from pathlib import Path
+import re
 from threading import Event
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from .model_info import ModelInfo
 from .ollama_discovery import OllamaDiscovery
+
+
+CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache"
+
+
+def _cache_path(model: ModelInfo) -> Path:
+    name = re.sub(r"[^a-z0-9_.-]+", "_", f"{model.name}_{model.tag}".lower()).strip("_")
+    return CACHE_DIRECTORY / f"aibrain.{name or 'model'}.cache"
+
+
+def _signature(path: Path) -> dict[str, int]:
+    stat = path.stat()
+    return {"size": stat.st_size, "modified_ns": stat.st_mtime_ns}
+
+
+def _cached_result(model: ModelInfo) -> str | None | object:
+    if model.blob_path is None:
+        return object()
+    try:
+        payload = json.loads(_cache_path(model).read_text(encoding="utf-8"))
+        if payload.get("signature") == _signature(model.blob_path):
+            return payload.get("error")
+    except (OSError, ValueError, TypeError):
+        pass
+    return _CACHE_MISS
+
+
+_CACHE_MISS = object()
+
+
+def _store_result(model: ModelInfo, error: str | None) -> None:
+    if model.blob_path is None:
+        return
+    try:
+        CACHE_DIRECTORY.mkdir(exist_ok=True)
+        _cache_path(model).write_text(json.dumps({"signature": _signature(model.blob_path), "error": error}), encoding="utf-8")
+    except OSError:
+        return
 
 
 class ModelValidator:
@@ -43,19 +83,24 @@ class ModelValidator:
 
             error = checked_paths.get(model.blob_path)
             if model.blob_path not in checked_paths:
-                error = OllamaDiscovery._validate_gguf(model.blob_path, model.size_bytes)
-                if error is None and backend is not None:
-                    report(index, total, f"Loading {model.name}:{model.tag} with llama.cpp")
-                    try:
-                        backend.load(
-                            model.blob_path,
-                            GenerationConfig(context_length=512, gpu_layers=0),
-                        )
-                    except Exception as exc:
-                        error = f"llama.cpp compatibility check failed: {exc}"
-                    finally:
-                        backend.unload()
+                cached = _cached_result(model)
+                if cached is _CACHE_MISS:
+                    error = OllamaDiscovery._validate_gguf(model.blob_path, model.size_bytes)
+                    if error is None and backend is not None:
+                        report(index, total, f"Loading {model.name}:{model.tag} with llama.cpp")
+                        try:
+                            backend.load(
+                                model.blob_path,
+                                GenerationConfig(context_length=512, gpu_layers=0),
+                            )
+                        except Exception as exc:
+                            error = f"llama.cpp compatibility check failed: {exc}"
+                        finally:
+                            backend.unload()
+                else:
+                    error = cached
                 checked_paths[model.blob_path] = error
+                _store_result(model, error)
             validated.append(replace(model, available=error is None, error=error))
 
         return validated

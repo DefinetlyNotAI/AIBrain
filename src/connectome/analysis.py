@@ -14,7 +14,7 @@ from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome_kernels import native
 
 LOG = logging.getLogger(__name__)
-MODEL_FILENAME = "connectome_autoencoder_v1.npz"
+MODEL_FILENAME = "aibrain.analyser.npz"
 
 
 class PatternSegment(TypedDict):
@@ -68,15 +68,15 @@ class ConnectomeAnalyzer:
 
     @staticmethod
     def default_model_path() -> Path:
-        """Return the user-writable location for AIBrain's learned state."""
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
-        return base / "AIBrain" / "analysis_model" / MODEL_FILENAME
+        """Return the project-local learned-analysis model location."""
+        return Path(__file__).resolve().parents[2] / "models" / MODEL_FILENAME
 
     @staticmethod
     def legacy_model_path() -> Path:
-        """Return the pre-release location, retained only for one-time migration."""
-        return Path(__file__).resolve().parents[2] / "analysis_model" / MODEL_FILENAME
+        """Return the previous per-user location for one-time migration."""
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+        return base / "AIBrain" / "analysis_model" / "connectome_autoencoder_v1.npz"
 
     def observe(self, frame: ActivationFrame, values: np.ndarray) -> AnalysisRecord:
         regional, active_nodes = native.regions(values, self.graph.regions, self.region_count)

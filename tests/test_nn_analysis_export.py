@@ -83,7 +83,7 @@ class NNAnalysisExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"LOCALAPPDATA": directory}):
             path = ConnectomeAnalyzer.default_model_path()
 
-        self.assertEqual(path, Path(directory) / "AIBrain" / "analysis_model" / "connectome_autoencoder_v1.npz")
+        self.assertEqual(path, Path(__file__).resolve().parents[1] / "models" / "aibrain.analyser.npz")
 
 
 if __name__ == "__main__":

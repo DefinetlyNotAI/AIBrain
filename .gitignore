@@ -15,6 +15,8 @@ dist/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+.cache/
+models/aibrain.analyser.npz
 .coverage
 htmlcov/
 analysis_model/
