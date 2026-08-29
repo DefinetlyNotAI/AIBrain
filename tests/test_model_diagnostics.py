@@ -42,6 +42,12 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertNotIn(".wait(", diagnostics_close)
         self.assertIn("event.ignore()", analysis_close)
 
+    def test_manifest_column_opens_explorer_on_one_click(self) -> None:
+        source = inspect.getsource(DiagnosticsWindow._build)
+
+        self.assertIn("itemClicked.connect(self._open_manifest_item)", source)
+        self.assertNotIn("itemDoubleClicked", source)
+
     def _write_manifest(self, root: Path, *, blob_data: bytes) -> Path:
         manifest = (
             root / "manifests" / "registry.ollama.ai" / "library" / "demo" / "latest"
