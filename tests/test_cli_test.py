@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
@@ -28,16 +29,26 @@ class TestLauncherTests(unittest.TestCase):
             {"1", "2", "3", "4", "5"},
         )
 
-        modules = [
-            module
-            for _title, suite in test.SUITES.values()
-            for module in suite
-        ]
+        modules = [module for _title, suite in test.SUITES.values() for module in suite]
 
         self.assertEqual(
             len(modules),
             len(set(modules)),
         )
+
+    @patch("cli.test.in_managed_virtual_environment", return_value=False)
+    @patch("cli.test.subprocess.run")
+    @patch("pathlib.Path.is_file", return_value=True)
+    def test_global_python_relaunches_the_managed_test_runtime(
+        self, _is_file, run_mock, _managed
+    ) -> None:  # type: ignore[no-untyped-def]
+        run_mock.return_value = subprocess.CompletedProcess([], 0)
+
+        self.assertEqual(test.main(), 0)
+
+        command = run_mock.call_args.args[0]
+        self.assertEqual(Path(command[0]).name, "python.exe")
+        self.assertEqual(Path(command[1]).name, "test.py")
 
     @patch("cli.test.subprocess.run")
     def test_empty_suite_runs_discovery_for_every_test_file(self, run_mock) -> None:  # type: ignore[no-untyped-def]

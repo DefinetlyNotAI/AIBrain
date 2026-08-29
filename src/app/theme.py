@@ -109,6 +109,9 @@ QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget {{ background: 
 QHeaderView::section {{ background: {colours['accent']}; color: {colours['accent_text']}; border: 0; border-right: 1px solid {colours['panel_border']}; padding: 7px 9px; font-weight: 650; }}
 QTreeWidget::item {{ min-height: 28px; padding: 4px; }}
 QTreeWidget::item:selected {{ background: {colours['accent_hover']}; color: {colours['accent_text']}; }}
+QTabWidget::pane {{ background: {colours['background']}; border: 1px solid {colours['panel_border']}; border-radius: 6px; }}
+QTabBar::tab {{ background: {colours['panel']}; color: {colours['muted']}; border: 1px solid {colours['panel_border']}; padding: 7px 12px; }}
+QTabBar::tab:selected {{ background: {colours['accent']}; color: {colours['accent_text']}; }}
 QPushButton, QToolButton {{ background: {colours['accent']}; border: none; border-radius: 6px; padding: 7px 12px; color: {colours['accent_text']}; font-weight: 600; }}
 QPushButton:hover, QToolButton:hover {{ background: {colours['accent_hover']}; }}
 QPushButton:disabled, QToolButton:disabled {{ background: {colours['disabled']}; color: {colours['disabled_text']}; }}

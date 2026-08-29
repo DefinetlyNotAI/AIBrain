@@ -24,6 +24,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.runtime import require_managed_runtime
+from src.utils.runtime import in_managed_virtual_environment
 from src.utils.logging import configure_cli_logging
 
 SUITES: dict[str, tuple[str, list[str]]] = {
@@ -235,6 +236,13 @@ def choose_suite() -> str | None:
 
 
 def main() -> int:
+    managed_python = ROOT / ".venv" / "Scripts" / "python.exe"
+    if not in_managed_virtual_environment(ROOT) and managed_python.is_file():
+        result = subprocess.run(
+            [str(managed_python), str(Path(__file__).resolve()), *sys.argv[1:]],
+            cwd=ROOT,
+        )
+        return result.returncode
     runtime_log, _ = configure_cli_logging("test")
     if not require_managed_runtime(ROOT, "test"):
         return 1

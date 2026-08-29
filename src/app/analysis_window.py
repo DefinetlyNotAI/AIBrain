@@ -21,8 +21,14 @@ from PySide6.QtWidgets import (
 )
 
 from .dashboard import metric_card, metric_grid, progress_card
-from ..connectome.analysis import ConnectomeAnalyzer
-from ..utils.array_api import array_api as np
+from .theme import load_colours, stylesheet
+from ..connectome.analysis import (
+    ADULT_FRAME_FLOOR,
+    BABY_FRAME_FLOOR,
+    CONSISTENCY_WINDOW,
+    ConnectomeAnalyzer,
+)
+from ..utils.array_api import BACKEND_NAME, array_api as np
 
 _TENSOR_NAMES = (
     "encoder_weights",
@@ -47,15 +53,18 @@ def _age_text(seconds: float) -> str:
 
 
 def _tensor_summary(value: np.ndarray) -> dict[str, object]:
+    finite = value[np.isfinite(value)]
     return {
         "shape": list(value.shape),
         "dtype": str(value.dtype),
         "values": int(value.size),
         "bytes": int(value.nbytes),
-        "minimum": float(value.min()) if value.size else None,
-        "maximum": float(value.max()) if value.size else None,
-        "mean": float(value.mean()) if value.size else None,
-        "standard_deviation": float(value.std()) if value.size else None,
+        "finite_values": int(finite.size),
+        "poisoned_values": int(value.size - finite.size),
+        "minimum": float(finite.min()) if finite.size else None,
+        "maximum": float(finite.max()) if finite.size else None,
+        "mean": float(finite.mean()) if finite.size else None,
+        "standard_deviation": float(finite.std()) if finite.size else None,
     }
 
 
@@ -102,11 +111,6 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
     non_finite = [
         name for name, value in tensors.items() if not np.isfinite(value).all()
     ]
-    if non_finite:
-        raise ValueError(
-            f"The analysis NPZ contains non-finite values in: {', '.join(non_finite)}"
-        )
-
     encoder = tensors["encoder_weights"]
     decoder = tensors["decoder_weights"]
     if encoder.ndim != 2 or decoder.ndim != 2:
@@ -133,23 +137,37 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
     if state not in {"Baby", "Teen", "Adult", "Elder"}:
         state = "Baby"
     history_present = all(history.size for history in histories.values())
+    history_finite = all(np.isfinite(history).all() for history in histories.values())
     consistency = False
-    if history_present and histories["reconstruction_history"].size >= 32:
-        recent = histories["reconstruction_history"][-32:]
+    if (
+        history_present
+        and history_finite
+        and histories["reconstruction_history"].size >= CONSISTENCY_WINDOW
+    ):
+        recent = histories["reconstruction_history"][-CONSISTENCY_WINDOW:]
         consistency = bool(
             float(recent.std()) <= 0.015 and float(recent.mean()) <= 0.08
         )
-    required = 250 if state == "Baby" else 4096
+    if state == "Teen":
+        stage_frames = max(0, frames_seen - BABY_FRAME_FLOOR)
+        required = ADULT_FRAME_FLOOR - BABY_FRAME_FLOOR
+    else:
+        stage_frames = frames_seen
+        required = BABY_FRAME_FLOOR if state == "Baby" else ADULT_FRAME_FLOOR
+    next_state = {"Baby": "Teen", "Teen": "Adult", "Adult": "Elder", "Elder": None}[
+        state
+    ]
     maturity = {
         "state": state,
-        "next_state": {
-            "Baby": "Teen",
-            "Teen": "Adult",
-            "Adult": "Elder",
-            "Elder": None,
-        }[state],
+        "next_state": next_state,
         "progress_percent": (
-            100 if state == "Elder" else min(99, round(frames_seen / required * 100))
+            100 if state == "Elder" else min(99, round(stage_frames / required * 100))
+        ),
+        "progress_detail": (
+            "Elder is the terminal safeguarded state."
+            if next_state is None
+            else f"{stage_frames:,} of {required:,} stage frames; "
+            f"{CONSISTENCY_WINDOW} stable reconstruction/update samples are also required."
         ),
         "metrics_persisted": history_present,
         "consistency_sustained": consistency,
@@ -163,14 +181,73 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
             else "Maturity is a persisted learning-health signal, not an accuracy guarantee."
         ),
     }
+    finite_tensors = not non_finite
+    bounded_tensors = finite_tensors and all(
+        not value.size or float(np.abs(value).max()) < 1_000_000
+        for value in tensors.values()
+    )
+    factor_scores = {
+        "required_tensors": (15, "All required tensors are present."),
+        "valid_frame_counter": (
+            10,
+            "The lifetime frame counter is a non-negative scalar.",
+        ),
+        "architecture_compatibility": (
+            20,
+            "Encoder, decoder, bias, and centroid shapes agree.",
+        ),
+        "finite_tensor_values": (
+            25 if finite_tensors else 0,
+            (
+                "No NaN or infinity values found."
+                if finite_tensors
+                else f"Poisoned NaN/infinity values found in: {', '.join(non_finite)}."
+            ),
+        ),
+        "finite_learning_history": (
+            (
+                15
+                if history_present and history_finite
+                else 5 if not history_present else 0
+            ),
+            (
+                "Rolling learning histories are finite."
+                if history_present and history_finite
+                else (
+                    "Legacy file has no rolling histories."
+                    if not history_present
+                    else "Learning history contains NaN/infinity, commonly caused by divide-by-zero contamination."
+                )
+            ),
+        ),
+        "bounded_parameter_magnitude": (
+            10 if bounded_tensors else 0,
+            (
+                "Parameter magnitudes are within the corruption guardrail."
+                if bounded_tensors
+                else "Parameter magnitude is non-finite or implausibly large."
+            ),
+        ),
+        "persistence_format": (5, "Compressed NPZ opened without pickle data."),
+    }
+    health_score = sum(score for score, _detail in factor_scores.values())
+    status = (
+        "Healthy"
+        if health_score >= 90
+        else "Degraded" if health_score >= 70 else "Critical"
+    )
     parameter_count = sum(int(value.size) for value in tensors.values() if value.ndim)
     return {
-        "status": "Healthy",
+        "status": status,
+        "health": {
+            "score_percent": health_score,
+            "factors": {
+                name: {"score": score, "detail": detail_text}
+                for name, (score, detail_text) in factor_scores.items()
+            },
+        },
         "health_checks": {
-            "required_tensors": "passed",
-            "finite_numeric_values": "passed",
-            "architecture_compatibility": "passed",
-            "persistence_format": "compressed NPZ",
+            name: detail_text for name, (_score, detail_text) in factor_scores.items()
         },
         "path": str(path),
         "file": {
@@ -189,6 +266,7 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
             "latent_features": latent_width,
             "shape": f"{input_width} -> {latent_width} -> {input_width}",
             "learned_parameters": parameter_count,
+            "numerical_backend": BACKEND_NAME,
         },
         "tensors": {name: _tensor_summary(value) for name, value in tensors.items()},
     }
@@ -221,9 +299,11 @@ class AnalysisWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("AIBrain Analysis Inspector")
         self.resize(1120, 760)
+        self.setStyleSheet(stylesheet(load_colours()))
         self._inspection_thread: QThread | None = None
         self._inspection_worker: AnalysisInspectionWorker | None = None
         self._closing = False
+        self._last_healthy = False
         page = QWidget()
         layout = QVBoxLayout(page)
         title = QLabel("Analysis+ learned model inspector")
@@ -283,11 +363,23 @@ class AnalysisWindow(QMainWindow):
         self.export_card, self.export_value, self.export_detail = metric_card(
             "EXPORT READINESS", "—"
         )
+        self.backend_card, self.backend_value, self.backend_detail = metric_card(
+            "ARRAY BACKEND", "—"
+        )
+        self.evidence_card, self.evidence_value, self.evidence_detail = metric_card(
+            "ROLLING EVIDENCE", "—"
+        )
+        self.storage_card, self.storage_value, self.storage_detail = metric_card(
+            "MODEL STORAGE", "—"
+        )
         lower = QWidget()
         lower_grid = metric_grid(lower)
         lower_grid.addWidget(self.architecture_card, 0, 0)
         lower_grid.addWidget(self.quality_card, 0, 1)
         lower_grid.addWidget(self.export_card, 0, 2)
+        lower_grid.addWidget(self.backend_card, 1, 0)
+        lower_grid.addWidget(self.evidence_card, 1, 1)
+        lower_grid.addWidget(self.storage_card, 1, 2)
         overview_layout.addWidget(lower)
         overview_layout.addStretch(1)
         self.raw = QPlainTextEdit()
@@ -332,6 +424,7 @@ class AnalysisWindow(QMainWindow):
 
     @Slot(str)
     def _inspection_failed(self, message: str) -> None:
+        self._last_healthy = False
         self.health_value.setText("Needs repair")
         self.health_detail.setText(message)
         self.raw.setPlainText(f"Status: Invalid Analysis+ model\n\n{message}")
@@ -343,7 +436,7 @@ class AnalysisWindow(QMainWindow):
         if self._closing:
             QTimer.singleShot(0, self.close)
             return
-        self.inspection_finished.emit(self.health_value.text() == "Healthy")
+        self.inspection_finished.emit(self._last_healthy)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._inspection_thread is not None:
@@ -388,6 +481,7 @@ class AnalysisWindow(QMainWindow):
             self.raw.appendPlainText(f"\n\nCould not read export: {exc}")
 
     def _show_empty(self, path: Path) -> None:
+        self._last_healthy = False
         self.health_value.setText("No model yet")
         self.health_detail.setText(
             "Generate an Infinite-mode response to begin learning."
@@ -398,12 +492,22 @@ class AnalysisWindow(QMainWindow):
         self.frame_detail.setText(str(path))
         self.maturity_progress.setValue(0)
         self.maturity_detail.setText(
-            "250 persisted frames plus sustained consistency are required for Teen."
+            f"0 of {BABY_FRAME_FLOOR:,} Baby-stage frames; {CONSISTENCY_WINDOW} stable samples are also required."
         )
         self.architecture_value.setText("Not created")
         self.quality_value.setText("Awaiting frames")
         self.export_value.setText("CAUTION")
         self.export_detail.setText("Baby/Teen exports include a readiness caution.")
+        self.backend_value.setText(BACKEND_NAME)
+        self.backend_detail.setText(
+            "Selected through the shared CUDA/CPU array wrapper."
+        )
+        self.evidence_value.setText("0 samples")
+        self.evidence_detail.setText(
+            "Reconstruction, novelty, and update histories are empty."
+        )
+        self.storage_value.setText("Not created")
+        self.storage_detail.setText(str(path))
         self.raw.setPlainText(
             f"Status: No Analysis+ model has been learned yet.\n\nExpected location:\n{path}"
         )
@@ -412,12 +516,17 @@ class AnalysisWindow(QMainWindow):
         learning = metadata.get("learning", {})
         architecture = metadata.get("architecture", {})
         file_data = metadata.get("file", {})
+        health = metadata.get("health", {})
         maturity = learning.get("maturity", {}) if isinstance(learning, dict) else {}
         if not isinstance(maturity, dict):
             maturity = {}
-        self.health_value.setText(str(metadata.get("status", "Unknown")))
+        score = int(health.get("score_percent", 0)) if isinstance(health, dict) else 0
+        status = str(metadata.get("status", "Unknown"))
+        self._last_healthy = status == "Healthy"
+        self.health_value.setText(f"{score}%")
         self.health_detail.setText(
-            "All tensor, finite-value, and architecture checks passed."
+            f"{status}: required tensors, shapes, persistence, parameter magnitude, and "
+            "NaN/infinity/divide-by-zero contamination are scored."
         )
         state = str(maturity.get("state", "Baby"))
         self.state_value.setText(state.upper())
@@ -440,7 +549,9 @@ class AnalysisWindow(QMainWindow):
         progress = int(maturity.get("progress_percent", 0))
         self.maturity_progress.setValue(progress)
         next_state = maturity.get("next_state") or "terminal Elder state"
-        self.maturity_detail.setText(f"Toward {next_state}: {maturity.get('note', '')}")
+        self.maturity_detail.setText(
+            f"Toward {next_state}: {maturity.get('progress_detail', maturity.get('note', ''))}"
+        )
         self.architecture_value.setText(
             str(architecture.get("shape", "Unknown"))
             if isinstance(architecture, dict)
@@ -463,4 +574,30 @@ class AnalysisWindow(QMainWindow):
             "Normal smart-analysis report"
             if readiness == "READY"
             else "Export remains valid with explicit readiness caution."
+        )
+        self.backend_value.setText(
+            str(architecture.get("numerical_backend", BACKEND_NAME))
+            if isinstance(architecture, dict)
+            else BACKEND_NAME
+        )
+        self.backend_detail.setText(
+            "CuPy is preferred when CUDA executes successfully; NumPy is the fallback."
+        )
+        evidence_count = (
+            CONSISTENCY_WINDOW
+            if maturity.get("consistency_sustained")
+            else min(frames, CONSISTENCY_WINDOW)
+        )
+        self.evidence_value.setText(f"{evidence_count:,} / {CONSISTENCY_WINDOW:,}")
+        self.evidence_detail.setText(
+            "Stable rolling reconstruction and update samples required for promotion."
+        )
+        size_bytes = (
+            int(file_data.get("size_bytes", 0)) if isinstance(file_data, dict) else 0
+        )
+        self.storage_value.setText(f"{size_bytes / 1024:.1f} KiB")
+        self.storage_detail.setText(
+            str(file_data.get("modified_at_utc", "Unknown update time"))
+            if isinstance(file_data, dict)
+            else ""
         )

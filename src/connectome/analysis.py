@@ -16,6 +16,9 @@ LOG = logging.getLogger(__name__)
 MODEL_FILENAME = "aibrain.analyser.npz"
 METRIC_HISTORY_LIMIT = 512
 MATURITY_STATES = ("Baby", "Teen", "Adult", "Elder")
+BABY_FRAME_FLOOR = 2_048
+ADULT_FRAME_FLOOR = 32_768
+CONSISTENCY_WINDOW = 128
 
 
 class PatternSegment(TypedDict):
@@ -342,13 +345,22 @@ class ConnectomeAnalyzer:
 
     def _sustained_consistency(self) -> bool:
         if (
-            len(self.reconstruction_history) < 32
-            or len(self.update_magnitude_history) < 32
+            len(self.reconstruction_history) < CONSISTENCY_WINDOW
+            or len(self.update_magnitude_history) < CONSISTENCY_WINDOW
         ):
             return False
-        errors = np.asarray(self.reconstruction_history[-32:], dtype="f4")
-        updates = np.asarray(self.update_magnitude_history[-32:], dtype="f4")
-        early_updates = np.asarray(self.update_magnitude_history[-64:-32], dtype="f4")
+        errors = np.asarray(
+            self.reconstruction_history[-CONSISTENCY_WINDOW:], dtype="f4"
+        )
+        updates = np.asarray(
+            self.update_magnitude_history[-CONSISTENCY_WINDOW:], dtype="f4"
+        )
+        early_updates = np.asarray(
+            self.update_magnitude_history[
+                -2 * CONSISTENCY_WINDOW : -CONSISTENCY_WINDOW
+            ],
+            dtype="f4",
+        )
         stable_error = float(errors.std()) <= 0.015 and float(errors.mean()) <= 0.08
         slowdown = (
             not len(early_updates)
@@ -373,7 +385,7 @@ class ConnectomeAnalyzer:
         """Promote only from persisted, sustained evidence; never demote silently."""
         if (
             self.maturity_state == "Baby"
-            and self.frames_seen >= 250
+            and self.frames_seen >= BABY_FRAME_FLOOR
             and self._sustained_consistency()
         ):
             self.maturity_state, self.transition_count = (
@@ -382,7 +394,7 @@ class ConnectomeAnalyzer:
             )
         elif (
             self.maturity_state == "Teen"
-            and self.frames_seen >= 4096
+            and self.frames_seen >= ADULT_FRAME_FLOOR
             and self._sustained_consistency()
         ):
             self.maturity_state, self.transition_count = (
@@ -403,31 +415,57 @@ class ConnectomeAnalyzer:
         next_state = {"Baby": "Teen", "Teen": "Adult", "Adult": "Elder", "Elder": None}[
             self.maturity_state
         ]
-        required_frames = {"Baby": 250, "Teen": 4096, "Adult": 4096, "Elder": 4096}[
-            self.maturity_state
-        ]
+        required_frames = {
+            "Baby": BABY_FRAME_FLOOR,
+            "Teen": ADULT_FRAME_FLOOR,
+            "Adult": ADULT_FRAME_FLOOR,
+            "Elder": ADULT_FRAME_FLOOR,
+        }[self.maturity_state]
         unmet: list[str] = []
         if self.maturity_state == "Baby":
-            if self.frames_seen < 250:
-                unmet.append(f"{250 - self.frames_seen} more persisted frames")
+            if self.frames_seen < BABY_FRAME_FLOOR:
+                unmet.append(
+                    f"{BABY_FRAME_FLOOR - self.frames_seen:,} more persisted frames"
+                )
             if not consistent:
-                unmet.append("32 stable recent reconstruction/update samples")
+                unmet.append(
+                    f"{CONSISTENCY_WINDOW} stable reconstruction/update samples"
+                )
         elif self.maturity_state == "Teen":
-            if self.frames_seen < 4096:
-                unmet.append(f"{4096 - self.frames_seen} more persisted frames")
+            if self.frames_seen < ADULT_FRAME_FLOOR:
+                unmet.append(
+                    f"{ADULT_FRAME_FLOOR - self.frames_seen:,} more persisted frames"
+                )
             if not consistent:
                 unmet.append("sustained consistency and learning slowdown")
         elif self.maturity_state == "Adult" and not overfitting:
             unmet.append("sustained post-Adult overfitting signal")
+        if self.maturity_state == "Teen":
+            stage_frames = max(0, self.frames_seen - BABY_FRAME_FLOOR)
+            stage_required = ADULT_FRAME_FLOOR - BABY_FRAME_FLOOR
+        else:
+            stage_frames = self.frames_seen
+            stage_required = required_frames
         progress = (
             100
             if next_state is None
-            else min(99, round(self.frames_seen / required_frames * 100))
+            else min(99, round(stage_frames / stage_required * 100))
+        )
+        progress_detail = (
+            "Elder is the terminal safeguarded state."
+            if next_state is None
+            else f"{stage_frames:,} of {stage_required:,} stage frames; "
+            + (
+                "consistency evidence satisfied."
+                if consistent
+                else f"{CONSISTENCY_WINDOW} stable samples are also required."
+            )
         )
         return {
             "state": self.maturity_state,
             "next_state": next_state,
             "progress_percent": progress,
+            "progress_detail": progress_detail,
             "unmet_conditions": unmet,
             "consistency_sustained": consistent,
             "overfitting_sustained": overfitting,

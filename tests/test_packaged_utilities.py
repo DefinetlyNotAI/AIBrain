@@ -6,12 +6,12 @@ from src.app.main_window import MainWindow
 
 
 class PackagedUtilityTests(unittest.TestCase):
-    def test_main_opens_diagnostics_in_process_not_as_a_sibling_executable(self) -> None:
+    def test_main_launches_the_dedicated_diagnostics_application(self) -> None:
         source = inspect.getsource(MainWindow.open_diagnostics)
 
-        self.assertIn("DiagnosticsWindow(self, auto_refresh=False)", source)
-        self.assertIn("LoadingWindow(", source)
-        self.assertNotIn("Popen", source)
+        self.assertIn('with_name("diagnostic.exe")', source)
+        self.assertIn("QProcess.startDetached", source)
+        self.assertNotIn("DiagnosticsWindow(", source)
 
 
 if __name__ == "__main__":

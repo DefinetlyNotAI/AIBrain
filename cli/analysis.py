@@ -1,4 +1,5 @@
 """Standalone AIBrain connectome analysis application entry point."""
+
 from __future__ import annotations
 
 import sys
@@ -23,7 +24,6 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
     from src.app.analysis_window import AnalysisWindow
     from src.app.loading_window import LoadingWindow
-    from src.app.main_window import STYLESHEET
 
     header("AIBrain", "Persisted analysis-model inspector")
     section("Desktop startup", 1)
@@ -48,7 +48,6 @@ def main() -> int:
         detail_text="Preparing the model-health report",
     )
     window = AnalysisWindow(auto_refresh=False)
-    window.setStyleSheet(STYLESHEET)
     window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     loading.cancelled.connect(window.close)
     window.destroyed.connect(app.quit)
