@@ -1,4 +1,5 @@
 """Standalone Repair and Diagnostics application entry point."""
+
 from __future__ import annotations
 
 import sys
@@ -56,6 +57,7 @@ def main() -> int:
         window.showMaximized()
 
     window.inspection_finished.connect(open_diagnostics)
+    window.inspection_progress.connect(loading.set_progress)
     loading.showMaximized()
     QTimer.singleShot(0, window.refresh)
     try:

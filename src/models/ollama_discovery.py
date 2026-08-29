@@ -30,7 +30,9 @@ class OllamaDiscovery:
                 if info.available:
                     models.append(info)
                 else:
-                    LOG.warning("Skipping unavailable GGUF %s: %s", info.name, info.error)
+                    LOG.warning(
+                        "Skipping unavailable GGUF %s: %s", info.name, info.error
+                    )
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 LOG.warning("Skipping invalid Ollama manifest %s: %s", manifest, exc)
         return sorted(models, key=lambda item: (item.name, item.tag))
@@ -49,6 +51,7 @@ class OllamaDiscovery:
         layers = data.get("layers") or []
         blob: Path | None = None
         expected_size = 0
+        expected_digest: str | None = None
         validation_error = "Model layer blob is missing"
         for layer in layers:
             digest = str(layer.get("digest", ""))
@@ -57,6 +60,7 @@ class OllamaDiscovery:
             if candidate.exists() and ("model" in media_type or blob is None):
                 blob = candidate
                 expected_size = int(layer.get("size", 0) or 0)
+                expected_digest = digest or None
                 validation_error = self._validate_gguf(candidate, expected_size)
                 if validation_error is None:
                     break
@@ -64,15 +68,31 @@ class OllamaDiscovery:
         # Docker-style Ollama manifests usually contain no descriptive metadata.
         # Preserve available data, otherwise use a clearly inferred family label.
         inferred_family = name.rsplit("/", 1)[-1]
-        family = str(config.get("family") or config.get("model_family") or data.get("model") or inferred_family)
+        family = str(
+            config.get("family")
+            or config.get("model_family")
+            or data.get("model")
+            or inferred_family
+        )
         details = config.get("details") or {}
         return ModelInfo(
-            name=name, tag=tag, blob_path=blob, family=family,
+            name=name,
+            tag=tag,
+            blob_path=blob,
+            family=family,
             parameter_size=str(
-                details.get("parameter_size") or config.get("parameter_size") or self._size_from_tag(tag)),
-            quantization=str(details.get("quantization_level") or config.get(
-                "quantization") or "GGUF (manifest does not specify quantization)"),
-            size_bytes=size, available=validation_error is None,
+                details.get("parameter_size")
+                or config.get("parameter_size")
+                or self._size_from_tag(tag)
+            ),
+            quantization=str(
+                details.get("quantization_level")
+                or config.get("quantization")
+                or "GGUF (manifest does not specify quantization)"
+            ),
+            size_bytes=size,
+            digest=expected_digest,
+            available=validation_error is None,
             error=validation_error,
         )
 
@@ -90,7 +110,9 @@ class OllamaDiscovery:
                 return "Model blob is not a regular file"
             size = path.stat().st_size
             if expected_size and size != expected_size:
-                return f"Blob size mismatch (expected {expected_size:,}, found {size:,})"
+                return (
+                    f"Blob size mismatch (expected {expected_size:,}, found {size:,})"
+                )
             with path.open("rb") as handle:
                 header = handle.read(24)
             if len(header) != 24 or header[:4] != b"GGUF":

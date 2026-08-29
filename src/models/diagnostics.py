@@ -1,8 +1,12 @@
 """Non-destructive diagnostics and explicit repair actions for Ollama models."""
+
 from __future__ import annotations
 
 import json
+import os
 import shutil
+from datetime import UTC, datetime
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
@@ -23,13 +27,35 @@ class ModelDiagnostic:
     detail: str
 
     @property
+    def issue_code(self) -> str:
+        """Return a stable, human-readable problem category."""
+        if self.available:
+            return "Healthy"
+        lowered = self.detail.lower()
+        if "manifest" in lowered or "json" in lowered:
+            return "Invalid manifest"
+        if "size mismatch" in lowered:
+            return "Incomplete download"
+        if "hash" in lowered or "digest" in lowered:
+            return "Invalid hash"
+        if "missing" in lowered or "not a regular file" in lowered:
+            return "Missing model data"
+        if "llama.cpp" in lowered or "backend" in lowered:
+            return "Backend incompatibility"
+        if "gguf" in lowered or "header" in lowered:
+            return "Invalid GGUF"
+        if "permission" in lowered or "access" in lowered:
+            return "File access blocked"
+        return "Broken install"
+
+    @property
     def can_remove_manifest(self) -> bool:
         return not self.available and self.manifest_path.is_file()
 
     @property
     def reason(self) -> str:
         """A mandatory, user-readable cause for failed diagnostics."""
-        return "Healthy model manifest and GGUF blob" if self.available else self.detail
+        return "Healthy model" if self.available else self.issue_code
 
 
 class OllamaDiagnostics:
@@ -39,25 +65,39 @@ class OllamaDiagnostics:
         self.root = root or Path.home() / ".ollama" / "models"
         self._discovery = OllamaDiscovery(self.root)
 
-    def inspect(self, *, verify_backend: bool = False, cancelled: Event | None = None) -> list[ModelDiagnostic]:
+    def inspect(
+        self,
+        *,
+        verify_backend: bool = False,
+        cancelled: Event | None = None,
+        progress: Callable[[int, int, str], None] | None = None,
+    ) -> list[ModelDiagnostic]:
         manifest_root = self.root / "manifests"
         if not manifest_root.is_dir():
             return []
 
         parsed: list[tuple[str, Path, ModelInfo]] = []
         diagnostics: list[ModelDiagnostic] = []
-        for manifest in sorted(path for path in manifest_root.rglob("*") if path.is_file()):
+        for manifest in sorted(
+            path for path in manifest_root.rglob("*") if path.is_file()
+        ):
             reference = self._reference(manifest, manifest_root)
             try:
                 model = self._discovery._parse_manifest(manifest, manifest_root)
                 parsed.append((reference, manifest, model))
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 diagnostics.append(
-                    ModelDiagnostic(reference, manifest, None, False, f"Invalid manifest: {exc}")
+                    ModelDiagnostic(
+                        reference, manifest, None, False, f"Invalid manifest: {exc}"
+                    )
                 )
         models = [model for _reference, _manifest, model in parsed]
         if verify_backend and models:
-            checked = ModelValidator.validate(models, cancelled or Event(), lambda _current, _total, _detail: None)
+            checked = ModelValidator.validate(
+                models,
+                cancelled or Event(),
+                progress or (lambda _current, _total, _detail: None),
+            )
         else:
             checked = models
         diagnostics.extend(
@@ -72,12 +112,26 @@ class OllamaDiagnostics:
         cache = project_root / ".cache"
         model_state = "Ready" if (self.root / "manifests").is_dir() else "Needs setup"
         return {
-            "Models": (model_state, "Ollama manifests and GGUF blobs are inspected separately below."),
-            "Python environment": ("Ready", "The diagnostics process started in the managed runtime."),
-            "pip / libraries": ("Ready", "Installed packages are verified when a backend model check runs."),
-            "Native DLLs": ("Ready" if any(project_root.rglob("*.dll")) else "Info",
-                            "Native acceleration is optional; missing DLLs use the supported Python fallback."),
-            ".cache": ("Ready" if cache.exists() else "Info", "Refresh never deletes cache entries or model blobs."),
+            "Models": (
+                model_state,
+                "Ollama manifests and GGUF blobs are inspected separately below.",
+            ),
+            "Python environment": (
+                "Ready",
+                "The diagnostics process started in the managed runtime.",
+            ),
+            "pip / libraries": (
+                "Ready",
+                "Installed packages are verified when a backend model check runs.",
+            ),
+            "Native DLLs": (
+                "Ready" if any(project_root.rglob("*.dll")) else "Info",
+                "Native acceleration is optional; missing DLLs use the supported Python fallback.",
+            ),
+            ".cache": (
+                "Ready" if cache.exists() else "Info",
+                "Refresh never deletes cache entries or model blobs.",
+            ),
         }
 
     @staticmethod
@@ -86,6 +140,28 @@ class OllamaDiagnostics:
         if not diagnostic.can_remove_manifest:
             raise ValueError("Only an existing invalid manifest can be removed")
         diagnostic.manifest_path.unlink()
+
+    @staticmethod
+    def quarantine_for_redownload(diagnostic: ModelDiagnostic) -> Path | None:
+        """Move the exact corrupt artifact aside so ``ollama pull`` must replace it."""
+        if diagnostic.available or diagnostic.issue_code == "Backend incompatibility":
+            return None
+        source = (
+            diagnostic.blob_path
+            if diagnostic.blob_path and diagnostic.blob_path.is_file()
+            else diagnostic.manifest_path
+        )
+        if not source.is_file():
+            return None
+        local_app_data = Path(
+            os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")
+        )
+        quarantine = local_app_data / "AIBrain" / "repair-quarantine"
+        quarantine.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        target = quarantine / f"{stamp}-{source.name}"
+        source.replace(target)
+        return target
 
     @staticmethod
     def invalidate_validation_cache(project_root: Path) -> Path:
@@ -100,12 +176,16 @@ class OllamaDiagnostics:
         return target
 
     @staticmethod
-    def _from_model(reference: str, manifest: Path, model: ModelInfo) -> ModelDiagnostic:
+    def _from_model(
+        reference: str, manifest: Path, model: ModelInfo
+    ) -> ModelDiagnostic:
         if model.available:
             detail = "GGUF header and model blob are healthy"
         else:
             detail = model.error or "Model is unavailable"
-        return ModelDiagnostic(reference, manifest, model.blob_path, model.available, detail)
+        return ModelDiagnostic(
+            reference, manifest, model.blob_path, model.available, detail
+        )
 
     @staticmethod
     def _reference(manifest: Path, manifest_root: Path) -> str:

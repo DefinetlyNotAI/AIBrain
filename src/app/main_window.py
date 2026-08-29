@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import logging
+import sys
+from pathlib import Path
 from time import monotonic
 from typing import TypedDict
 
-from PySide6.QtCore import QCoreApplication, QSettings, QThread, QTimer, Qt, Signal
+from PySide6.QtCore import (
+    QCoreApplication,
+    QProcess,
+    QSettings,
+    QThread,
+    QTimer,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSizePolicy, QSplitter
 
 from .chat_panel import ChatPanel
-from .diagnostics_window import DiagnosticsWindow
-from .loading_window import LoadingWindow
 from .settings import load_generation_settings, save_generation_settings
 from .theme import load_colours, stylesheet
 from .visualizer_panel import VisualizerPanel
@@ -21,6 +29,7 @@ from ..models.model_info import ModelInfo
 from ..utils.gpu import GPU_RELAUNCH_EXIT_CODE
 
 LOG = logging.getLogger(__name__)
+
 
 class SimulationStats(TypedDict):
     seconds: float
@@ -67,8 +76,12 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.visualizer)
         self.chat.setMinimumWidth(0)
         self.visualizer.setMinimumWidth(0)
-        self.chat.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.visualizer.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.chat.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        self.visualizer.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         saved_sizes = QSettings().value("main_splitter_sizes")
         if isinstance(saved_sizes, list) and len(saved_sizes) == 2:
             splitter.setSizes([int(size) for size in saved_sizes])
@@ -91,9 +104,13 @@ class MainWindow(QMainWindow):
         self.chat.rewindExitRequested.connect(self.visualizer.exit_rewind_mode)
         self.visualizer.rewindChanged.connect(self.chat.set_rewind_mode)
         self.visualizer.playbackChanged.connect(self.chat.set_replay_mode)
-        self.visualizer.analysisMemoryExceeded.connect(self.chat.set_analysis_memory_exceeded)
+        self.visualizer.analysisMemoryExceeded.connect(
+            self.chat.set_analysis_memory_exceeded
+        )
         self.chat.modelChanged.connect(self.select_model)
-        self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
+        self.chat.playbackRequested.connect(
+            lambda: self.visualizer.start_playback(self.config.speed)
+        )
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
         self.chat.playbackNextRequested.connect(self.visualizer.playback_next)
         self.visualizer.gpuRestartRequested.connect(self._restart_for_gpu_mismatch)
@@ -160,7 +177,9 @@ class MainWindow(QMainWindow):
         self.unloadModel.emit()
         self.simulation_worker.unload()
         self.current_model = model
-        self.chat.set_model_available(bool(model and model.available and model.blob_path))
+        self.chat.set_model_available(
+            bool(model and model.available and model.blob_path)
+        )
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
         if model is not None:
@@ -169,7 +188,8 @@ class MainWindow(QMainWindow):
             self.visualizer.set_conversation(self.history)
             self.chat.clear_messages()
             self.chat.models.setToolTip(
-                f"{model.label}\n{model.blob_path}" + (f"\n{model.error}" if model.error else "")
+                f"{model.label}\n{model.blob_path}"
+                + (f"\n{model.error}" if model.error else "")
             )
             self.chat.stats.setText("Conversation and connectome refreshed.")
 
@@ -189,40 +209,26 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_mode(infinite)
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
-        self.chat.stats.setText("Infinite Mode ready." if infinite else "Normal Chat ready.")
+        self.chat.stats.setText(
+            "Infinite Mode ready." if infinite else "Normal Chat ready."
+        )
 
     def open_diagnostics(self) -> None:
-        """Open model recovery without interrupting a currently loaded model."""
-        existing = getattr(self, "_diagnostics_window", None)
-        if existing is not None and existing.isVisible():
-            existing.raise_()
-            existing.activateWindow()
-            return
-        loading = LoadingWindow(
-            eyebrow_text="AIBRAIN  /  DIAGNOSTICS",
-            title_text="Refreshing model health",
-            subtitle_text="Checking local GGUF manifests and backend compatibility in the background.",
-            detail_text="Preparing Repair and Diagnostics",
-        )
-        window = DiagnosticsWindow(self, auto_refresh=False)
-        self._diagnostics_window = window
-        self._diagnostics_loader = loading
-        window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-
-        def show_diagnostics(_healthy: bool) -> None:
-            loading.finish()
-            window.showMaximized()
-
-        def forget_diagnostics() -> None:
-            if getattr(self, "_diagnostics_window", None) is window:
-                self._diagnostics_window = None
-            self._diagnostics_loader = None
-
-        window.inspection_finished.connect(show_diagnostics)
-        window.destroyed.connect(forget_diagnostics)
-        loading.cancelled.connect(window.close)
-        loading.show()
-        QTimer.singleShot(0, window.refresh)
+        """Launch the one standalone Diagnostics app without interrupting inference."""
+        root = Path(__file__).resolve().parents[2]
+        packaged = Path(sys.executable).with_name("diagnostic.exe")
+        if "__compiled__" in globals() and packaged.is_file():
+            started = QProcess.startDetached(str(packaged), [])
+        else:
+            started = QProcess.startDetached(
+                sys.executable, [str(root / "cli" / "diagnostic.py")], str(root)
+            )
+        if not started:
+            QMessageBox.critical(
+                self,
+                "Diagnostics launch failed",
+                "Could not start the Diagnostics application.",
+            )
 
     def open_analysis(self) -> None:
         if self.current_model is None:
@@ -238,7 +244,9 @@ class MainWindow(QMainWindow):
             return
         self._gpu_relaunching = True
         LOG.warning("%s; closing the current window before supervised restart", message)
-        self.chat.stats.setText("GPU mismatch detected. Returning to the startup loader…")
+        self.chat.stats.setText(
+            "GPU mismatch detected. Returning to the startup loader…"
+        )
         QCoreApplication.exit(GPU_RELAUNCH_EXIT_CODE)
         self.close()
 
@@ -247,16 +255,25 @@ class MainWindow(QMainWindow):
         dialog.setIcon(QMessageBox.Icon.Critical)
         dialog.setWindowTitle(title)
         dialog.setText(message)
-        diagnostics = dialog.addButton("Open Repair and Diagnostics", QMessageBox.ButtonRole.ActionRole)
+        diagnostics = dialog.addButton(
+            "Open Repair and Diagnostics", QMessageBox.ButtonRole.ActionRole
+        )
         dialog.addButton(QMessageBox.StandardButton.Ok)
         dialog.exec()
         if dialog.clickedButton() is diagnostics:
             self.open_diagnostics()
 
     def send(self, prompt: str) -> None:
-        if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
-            QMessageBox.warning(self, "Model unavailable",
-                                "Choose an available GGUF model discovered from Ollama first.")
+        if (
+            not self.current_model
+            or not self.current_model.available
+            or not self.current_model.blob_path
+        ):
+            QMessageBox.warning(
+                self,
+                "Model unavailable",
+                "Choose an available GGUF model discovered from Ollama first.",
+            )
             return
         self.config = self.chat.config()
         self.visualizer.set_analysis_memory_limit(None)
@@ -274,7 +291,9 @@ class MainWindow(QMainWindow):
         self._awaiting_first_token = True
         self._started = monotonic()
         self.chat.generating(True)
-        self.startGeneration.emit(self.history.copy(), self.config, self.current_model.blob_path)
+        self.startGeneration.emit(
+            self.history.copy(), self.config, self.current_model.blob_path
+        )
 
     def stop(self) -> None:
         # Direct flag write is safe and necessary while worker is iterating blocking native code.
@@ -283,9 +302,16 @@ class MainWindow(QMainWindow):
         self.chat.stats.setText("Stopping after the current generated token…")
 
     def start_infinite_simulation(self, seed: str, continuation: bool = False) -> None:
-        if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
-            QMessageBox.warning(self, "Model unavailable",
-                                "Choose an available GGUF model discovered from Ollama first.")
+        if (
+            not self.current_model
+            or not self.current_model.available
+            or not self.current_model.blob_path
+        ):
+            QMessageBox.warning(
+                self,
+                "Model unavailable",
+                "Choose an available GGUF model discovered from Ollama first.",
+            )
             return
         self._analysis_is_infinite = True
         self.chat.set_analysis_mode(True)
@@ -305,15 +331,24 @@ class MainWindow(QMainWindow):
             self._simulation_bubbles.clear()
         self.chat.generating(True)
         self.chat.stats.setText(
-            "∞ Simulation Thinking… loading the world and participant roles; the right pane records their visual signals.")
+            "∞ Simulation Thinking… loading the world and participant roles; the right pane records their visual signals."
+        )
         transcript = self.simulation_transcript.copy() if continuation else None
-        self.startInfiniteSimulation.emit(seed, self.config, self.current_model.blob_path, transcript)
+        self.startInfiniteSimulation.emit(
+            seed, self.config, self.current_model.blob_path, transcript
+        )
 
     def continue_infinite_simulation(self) -> None:
         if not self.simulation_transcript:
-            self.chat.stats.setText("Start an Infinite Mode scenario before continuing it.")
+            self.chat.stats.setText(
+                "Start an Infinite Mode scenario before continuing it."
+            )
             return
-        seed = str(self.simulation_transcript[0].get("content", "Continue the current scenario."))
+        seed = str(
+            self.simulation_transcript[0].get(
+                "content", "Continue the current scenario."
+            )
+        )
         self.start_infinite_simulation(seed, continuation=True)
 
     def _simulation_turn_started(self, role: str, turn: int) -> None:
@@ -330,7 +365,9 @@ class MainWindow(QMainWindow):
 
     def _simulation_turn_finished(self, role: str, text: str, turn: int) -> None:
         if text:
-            self.simulation_transcript.append({"role": role, "content": text, "turn": turn})
+            self.simulation_transcript.append(
+                {"role": role, "content": text, "turn": turn}
+            )
             self.visualizer.set_conversation(self.simulation_transcript)
 
     def _simulation_finished(self, stats: SimulationStats) -> None:
@@ -379,7 +416,9 @@ class MainWindow(QMainWindow):
         self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
 
     def _finished(self, stats: GenerationStats) -> None:
-        text = self._assistant_bubble.text() if self._assistant_bubble is not None else ""
+        text = (
+            self._assistant_bubble.text() if self._assistant_bubble is not None else ""
+        )
         if text and text != "Thinking…":
             self.history.append({"role": "assistant", "content": text})
             self.visualizer.set_conversation(self.history)
@@ -400,8 +439,12 @@ class MainWindow(QMainWindow):
         )
 
         self.chat.generating(False)
-        self.chat.set_analysis_available(bool(text) and text != "Thinking…" and not stats["cancelled"])
-        self.chat.set_regenerate_available(bool(text) and text != "Thinking…" and not stats["cancelled"])
+        self.chat.set_analysis_available(
+            bool(text) and text != "Thinking…" and not stats["cancelled"]
+        )
+        self.chat.set_regenerate_available(
+            bool(text) and text != "Thinking…" and not stats["cancelled"]
+        )
         self._assistant_bubble = None
         self._awaiting_first_token = False
 

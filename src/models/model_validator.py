@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import replace
@@ -13,7 +14,42 @@ from .model_info import ModelInfo
 from .ollama_discovery import OllamaDiscovery
 
 CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache"
-_VALIDATION_FORMAT = 2
+_VALIDATION_FORMAT = 3
+
+
+def _validate_digest(
+    model: ModelInfo,
+    cancelled: Event,
+    report: Callable[[int, int, str], None],
+    index: int,
+    total: int,
+) -> str | None:
+    """Stream an Ollama SHA-256 check without blocking GUI progress updates."""
+    if (
+        model.blob_path is None
+        or not model.digest
+        or not model.digest.startswith("sha256:")
+    ):
+        return None
+    digest = hashlib.sha256()
+    size = max(1, model.blob_path.stat().st_size)
+    read = 0
+    with model.blob_path.open("rb") as handle:
+        while chunk := handle.read(8 * 1024 * 1024):
+            if cancelled.is_set():
+                return "Validation cancelled"
+            digest.update(chunk)
+            read += len(chunk)
+            report(
+                index, total, f"Hashing {model.name}:{model.tag} ({read / size:.0%})"
+            )
+    actual = digest.hexdigest()
+    expected = model.digest.partition(":")[2].lower()
+    return (
+        None
+        if actual == expected
+        else f"Invalid HASH (expected {expected}, calculated {actual})"
+    )
 
 
 def _cache_path(model: ModelInfo) -> Path:
@@ -37,11 +73,11 @@ def _cached_result(model: ModelInfo, *, verify_backend: bool) -> str | None | ob
     try:
         payload = json.loads(_cache_path(model).read_text(encoding="utf-8"))
         if (
-                payload.get("format") == _VALIDATION_FORMAT
-                and payload.get("profile") == _cache_profile(verify_backend=verify_backend)
-                and payload.get("blob_path") == str(model.blob_path.resolve())
-                and payload.get("signature") == _signature(model.blob_path)
-                and (payload.get("error") is None or isinstance(payload.get("error"), str))
+            payload.get("format") == _VALIDATION_FORMAT
+            and payload.get("profile") == _cache_profile(verify_backend=verify_backend)
+            and payload.get("blob_path") == str(model.blob_path.resolve())
+            and payload.get("signature") == _signature(model.blob_path)
+            and (payload.get("error") is None or isinstance(payload.get("error"), str))
         ):
             return payload.get("error")
     except (OSError, ValueError, TypeError):
@@ -78,11 +114,11 @@ class ModelValidator:
 
     @staticmethod
     def validate(
-            candidates: list[ModelInfo],
-            cancelled: Event,
-            report: Callable[[int, int, str], None],
-            *,
-            verify_backend: bool = True,
+        candidates: list[ModelInfo],
+        cancelled: Event,
+        report: Callable[[int, int, str], None],
+        *,
+        verify_backend: bool = True,
     ) -> list[ModelInfo]:
         """Confirm that each unique GGUF has a valid header and loads in llama.cpp."""
         validated: list[ModelInfo] = []
@@ -100,16 +136,26 @@ class ModelValidator:
 
             report(index, total, f"Checking {model.name}:{model.tag}")
             if model.blob_path is None:
-                validated.append(replace(model, available=False, error="Model layer blob is missing"))
+                validated.append(
+                    replace(model, available=False, error="Model layer blob is missing")
+                )
                 continue
 
             error = checked_paths.get(model.blob_path)
             if model.blob_path not in checked_paths:
                 cached = _cached_result(model, verify_backend=verify_backend)
                 if cached is _CACHE_MISS:
-                    error = OllamaDiscovery._validate_gguf(model.blob_path, model.size_bytes)
+                    error = OllamaDiscovery._validate_gguf(
+                        model.blob_path, model.size_bytes
+                    )
+                    if error is None:
+                        error = _validate_digest(model, cancelled, report, index, total)
                     if error is None and backend is not None:
-                        report(index, total, f"Loading {model.name}:{model.tag} with llama.cpp")
+                        report(
+                            index,
+                            total,
+                            f"Loading {model.name}:{model.tag} with llama.cpp",
+                        )
                         try:
                             backend.load(
                                 model.blob_path,
@@ -153,7 +199,9 @@ class StartupWorker(QObject):
                 self.finished.emit([])
                 return
 
-            models = ModelValidator.validate(candidates, self._cancelled, self.progress.emit)
+            models = ModelValidator.validate(
+                candidates, self._cancelled, self.progress.emit
+            )
             self.finished.emit(models)
         except Exception as exc:
             self.failed.emit(f"Startup validation failed: {exc}")

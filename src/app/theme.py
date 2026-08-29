@@ -1,11 +1,18 @@
 """Persistent, user-editable colours for the AIBrain desktop interface."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QColorDialog, QDialog, QDialogButtonBox, QFormLayout, QPushButton
+from PySide6.QtWidgets import (
+    QColorDialog,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QPushButton,
+)
 
 from ..utils.logging import PROJECT_ROOT
 
@@ -61,9 +68,14 @@ def load_colours() -> dict[str, str]:
 def save_colours(colours: dict[str, str]) -> None:
     """Atomically persist the supported palette in the requested cache file."""
     COLOUR_FILE.parent.mkdir(parents=True, exist_ok=True)
-    payload = {name: _valid_colour(colours.get(name)) or default for name, default in DEFAULT_COLOURS.items()}
+    payload = {
+        name: _valid_colour(colours.get(name)) or default
+        for name, default in DEFAULT_COLOURS.items()
+    }
     temporary = COLOUR_FILE.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     temporary.replace(COLOUR_FILE)
 
 
@@ -93,7 +105,10 @@ QLabel#userBubble, QLabel#assistantBubble {{ border-radius: 10px; padding: 10px;
 QLabel#userBubble {{ background: {colours['user_bubble']}; }}
 QLabel#assistantBubble {{ background: {colours['assistant_bubble']}; border: 1px solid {colours['panel_border']}; }}
 QLabel#worldBubble {{ background: {colours['world_bubble']}; border: 1px solid {colours['world_border']}; border-radius: 10px; padding: 10px; margin: 3px 0; }}
-QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {{ background: {colours['panel']}; border: 1px solid {colours['panel_border']}; border-radius: 6px; padding: 6px; color: {colours['text']}; }}
+QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget {{ background: {colours['panel']}; border: 1px solid {colours['panel_border']}; border-radius: 6px; padding: 6px; color: {colours['text']}; alternate-background-color: {colours['background']}; }}
+QHeaderView::section {{ background: {colours['accent']}; color: {colours['accent_text']}; border: 0; border-right: 1px solid {colours['panel_border']}; padding: 7px 9px; font-weight: 650; }}
+QTreeWidget::item {{ min-height: 28px; padding: 4px; }}
+QTreeWidget::item:selected {{ background: {colours['accent_hover']}; color: {colours['accent_text']}; }}
 QPushButton, QToolButton {{ background: {colours['accent']}; border: none; border-radius: 6px; padding: 7px 12px; color: {colours['accent_text']}; font-weight: 600; }}
 QPushButton:hover, QToolButton:hover {{ background: {colours['accent_hover']}; }}
 QPushButton:disabled, QToolButton:disabled {{ background: {colours['disabled']}; color: {colours['disabled_text']}; }}
@@ -116,7 +131,10 @@ class ColourSettingsDialog(QDialog):
             self._buttons[name] = button
             layout.addRow(name.replace("_", " ").title(), button)
             self._refresh_button(name)
-        controls = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        controls = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
         controls.accepted.connect(self.accept)
         controls.rejected.connect(self.reject)
         layout.addRow(controls)
@@ -136,4 +154,6 @@ class ColourSettingsDialog(QDialog):
     def _refresh_button(self, name: str) -> None:
         value = self._colours[name]
         self._buttons[name].setText(value.upper())
-        self._buttons[name].setStyleSheet(f"background: {value}; color: {'#101820' if QColor(value).lightness() > 145 else '#f7fbff'};")
+        self._buttons[name].setStyleSheet(
+            f"background: {value}; color: {'#101820' if QColor(value).lightness() > 145 else '#f7fbff'};"
+        )

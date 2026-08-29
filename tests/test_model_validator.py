@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import struct
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,9 @@ from src.models.model_validator import ModelValidator
 
 
 class ModelValidatorTests(unittest.TestCase):
-    def test_structural_validation_accepts_a_valid_gguf_without_loading_llama(self) -> None:
+    def test_structural_validation_accepts_a_valid_gguf_without_loading_llama(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             blob = Path(directory) / "model.gguf"
             blob.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
@@ -23,7 +26,9 @@ class ModelValidatorTests(unittest.TestCase):
             validated = ModelValidator.validate(
                 [model],
                 Event(),
-                lambda current, total, detail: progress.append((current, total, detail)),
+                lambda current, total, detail: progress.append(
+                    (current, total, detail)
+                ),
                 verify_backend=False,
             )
 
@@ -49,6 +54,26 @@ class ModelValidatorTests(unittest.TestCase):
 
         self.assertTrue(all(model.available for model in validated))
 
+    def test_digest_mismatch_is_reported_as_invalid_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            blob = Path(directory) / "model.gguf"
+            blob.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
+            wrong_digest = "sha256:" + hashlib.sha256(b"other").hexdigest()
+            model = ModelInfo(
+                "demo",
+                "latest",
+                blob,
+                size_bytes=blob.stat().st_size,
+                digest=wrong_digest,
+            )
+
+            validated = ModelValidator.validate(
+                [model], Event(), lambda *_: None, verify_backend=False
+            )
+
+        self.assertFalse(validated[0].available)
+        self.assertIn("Invalid HASH", validated[0].error)
+
     def test_cache_reuses_full_validation_only_until_the_blob_changes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -57,14 +82,23 @@ class ModelValidatorTests(unittest.TestCase):
             model = ModelInfo("demo", "latest", blob, size_bytes=blob.stat().st_size)
             with (
                 patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache"),
-                patch("src.models.model_validator.OllamaDiscovery._validate_gguf", return_value=None) as validate,
+                patch(
+                    "src.models.model_validator.OllamaDiscovery._validate_gguf",
+                    return_value=None,
+                ) as validate,
             ):
-                ModelValidator.validate([model], Event(), lambda *_: None, verify_backend=False)
-                ModelValidator.validate([model], Event(), lambda *_: None, verify_backend=False)
+                ModelValidator.validate(
+                    [model], Event(), lambda *_: None, verify_backend=False
+                )
+                ModelValidator.validate(
+                    [model], Event(), lambda *_: None, verify_backend=False
+                )
                 self.assertEqual(validate.call_count, 1)
 
                 blob.write_bytes(blob.read_bytes() + b"changed")
-                ModelValidator.validate([model], Event(), lambda *_: None, verify_backend=False)
+                ModelValidator.validate(
+                    [model], Event(), lambda *_: None, verify_backend=False
+                )
 
             self.assertEqual(validate.call_count, 2)
 
@@ -76,11 +110,18 @@ class ModelValidatorTests(unittest.TestCase):
             model = ModelInfo("demo", "latest", blob, size_bytes=blob.stat().st_size)
             with (
                 patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache"),
-                patch("src.models.model_validator.OllamaDiscovery._validate_gguf", return_value=None),
+                patch(
+                    "src.models.model_validator.OllamaDiscovery._validate_gguf",
+                    return_value=None,
+                ),
                 patch("src.models.llama_backend.LlamaBackend") as backend_type,
             ):
                 backend_type.return_value.load.return_value = None
-                ModelValidator.validate([model], Event(), lambda *_: None, verify_backend=False)
-                ModelValidator.validate([model], Event(), lambda *_: None, verify_backend=True)
+                ModelValidator.validate(
+                    [model], Event(), lambda *_: None, verify_backend=False
+                )
+                ModelValidator.validate(
+                    [model], Event(), lambda *_: None, verify_backend=True
+                )
 
             backend_type.return_value.load.assert_called_once()
