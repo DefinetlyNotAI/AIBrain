@@ -12,8 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import clear_screen, error, header, instruction_list
+from src.utils.console_ui import clear_screen, error, header, instruction_list, section, status
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
+from src.utils.logging import configure_cli_logging
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
@@ -87,16 +88,20 @@ def _supervise_gpu_launch() -> int:
 
 
 def main() -> int:
+    runtime_log, _ = configure_cli_logging("main")
     if not require_managed_runtime(ROOT, "main"):
         return 1
     clear_screen()
+    header("AIBrain", "Desktop connectome launcher")
+    section("Desktop startup", 1)
+    status("LOG", f"CLI output: {runtime_log}")
+    status("START", "Preparing Qt, local model validation, and the OpenGL adapter check")
     os.environ.setdefault("QT_OPENGL", "desktop")
     from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, QTimer, Slot
     from PySide6.QtGui import QFont, QSurfaceFormat
     from PySide6.QtWidgets import QApplication
     from src.app.loading_window import GpuProbe, LoadingWindow
     from src.app.main_window import MainWindow
-    from src.utils.logging import configure_logging
     from src.models.model_validator import StartupWorker
     from src.utils.gpu import (
         can_request_gpu_relaunch,
@@ -117,7 +122,6 @@ def main() -> int:
     surface.setSamples(0)
     QSurfaceFormat.setDefaultFormat(surface)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
-    configure_logging("main")
     app = QApplication(sys.argv)
     app.setFont(QFont("Segoe UI", 10))
     app.setApplicationName("AIBrain")

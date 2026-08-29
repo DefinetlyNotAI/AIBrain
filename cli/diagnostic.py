@@ -9,12 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import clear_screen, error
-from src.utils.logging import configure_logging
+from src.utils.console_ui import clear_screen, error, header, section, status
+from src.utils.logging import configure_cli_logging
 from src.utils.runtime import require_managed_runtime
 
 
 def main() -> int:
+    runtime_log, _ = configure_cli_logging("diagnostic")
     if not require_managed_runtime(ROOT, "diagnostic"):
         return 1
     clear_screen()
@@ -23,7 +24,10 @@ def main() -> int:
     from src.app.diagnostics_window import DiagnosticsWindow
     from src.app.loading_window import LoadingWindow
 
-    configure_logging("diagnostic")
+    header("AIBrain", "Repair and diagnostics launcher")
+    section("Desktop startup", 1)
+    status("LOG", f"CLI output: {runtime_log}")
+    status("START", "Checking local model health before opening diagnostics")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("AIBrain Repair and Diagnostics")

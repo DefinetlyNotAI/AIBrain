@@ -23,6 +23,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.runtime import require_managed_runtime
+from src.utils.logging import configure_cli_logging
 
 SUITES: dict[str, tuple[str, list[str]]] = {
     "1": (
@@ -235,6 +236,7 @@ def choose_suite() -> str | None:
 
 
 def main() -> int:
+    runtime_log, _ = configure_cli_logging("test")
     if not require_managed_runtime(ROOT, "test"):
         return 1
     parser = argparse.ArgumentParser(
@@ -260,6 +262,7 @@ def main() -> int:
         "AIBrain",
         "Verification and test centre",
     )
+    status("LOG", f"CLI output: {runtime_log}")
 
     section(
         "Select verification",

@@ -35,6 +35,7 @@ from src.utils.console_ui import (
 )
 from src.utils.gpu import set_windows_executable_gpu_preference
 from src.utils.runtime import require_managed_runtime
+from src.utils.logging import configure_cli_logging
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
@@ -952,6 +953,7 @@ def build(
 
 
 def main() -> int:
+    runtime_log, _ = configure_cli_logging("build_dist")
     if not require_managed_runtime(
             ROOT,
             "build_dist",
@@ -993,6 +995,8 @@ def main() -> int:
         "AIBrain",
         "Nuitka standalone distribution builder",
     )
+    section("Build session", 1)
+    print(f"  Log file: {runtime_log}")
 
     try:
         selected = tuple(

@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import logging
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from src.utils.logging import AlignedFormatter, BoundedFileHandler, _uncaught_exception, configure_logging
+from src.utils.logging import (
+    AlignedFormatter,
+    BoundedFileHandler,
+    _uncaught_exception,
+    configure_cli_logging,
+    configure_logging,
+    restore_cli_output,
+)
 
 
 class LoggingTests(unittest.TestCase):
@@ -17,6 +25,7 @@ class LoggingTests(unittest.TestCase):
             handler.close()
 
     def tearDown(self) -> None:
+        restore_cli_output()
         self._close_root_handlers()
 
     def test_formatter_preserves_multiline_message_with_aligned_gutter(self) -> None:
@@ -70,6 +79,39 @@ class LoggingTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn("oldest", text)
             self.assertIn("newest", text)
+
+    def test_cli_logging_captures_stdout_and_stderr_without_ansi(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_log, _ = configure_cli_logging("test", Path(directory))
+            try:
+                print("standard CLI output")
+                print("\x1b[31mCLI error output\x1b[0m", file=sys.stderr)
+                sys.stdout.flush()
+                sys.stderr.flush()
+                captured = runtime_log.read_text(encoding="utf-8")
+            finally:
+                restore_cli_output()
+                self._close_root_handlers()
+
+        self.assertIn("standard CLI output", captured)
+        self.assertIn("CLI error output", captured)
+        self.assertNotIn("\x1b[31m", captured)
+
+    def test_every_cli_entry_point_configures_console_capture(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        scripts = (
+            "analysis.py",
+            "build_dist.py",
+            "build_native.py",
+            "diagnostic.py",
+            "installer.py",
+            "main.py",
+            "test.py",
+        )
+
+        for script in scripts:
+            source = (root / "cli" / script).read_text(encoding="utf-8-sig")
+            self.assertIn("configure_cli_logging", source, script)
 
 
 if __name__ == "__main__":

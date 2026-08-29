@@ -36,6 +36,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.runtime import require_managed_runtime
+from src.utils.logging import configure_cli_logging
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
@@ -307,6 +308,7 @@ def commit_regenerated_library() -> bool:
 
 def main() -> int:
     """Build, verify, and optionally commit the native library."""
+    runtime_log, _ = configure_cli_logging("build_native")
     if not require_managed_runtime(ROOT, "build_native"):
         return 1
     parser = argparse.ArgumentParser(
@@ -338,6 +340,7 @@ def main() -> int:
         "AIBrain",
         "Native connectome build tool - x64 Windows",
     )
+    status("LOG", f"CLI output: {runtime_log}")
 
     section("Compile native acceleration", 1)
 

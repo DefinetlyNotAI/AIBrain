@@ -25,6 +25,7 @@ from src.utils.console_ui import Color, clear_screen, color, command_preview, co
     info, \
     panel, relative_path, section, success, warning
 from src.models.diagnostics import OllamaDiagnostics
+from src.utils.logging import configure_cli_logging
 
 VENV_DIR = ROOT / ".venv"
 
@@ -511,10 +512,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    runtime_log, _ = configure_cli_logging("installer")
     args = parse_args()
 
     clear_screen()
     header()
+    detail("Log file", str(runtime_log))
 
     section("System check", 1)
 

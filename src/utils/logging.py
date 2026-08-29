@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 import threading
 from datetime import datetime
@@ -11,6 +12,70 @@ from types import TracebackType
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAX_LOG_BYTES = 5 * 1024 * 1024
 MAX_CRASH_LOG_BYTES = 20 * 1024 * 1024
+
+
+class ConsoleLogTee:
+    """Mirror Python-level console output to a plain-text runtime log."""
+
+    def __init__(self, stream: object, log_path: Path) -> None:
+        self._stream = stream
+        self._log = log_path.open("a", encoding="utf-8", errors="replace")
+        self._lock = threading.RLock()
+
+    @property
+    def encoding(self) -> str | None:
+        return getattr(self._stream, "encoding", None)
+
+    @property
+    def errors(self) -> str | None:
+        return getattr(self._stream, "errors", None)
+
+    def isatty(self) -> bool:
+        return bool(getattr(self._stream, "isatty", lambda: False)())
+
+    def fileno(self) -> int:
+        return int(getattr(self._stream, "fileno")())
+
+    def write(self, text: str) -> int:
+        with self._lock:
+            written = self._stream.write(text)  # type: ignore[union-attr]
+            self._log.write(_strip_ansi(text))
+            return len(text) if written is None else written
+
+    def writelines(self, lines: object) -> None:
+        for line in lines:  # type: ignore[union-attr]
+            self.write(line)
+
+    def flush(self) -> None:
+        with self._lock:
+            self._stream.flush()  # type: ignore[union-attr]
+            self._log.flush()
+
+    def close(self) -> None:
+        with self._lock:
+            self._log.close()
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._stream, name)
+
+
+_ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|][^\x07]*(?:\x07|\x1b\\))")
+_ORIGINAL_STDOUT = sys.stdout
+_ORIGINAL_STDERR = sys.stderr
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
+def restore_cli_output() -> None:
+    """Restore host streams after a CLI logger is reconfigured or tested."""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, ConsoleLogTee):
+            stream.flush()
+            stream.close()
+    sys.stdout = _ORIGINAL_STDOUT
+    sys.stderr = _ORIGINAL_STDERR
 
 
 class AlignedFormatter(logging.Formatter):
@@ -136,4 +201,13 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
 
     sys.excepthook = _uncaught_exception
     threading.excepthook = _thread_exception
+    return runtime_log, crash_log
+
+
+def configure_cli_logging(feature: str, log_directory: Path | None = None) -> tuple[Path, Path]:
+    """Configure logging and capture all Python CLI output in its runtime log."""
+    restore_cli_output()
+    runtime_log, crash_log = configure_logging(feature, log_directory)
+    sys.stdout = ConsoleLogTee(_ORIGINAL_STDOUT, runtime_log)  # type: ignore[assignment]
+    sys.stderr = ConsoleLogTee(_ORIGINAL_STDERR, runtime_log)  # type: ignore[assignment]
     return runtime_log, crash_log

@@ -75,6 +75,12 @@ llama.cpp, native connectome, and required Visual C++ runtime files, and runs wi
 The builder invokes Nuitka in unbuffered mode, so its carriage-return progress frames are shown live in an interactive
 terminal while each application is compiling.
 
+## Command logs
+
+Every script in `cli\` records its terminal output in `logs\aibrain.<command>.log` while it runs. GUI launchers also
+keep their terminal status visible and record it there, so startup, model-validation, and OpenGL failures can be reviewed
+after their window closes. Crash traces are recorded separately as `logs\crash.<command>.log`.
+
 ## First run
 
 At launch, AIBrain first shows a loading window while it scans local Ollama manifests and blobs, validates each
