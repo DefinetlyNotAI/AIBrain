@@ -7,7 +7,7 @@ from time import monotonic
 from PySide6.QtCore import QObject, Signal, Slot
 
 from .instrumented_backend import ActivationFrame, ActivitySource
-from .llama_backend import GenerationConfig, LlamaBackend
+from .llama_backend import GenerationConfig, LlamaBackend, reached_sentence_end, sentence_grace_config
 
 
 class GenerationWorker(QObject):
@@ -30,16 +30,20 @@ class GenerationWorker(QObject):
         try:
             self.backend.load(model_path, config)
             prompt_tokens = sum(len(self.backend.tokenize(message["content"])) for message in messages)
-            for text in self.backend.stream_chat(messages, config):
+            response_chunks: list[str] = []
+            for text in self.backend.stream_chat(messages, sentence_grace_config(config)):
                 if self._cancelled.is_set():
                     break
                 now = monotonic()
                 normal_interval = normal_interval * .8 + (now - previous_token_at) * .2
                 token_ids = self.backend.tokenize(text)
                 generated_tokens += max(1, len(token_ids))
+                response_chunks.append(text)
                 frame = ActivationFrame(token_ids[-1] if token_ids else None, text, generated_tokens,
                                         ActivitySource.SIMULATION)
                 self.token.emit(text, frame)
+                if reached_sentence_end("".join(response_chunks), generated_tokens, config.max_tokens):
+                    break
                 if config.speed < 1.0:
                     self._cancelled.wait(max(0.0, normal_interval * (1.0 / config.speed - 1.0)))
                 previous_token_at = monotonic()

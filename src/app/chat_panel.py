@@ -4,8 +4,9 @@ import html
 import re
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel,
-                               QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QGroupBox,
+                               QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
@@ -18,7 +19,9 @@ _SELECTABLE_TEXT_FLAGS = Qt.TextInteractionFlag(
 
 def markdown_to_html(markdown: str) -> str:
     """Render the useful Markdown subset safely inside selectable Qt labels."""
-    escaped = html.escape(html.unescape(markdown))
+    # Keep apostrophes as ordinary text. Qt's rich-text parser can otherwise
+    # show the escaped numeric entity literally in streamed conversation text.
+    escaped = html.escape(html.unescape(markdown), quote=False)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", escaped)
@@ -58,10 +61,12 @@ class ChatPanel(QWidget):
     playbackPreviousRequested = Signal()
     playbackNextRequested = Signal()
     infiniteRequested = Signal(str)
+    infiniteContinueRequested = Signal()
     diagnosticsRequested = Signal()
     analysisRequested = Signal()
     modeChanged = Signal(bool)
     rewindRequested = Signal()
+    rewindExitRequested = Signal()
 
     def __init__(self, config: GenerationConfig) -> None:
         super().__init__()
@@ -69,6 +74,9 @@ class ChatPanel(QWidget):
         self._model_available = False
         self._infinite_mode = False
         self._running = False
+        self._rewind_active = False
+        self._replay_active = False
+        self._regenerate_available = False
         self._build(config)
         self._playback_controls: QWidget | None = None
 
@@ -98,17 +106,6 @@ class ChatPanel(QWidget):
         runtime_layout.addLayout(model_row)
         layout.addWidget(runtime_card)
 
-        mode_row = QHBoxLayout()
-        self.normal_mode = QPushButton("Normal Chat")
-        self.infinite_mode = QPushButton("Infinite Mode")
-        for button, infinite in ((self.normal_mode, False), (self.infinite_mode, True)):
-            button.setCheckable(True)
-            button.setToolTip("Switch modes and clear the current conversation and replay")
-            button.clicked.connect(lambda checked=False, value=infinite: self._set_mode(value))
-            mode_row.addWidget(button)
-        self.normal_mode.setChecked(True)
-        layout.addLayout(mode_row)
-
         conversation_heading = QLabel("Conversation")
         conversation_heading.setObjectName("mode")
         layout.addWidget(conversation_heading)
@@ -134,17 +131,44 @@ class ChatPanel(QWidget):
         self.input = QPlainTextEdit()
         self.input.setPlaceholderText("Message your local model…  (Ctrl+Enter to send)")
         self.input.setFixedHeight(92)
-        layout.addWidget(self.input)
+        self.input.textChanged.connect(self._refresh_actions)
+        compose_row = QFrame()
+        compose_row.setObjectName("composeCard")
+        compose_layout = QHBoxLayout(compose_row)
+        compose_layout.setContentsMargins(0, 0, 0, 0)
+        compose_layout.addWidget(self.input, 1)
+        self.send = QToolButton()
+        self.send.setObjectName("sendButton")
+        self.send.setText("➤")
+        self.send.setAccessibleName("Start generation")
+        self.send.setToolTip("Send the compose text; changes to Stop while generation is running")
+        self.send.clicked.connect(self._start_or_stop)
+        compose_layout.addWidget(self.send, 0, Qt.AlignmentFlag.AlignBottom)
+        layout.addWidget(compose_row)
         action_card = QFrame()
         action_card.setObjectName("actionCard")
         action_layout = QVBoxLayout(action_card)
         action_layout.setContentsMargins(10, 8, 10, 8)
-        normal_label = QLabel("MODE ACTIONS")
-        normal_label.setObjectName("muted")
-        action_layout.addWidget(normal_label)
-        buttons = QHBoxLayout()
-        self.send = QPushButton("Start")
-        self.send.setToolTip("Start the selected mode; changes to Stop while generation is running")
+        self.mode_actions_toggle = QToolButton()
+        self.mode_actions_toggle.setText("Hide Mode Actions")
+        self.mode_actions_toggle.setCheckable(True)
+        self.mode_actions_toggle.setChecked(True)
+        self.mode_actions_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.mode_actions_toggle.setArrowType(Qt.ArrowType.DownArrow)
+        self.mode_actions_toggle.setToolTip("Show or hide mode and conversation actions")
+        self.mode_actions_toggle.toggled.connect(self._set_mode_actions_visible)
+        action_layout.addWidget(self.mode_actions_toggle)
+        self.mode_actions_content = QWidget()
+        mode_actions_layout = QVBoxLayout(self.mode_actions_content)
+        mode_actions_layout.setContentsMargins(0, 0, 0, 0)
+        mode_row = QHBoxLayout()
+        self.infinite_mode = QCheckBox("Infinite Mode")
+        self.infinite_mode.setToolTip("Switch modes and clear the current conversation and replay")
+        self.infinite_mode.toggled.connect(self._set_mode)
+        mode_row.addWidget(self.infinite_mode)
+        mode_row.addStretch(1)
+        mode_actions_layout.addLayout(mode_row)
+        buttons = QGridLayout()
         self.regenerate = QPushButton("Regenerate")
         self.rewind = QPushButton("Rewind")
         self.rewind.setToolTip("Enter token-by-token connectome replay below the graph")
@@ -154,22 +178,30 @@ class ChatPanel(QWidget):
         self.open_analysis = QPushButton("Analysis")
         self.open_analysis.setToolTip("Export NN Analysis+ for recorded frames from the selected model")
         self.open_analysis.setEnabled(False)
-        self.send.clicked.connect(self._start_or_stop)
         self.regenerate.clicked.connect(self.regenerateRequested)
-        self.rewind.clicked.connect(self.rewindRequested)
-        self.infinite.clicked.connect(self._start_infinite)
+        self.rewind.clicked.connect(self._toggle_rewind)
+        self.infinite.clicked.connect(self._continue_infinite)
         self.clear.clicked.connect(self.clearRequested)
         self.open_analysis.clicked.connect(self.analysisRequested)
-        for button in (self.send, self.regenerate, self.open_analysis, self.clear, self.rewind, self.infinite):
-            buttons.addWidget(button)
-        action_layout.addLayout(buttons)
+        for index, button in enumerate((self.regenerate, self.rewind, self.open_analysis, self.clear, self.infinite)):
+            buttons.addWidget(button, index // 3, index % 3)
+        mode_actions_layout.addLayout(buttons)
+        action_layout.addWidget(self.mode_actions_content)
         layout.addWidget(action_card)
 
         advanced_group = QGroupBox("Advanced generation controls")
-        advanced_group.setCheckable(True)
-        advanced_group.setChecked(False)
-        advanced_group.setToolTip("Optional generation settings; collapsed by default")
-        advanced = QFormLayout(advanced_group)
+        advanced_layout = QVBoxLayout(advanced_group)
+        advanced_layout.setContentsMargins(8, 7, 8, 7)
+        self.advanced_toggle = QToolButton()
+        self.advanced_toggle.setText("Show advanced generation controls")
+        self.advanced_toggle.setCheckable(True)
+        self.advanced_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.advanced_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self.advanced_toggle.setToolTip("Show or hide optional generation settings")
+        self.advanced_toggle.toggled.connect(self._set_advanced_visible)
+        advanced_layout.addWidget(self.advanced_toggle)
+        self.advanced_content = QWidget()
+        advanced = QFormLayout(self.advanced_content)
         self.temperature = QDoubleSpinBox()
         self.temperature.setRange(0, 2)
         self.temperature.setSingleStep(.05)
@@ -188,6 +220,12 @@ class ChatPanel(QWidget):
         self.gpu_layers = QSpinBox()
         self.gpu_layers.setRange(-1, 200)
         self.gpu_layers.setValue(config.gpu_layers)
+        self.analysis_memory_mb = QSpinBox()
+        self.analysis_memory_mb.setRange(16, 4096)
+        self.analysis_memory_mb.setSingleStep(16)
+        self.analysis_memory_mb.setValue(100)
+        self.analysis_memory_mb.setToolTip(
+            "Maximum RAM retained for Infinite-mode Analysis+ frames; oldest records are discarded above this limit")
         self.speed = QSlider()
         self.speed.setOrientation(Qt.Orientation.Horizontal)
         self.speed.setRange(1, 10)
@@ -205,6 +243,7 @@ class ChatPanel(QWidget):
         advanced.addRow("Max tokens", self.max_tokens)
         advanced.addRow("Context", self.context)
         advanced.addRow("GPU layers (-1 auto)", self.gpu_layers)
+        advanced.addRow("Analysis+ RAM (MB)", self.analysis_memory_mb)
         advanced.addRow("Generation speed", speed_row)
         self.regenerate.setToolTip("Generate a new answer for the most recent normal-chat prompt")
         self.clear.setToolTip("Clear the current conversation and recorded replay")
@@ -215,6 +254,8 @@ class ChatPanel(QWidget):
         self.context.setToolTip("Local model context window size")
         self.gpu_layers.setToolTip("Number of layers requested on the GPU; -1 is automatic")
         self.speed.setToolTip("Replay presentation speed")
+        self.advanced_content.hide()
+        advanced_layout.addWidget(self.advanced_content)
         layout.addWidget(advanced_group)
         self._refresh_actions()
 
@@ -238,16 +279,37 @@ class ChatPanel(QWidget):
         self.input.clear()
         self.infiniteRequested.emit(seed)
 
+    def _continue_infinite(self) -> None:
+        self.infiniteContinueRequested.emit()
+
+    def _toggle_rewind(self) -> None:
+        if self._rewind_active:
+            self.rewindExitRequested.emit()
+        else:
+            self.rewindRequested.emit()
+
+    def _set_advanced_visible(self, visible: bool) -> None:
+        self.advanced_content.setVisible(visible)
+        self.advanced_toggle.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
+        self.advanced_toggle.setText("Hide advanced generation controls" if visible else "Show advanced generation controls")
+
+    def _set_mode_actions_visible(self, visible: bool) -> None:
+        self.mode_actions_content.setVisible(visible)
+        self.mode_actions_toggle.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
+        self.mode_actions_toggle.setText("Hide Mode Actions" if visible else "Show Mode Actions")
+
     def _set_mode(self, infinite: bool) -> None:
         if self._infinite_mode == infinite:
             return
         self._infinite_mode = infinite
-        self.normal_mode.setChecked(not infinite)
+        self.infinite_mode.blockSignals(True)
         self.infinite_mode.setChecked(infinite)
+        self.infinite_mode.blockSignals(False)
         self.input.setPlaceholderText(
             "Describe a world opening…" if infinite else "Message your local model…  (Ctrl+Enter to send)")
-        self.regenerate.setVisible(not infinite)
-        self.infinite.setVisible(infinite)
+        # Keep every action in the same physical slot across modes. Unavailable
+        # actions are disabled instead of disappearing and shifting the UI.
+        self.infinite.setEnabled(infinite)
         self.open_analysis.setText("Analysis+" if infinite else "Analysis")
         self.clear_messages()
         self.clear_latest_playback()
@@ -277,6 +339,11 @@ class ChatPanel(QWidget):
 
     def set_analysis_available(self, available: bool) -> None:
         self._analysis_available = available
+        self._refresh_actions()
+
+    def set_regenerate_available(self, available: bool) -> None:
+        """Enable regeneration only when a completed normal response exists."""
+        self._regenerate_available = available
         self._refresh_actions()
 
     def set_validating_models(self, text: str) -> None:
@@ -364,7 +431,8 @@ class ChatPanel(QWidget):
 
     def generating(self, running: bool) -> None:
         self._running = running
-        self.send.setText("Stop" if running else "Start")
+        self.send.setText("■" if running else "➤")
+        self.send.setAccessibleName("Stop generation" if running else "Start generation")
         self._refresh_actions()
 
     def set_analysis_mode(self, infinite: bool) -> None:
@@ -380,21 +448,42 @@ class ChatPanel(QWidget):
 
     def set_rewind_mode(self, active: bool) -> None:
         """The graph owns rewind navigation; chat remains read-only until exit."""
+        self._rewind_active = active
+        self.rewind.setText("Exit rewind" if active else "Rewind")
+        self.rewind.setToolTip("Return to normal chat actions" if active else "Enter token-by-token connectome replay")
         if active:
             for control in (self.send, self.regenerate, self.open_analysis, self.clear, self.infinite, self.models,
-                            self.normal_mode, self.infinite_mode):
+                            self.infinite_mode):
                 control.setEnabled(False)
+            self.rewind.setEnabled(not self._replay_active)
             return
         self._refresh_actions()
 
+    def set_analysis_memory_exceeded(self, exceeded: bool) -> None:
+        label = "⚠ Analysis+" if exceeded and self._infinite_mode else "Analysis+" if self._infinite_mode else "Analysis"
+        self.open_analysis.setText(label)
+        self.open_analysis.setToolTip(
+            "Exceeded the Analysis+ memory limit. Oldest recorded signals were discarded; analyze soon."
+            if exceeded else "Export compact neural findings for an Infinite simulation" if self._infinite_mode
+            else "Export normal chat session data without neural-network findings"
+        )
+
+    def set_replay_mode(self, active: bool) -> None:
+        """Do not allow navigation or exit while timed replay owns the graph."""
+        self._replay_active = active
+        if self._rewind_active:
+            self.rewind.setEnabled(not active)
+
     def _refresh_actions(self) -> None:
         ready = self._model_available
-        self.send.setEnabled(self._running or ready)
-        self.regenerate.setEnabled(ready and not self._running and not self._infinite_mode)
-        self.rewind.setEnabled(ready and not self._running and not self._infinite_mode)
+        has_compose_text = bool(self.input.toPlainText().strip())
+        self.send.setEnabled(self._running or (ready and has_compose_text and not self._rewind_active))
+        self.regenerate.setEnabled(
+            ready and self._regenerate_available and not self._running and not self._infinite_mode)
+        self.rewind.setEnabled((self._rewind_active or (ready and not self._running and not self._infinite_mode))
+                               and not self._replay_active)
         self.infinite.setEnabled(ready and not self._running and self._infinite_mode)
         self.clear.setEnabled(not self._running)
         self.models.setEnabled(not self._running and self.models.count() > 1)
         self.open_analysis.setEnabled(ready and not self._running and self._analysis_available)
-        self.normal_mode.setEnabled(not self._running)
-        self.infinite_mode.setEnabled(not self._running)
+        self.infinite_mode.setEnabled(not self._running and not self._rewind_active)

@@ -39,9 +39,29 @@ class ChatAnalysisActionTests(unittest.TestCase):
         panel.infinite_mode.click()
 
         self.assertFalse(panel.infinite.isHidden())
-        self.assertTrue(panel.regenerate.isHidden())
+        self.assertFalse(panel.regenerate.isEnabled())
         self.assertEqual(panel.messages_layout.count(), 1)
         self.assertEqual(panel.open_analysis.text(), "Analysis+")
+        panel.deleteLater()
+
+    def test_mode_actions_are_collapsible_without_moving_controls(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+
+        self.assertFalse(panel.mode_actions_content.isHidden())
+        panel.mode_actions_toggle.click()
+        self.assertTrue(panel.mode_actions_content.isHidden())
+        self.assertEqual(panel.mode_actions_toggle.text(), "Show Mode Actions")
+        panel.deleteLater()
+
+    def test_regenerate_requires_a_completed_normal_response(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        panel.set_model_available(True)
+
+        self.assertFalse(panel.regenerate.isEnabled())
+        panel.set_regenerate_available(True)
+        self.assertTrue(panel.regenerate.isEnabled())
+        panel.set_regenerate_available(False)
+        self.assertFalse(panel.regenerate.isEnabled())
         panel.deleteLater()
 
     def test_rewind_mode_locks_chat_actions_until_the_graph_exits(self) -> None:
@@ -51,6 +71,8 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertFalse(panel.send.isEnabled())
         self.assertFalse(panel.clear.isEnabled())
         panel.set_rewind_mode(False)
+        self.assertFalse(panel.send.isEnabled())
+        panel.input.setPlainText("Resume normal chat")
         self.assertTrue(panel.send.isEnabled())
         panel.deleteLater()
 

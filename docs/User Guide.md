@@ -7,17 +7,18 @@ the chat pane while the connectome responds to each received token.
 
 ### Infinite simulation
 
-Infinite Mode uses a deterministic selection from ten pregenerated world openings and asks the participant to begin the
-scenario. It applies an internal high-randomness configuration (temperature at least 1.25 and top-p at least .96),
+Infinite Mode uses a deterministic selection from ten pregenerated world openings and begins with a World event prompted
+by your selected scenario text. It applies an internal high-randomness configuration (temperature at least 1.25 and top-p at least .96),
 regardless of the Normal Chat controls. Switching between Normal Chat and Infinite Mode clears both the conversation and
-the replay. Start becomes Stop while either mode is running; Continue is available only for a stopped Infinite scenario.
+the replay. The compose arrow becomes Stop while either mode is running; Continue is available only for a stopped Infinite scenario.
 
-Press **∞ Inf** to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the
+Open **Mode Actions**, enable **Infinite Mode**, then use the compose arrow to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the
 **World** produces only external events; the **Participant** produces only first-person responses. Every stream update
-is tied to both its role and turn number, so World tokens cannot append to a Participant bubble. The UI clearly labels
+is tied to both its role and turn number, so World tokens cannot append to a Participant bubble. **Continue** reconstructs
+the two role histories from the stopped transcript rather than restarting the scenario. The UI clearly labels
 this as a simulation—the model is generating roleplay text, not a real sentient being. The session continues until
 **Stop** is pressed, while each model keeps only a bounded recent context window so it can run without unbounded prompt
-growth. The right-side connectome renders participant tokens only.
+growth. The right-side connectome records both role streams as procedural visual signals.
 
 ## NN Analysis+
 
@@ -30,11 +31,12 @@ states or transformer activations.
 - **Stop** requests cancellation after the current native generation step.
 - **Escape** does the same from anywhere in the application.
 - **Regenerate** removes the latest assistant answer and resends its preceding user prompt.
-- **Clear** removes visible messages and in-memory conversation history.
+- **Clear** removes visible messages, replay/analysis readiness, and in-memory conversation history.
 - `Ctrl+C` in the launch terminal requests a clean application shutdown.
 
-The latest completed answer has replay controls beneath it. **Replay neurons** plays its captured activity sequence;
-**Token** arrows move one recorded step at a time. A new response, model selection, graph-quality change, or spacing
+The latest completed answer has replay controls beneath it. **Replay** becomes **Stop replay** while it owns the graph;
+the token arrows and Exit Rewind action are disabled during that run. Manual Previous/Next inspection holds the selected
+activity frame steady until replay or rewind exits. A new response, model selection, graph-quality change, or spacing
 change replaces that one-response replay buffer.
 
 ## Generation controls
@@ -45,17 +47,19 @@ The controls at the bottom of the chat pane are saved in Windows application set
 |------------------|----------------------------------------------------------------------------------------------------------------|
 | Temperature      | Sampling randomness, from 0 to 2.                                                                              |
 | Top-p            | Nucleus-sampling cutoff, from 0.05 to 1.                                                                       |
-| Max tokens       | Upper limit for a generated answer.                                                                            |
+| Max tokens       | Target upper limit; AIBrain permits a short grace window to finish the current sentence.                       |
 | Context          | Context window requested from llama.cpp.                                                                       |
 | GPU layers       | `-1` requests automatic/all-layer offload where the installed backend supports it; `0` requests CPU inference. |
+| Analysis+ RAM    | Infinite-mode RAM budget for retained visual frames. Oldest frames are discarded above the limit.              |
 | Generation speed | UI token pacing from 0.1x to 1.0x. It does not change model sampling.                                          |
 
 ## Connectome controls
 
-Open **View settings** for Simulation Performance, Rendering GPU, Spacing, Neuron Borders (0–1), and Reset View. The
-settings are collapsed by default. In 2D, drag to pan and use the wheel to zoom; picking follows the translated view.
-Choose **Rewind** after a normal response to lock chat actions and move Previous, Replay, and Next below the graph. Use
-**Exit Rewind** to return to normal controls; replay works in both 2D and 3D.
+Open **View settings** for Simulation Performance, Rendering GPU, Spacing, and Neuron Borders (0–1). **Reset view** is
+always available beside the connectome title. In 2D, drag to pan and use the wheel to zoom; picking follows the
+translated view. Full 2D keeps all nine named clusters in separate positions. Choose **Rewind** after a normal response
+to lock chat actions and move Previous, Replay, and Next below the graph. The same left-side control becomes **Exit
+Rewind** while inspection is active; replay works in both 2D and 3D.
 
 The right pane is a native `QOpenGLWidget` renderer. It supports left-drag to orbit, mouse-wheel zoom, and **Reset
 view** to restore the camera. **Pause** stops visual updates; press **Resume** to continue. **Low**, **Medium**, and
@@ -69,8 +73,11 @@ The overlay always identifies the renderer actually selected by OpenGL.
 Click a visual neuron to inspect its region, current value, and peak. You can silence it (zeroing its visual activity)
 or change its importance from 0 to 3. Click the displayed **Selected neuron** number to enter an exact neuron index.
 **Neuron borders** outlines every visual neuron for clearer separation; use the adjacent numeric control to tune the
-outline width. Region clusters use a stable distinct color palette. All message bubbles and status/inspector text can be
-highlighted and copied. These controls affect the visual simulation only; they never modify model weights or inference.
+outline width. Region clusters use a stable high-contrast palette for AIBrain's dark default background. Choose **Colour
+settings** beneath the connectome title to customize every semantic interface colour with Qt's wheel, RGB, and hexadecimal
+controls; settings are saved to `.cache/aibrain.color.json`. Sector/region mapping colours remain stable. All message
+bubbles and status/inspector text can be highlighted and copied. These controls affect the visual simulation only; they
+never modify model weights or inference.
 
 ## Analysis and export
 

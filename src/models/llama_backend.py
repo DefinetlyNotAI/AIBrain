@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import re
+from dataclasses import replace
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +45,18 @@ class GenerationConfig:
     context_length: int = 4096
     gpu_layers: int = -1
     speed: float = 1.0
+
+
+_SENTENCE_END_RE = re.compile(r"[.!?][\"')\]]*\s*$")
+
+
+def sentence_grace_config(config: GenerationConfig) -> GenerationConfig:
+    """Permit a short overrun so a requested response can finish its sentence."""
+    return replace(config, max_tokens=min(config.max_tokens + 64, 8192))
+
+
+def reached_sentence_end(text: str, token_count: int, requested_max_tokens: int) -> bool:
+    return token_count >= requested_max_tokens and bool(_SENTENCE_END_RE.search(text))
 
 
 class LlamaBackend:

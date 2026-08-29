@@ -6,12 +6,13 @@ from typing import TypedDict
 
 from PySide6.QtCore import QCoreApplication, QSettings, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
-from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSplitter
+from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSizePolicy, QSplitter
 
 from .chat_panel import ChatPanel
 from .diagnostics_window import DiagnosticsWindow
 from .loading_window import LoadingWindow
 from .settings import load_generation_settings, save_generation_settings
+from .theme import load_colours, stylesheet
 from .visualizer_panel import VisualizerPanel
 from ..models.generation_worker import GenerationWorker
 from ..models.infinite_simulation import InfiniteSimulationWorker
@@ -20,38 +21,6 @@ from ..models.model_info import ModelInfo
 from ..utils.gpu import GPU_RELAUNCH_EXIT_CODE
 
 LOG = logging.getLogger(__name__)
-
-# noinspection LongLine
-STYLESHEET = """
-QMainWindow { background: #09131c; color: #dceaf1; }
-QWidget { font: 10pt 'Segoe UI'; color: #dceaf1; }
-QLabel#title { font-size: 22px; font-weight: 650; color: #f2f8fb; }
-QLabel#muted { color: #88a0ae; }
-QLabel#mode { background: #123849; color: #82e7ff; border-radius: 9px; padding: 4px 8px; font-weight: 700; }
-QFrame#runtimeCard, QFrame#actionCard, QGroupBox { background: #0d202b; border: 1px solid #1d3b49; border-radius: 9px; }
-QFrame#metricCard { background: #0d202b; border: 1px solid #1d3b49; border-radius: 9px; }
-QFrame#runtimeCard, QFrame#actionCard { padding: 4px; }
-QLabel#cardLabel { color: #88a0ae; font-size: 9px; font-weight: 700; }
-QLabel#cardValue { color: #f2f8fb; font-size: 18px; font-weight: 700; }
-QLabel#statusBadge_neutral, QLabel#statusBadge_ready, QLabel#statusBadge_caution { border-radius: 8px; padding: 4px 8px; font-weight: 700; }
-QLabel#statusBadge_neutral { background: #123849; color: #82e7ff; }
-QLabel#statusBadge_ready { background: #164831; color: #8df3ba; }
-QLabel#statusBadge_caution { background: #4a3b19; color: #ffe08b; }
-QProgressBar { background: #09131c; border: 1px solid #264553; border-radius: 5px; text-align: center; min-height: 16px; }
-QProgressBar::chunk { background: #1b879b; border-radius: 4px; }
-QGroupBox { margin-top: 10px; padding: 10px 8px 6px 8px; font-weight: 650; color: #8cdeef; }
-QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
-QLabel#overlay { background: #0c1e2a; border: 1px solid #193746; border-radius: 8px; padding: 8px; color: #9ac4d4; }
-QLabel#userBubble, QLabel#assistantBubble { border-radius: 10px; padding: 10px; margin: 3px 0; }
-QLabel#userBubble { background: #143e50; color: #e4f8ff; }
-QLabel#assistantBubble { background: #10212d; border: 1px solid #1a3645; }
-QLabel#worldBubble { background: #28203b; border: 1px solid #5c4b86; color: #e7ddff; border-radius: 10px; padding: 10px; margin: 3px 0; }
-QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit { background: #0d202b; border: 1px solid #264553; border-radius: 6px; padding: 6px; color: #e1eef3; }
-QPushButton { background: #15536b; border: none; border-radius: 6px; padding: 7px 12px; color: white; font-weight: 600; }
-QPushButton:hover { background: #1b6d8b; } QPushButton:disabled { background: #26353b; color: #82939a; }
-QScrollArea { background: transparent; } QSplitter::handle { background: #1a3440; width: 1px; }
-"""
-
 
 class SimulationStats(TypedDict):
     seconds: float
@@ -70,13 +39,14 @@ class GenerationStats(TypedDict):
 class MainWindow(QMainWindow):
     startGeneration = Signal(object, object, object)
     unloadModel = Signal()
-    startInfiniteSimulation = Signal(object, object, object)
+    startInfiniteSimulation = Signal(object, object, object, object)
 
     def __init__(self, models: list[ModelInfo]) -> None:
         super().__init__()
         self.setWindowTitle("AIBrain — Local LLM Connectome")
         self._display_fitted = False
-        self.setStyleSheet(STYLESHEET)
+        self.colours = load_colours()
+        self.setStyleSheet(stylesheet(self.colours))
         self.config = load_generation_settings()
         self.history: list[dict[str, str]] = []
         self.current_model: ModelInfo | None = None
@@ -92,15 +62,20 @@ class MainWindow(QMainWindow):
         self.visualizer = VisualizerPanel()
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(8)
         splitter.addWidget(self.chat)
         splitter.addWidget(self.visualizer)
+        self.chat.setMinimumWidth(0)
+        self.visualizer.setMinimumWidth(0)
+        self.chat.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.visualizer.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         saved_sizes = QSettings().value("main_splitter_sizes")
         if isinstance(saved_sizes, list) and len(saved_sizes) == 2:
             splitter.setSizes([int(size) for size in saved_sizes])
         else:
             splitter.setSizes([560, 940])
         splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
+        splitter.setStretchFactor(1, 1)
         self._splitter = splitter
         self.setCentralWidget(splitter)
         self.chat.sendRequested.connect(self.send)
@@ -108,16 +83,21 @@ class MainWindow(QMainWindow):
         self.chat.regenerateRequested.connect(self.regenerate)
         self.chat.clearRequested.connect(self.clear)
         self.chat.infiniteRequested.connect(self.start_infinite_simulation)
+        self.chat.infiniteContinueRequested.connect(self.continue_infinite_simulation)
         self.chat.diagnosticsRequested.connect(self.open_diagnostics)
         self.chat.analysisRequested.connect(self.open_analysis)
         self.chat.modeChanged.connect(self._change_mode)
         self.chat.rewindRequested.connect(self.visualizer.enter_rewind_mode)
+        self.chat.rewindExitRequested.connect(self.visualizer.exit_rewind_mode)
         self.visualizer.rewindChanged.connect(self.chat.set_rewind_mode)
+        self.visualizer.playbackChanged.connect(self.chat.set_replay_mode)
+        self.visualizer.analysisMemoryExceeded.connect(self.chat.set_analysis_memory_exceeded)
         self.chat.modelChanged.connect(self.select_model)
         self.chat.playbackRequested.connect(lambda: self.visualizer.start_playback(self.config.speed))
         self.chat.playbackPreviousRequested.connect(self.visualizer.playback_previous)
         self.chat.playbackNextRequested.connect(self.visualizer.playback_next)
         self.visualizer.gpuRestartRequested.connect(self._restart_for_gpu_mismatch)
+        self.visualizer.coloursChanged.connect(self._apply_colours)
         self._escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self._escape_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self._escape_shortcut.activated.connect(self._handle_escape)
@@ -132,8 +112,13 @@ class MainWindow(QMainWindow):
     def _fit_to_display(self) -> None:
         screen = self.screen() or QGuiApplication.primaryScreen()
         available = screen.availableGeometry()
-        self.setMaximumSize(available.size())
+        # Do not constrain the top-level maximum size: Qt must be free to fit
+        # normal window chrome inside the actual available display geometry.
         self.resize(min(1500, available.width()), min(900, available.height()))
+
+    def _apply_colours(self, colours: dict[str, str]) -> None:
+        self.colours = colours.copy()
+        self.setStyleSheet(stylesheet(self.colours))
 
     def _setup_worker(self) -> None:
         self.backend = LlamaBackend()
@@ -177,6 +162,7 @@ class MainWindow(QMainWindow):
         self.current_model = model
         self.chat.set_model_available(bool(model and model.available and model.blob_path))
         self.chat.set_analysis_available(False)
+        self.chat.set_regenerate_available(False)
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
@@ -202,6 +188,7 @@ class MainWindow(QMainWindow):
         self.visualizer.set_conversation([])
         self.chat.set_analysis_mode(infinite)
         self.chat.set_analysis_available(False)
+        self.chat.set_regenerate_available(False)
         self.chat.stats.setText("Infinite Mode ready." if infinite else "Normal Chat ready.")
 
     def open_diagnostics(self) -> None:
@@ -272,9 +259,11 @@ class MainWindow(QMainWindow):
                                 "Choose an available GGUF model discovered from Ollama first.")
             return
         self.config = self.chat.config()
+        self.visualizer.set_analysis_memory_limit(None)
         self._analysis_is_infinite = False
         self.chat.set_analysis_mode(False)
         self.chat.set_analysis_available(False)
+        self.chat.set_regenerate_available(False)
         save_generation_settings(self.config)
         self.history.append({"role": "user", "content": prompt})
         self.visualizer.set_conversation(self.history)
@@ -293,7 +282,7 @@ class MainWindow(QMainWindow):
         self.simulation_worker.cancel()
         self.chat.stats.setText("Stopping after the current generated token…")
 
-    def start_infinite_simulation(self, seed: str) -> None:
+    def start_infinite_simulation(self, seed: str, continuation: bool = False) -> None:
         if not self.current_model or not self.current_model.available or not self.current_model.blob_path:
             QMessageBox.warning(self, "Model unavailable",
                                 "Choose an available GGUF model discovered from Ollama first.")
@@ -301,18 +290,31 @@ class MainWindow(QMainWindow):
         self._analysis_is_infinite = True
         self.chat.set_analysis_mode(True)
         self.config = self.chat.config()
+        self.visualizer.set_analysis_memory_limit(self.chat.analysis_memory_mb.value())
         save_generation_settings(self.config)
         self.unloadModel.emit()
-        self.visualizer.begin_recording()
-        self.simulation_transcript = [{"role": "user", "content": seed, "turn": 0}]
-        self.visualizer.set_conversation(self.simulation_transcript)
-        self.chat.clear_latest_playback()
-        self.chat.add_message("user", seed)
-        self._simulation_bubbles.clear()
+        if not continuation:
+            self.visualizer.begin_recording()
+            self.chat.set_analysis_memory_exceeded(False)
+            self.chat.set_regenerate_available(False)
+            self.simulation_transcript = [{"role": "world", "content": seed, "turn": 0}]
+            self.visualizer.set_conversation(self.simulation_transcript)
+            self.chat.clear_messages()
+            self.chat.clear_latest_playback()
+            self.chat.add_message("world", seed)
+            self._simulation_bubbles.clear()
         self.chat.generating(True)
         self.chat.stats.setText(
-            "∞ Simulation Thinking… loading two local model instances; the right pane is the participant brain.")
-        self.startInfiniteSimulation.emit(seed, self.config, self.current_model.blob_path)
+            "∞ Simulation Thinking… loading the world and participant roles; the right pane records their visual signals.")
+        transcript = self.simulation_transcript.copy() if continuation else None
+        self.startInfiniteSimulation.emit(seed, self.config, self.current_model.blob_path, transcript)
+
+    def continue_infinite_simulation(self) -> None:
+        if not self.simulation_transcript:
+            self.chat.stats.setText("Start an Infinite Mode scenario before continuing it.")
+            return
+        seed = str(self.simulation_transcript[0].get("content", "Continue the current scenario."))
+        self.start_infinite_simulation(seed, continuation=True)
 
     def _simulation_turn_started(self, role: str, turn: int) -> None:
         label = "World" if role == "world" else "Participant"
@@ -323,7 +325,7 @@ class MainWindow(QMainWindow):
         bubble = self._simulation_bubbles.get((role, turn))
         if bubble is not None:
             self.chat.append_message_text(bubble, text)
-        if role == "participant" and frame is not None:
+        if frame is not None:
             self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
 
     def _simulation_turn_finished(self, role: str, text: str, turn: int) -> None:
@@ -340,7 +342,8 @@ class MainWindow(QMainWindow):
             f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}"
         )
         self.chat.generating(False)
-        self.chat.set_analysis_available(bool(self.visualizer.analyzer.records) and not stats["cancelled"])
+        self.chat.set_analysis_available(bool(self.visualizer.analyzer.records))
+        self.chat.set_analysis_memory_exceeded(self.visualizer.analysis_memory_exceeded)
 
     def _simulation_failed(self, error: str) -> None:
         LOG.error("%s", error)
@@ -360,7 +363,11 @@ class MainWindow(QMainWindow):
         self.simulation_transcript.clear()
         self.visualizer.begin_recording()
         self.visualizer.set_conversation([])
+        self.visualizer.exit_rewind_mode()
         self.chat.clear_messages()
+        self.chat.clear_latest_playback()
+        self.chat.set_analysis_available(False)
+        self.chat.set_regenerate_available(False)
         self.chat.stats.setText("Conversation cleared.")
 
     def _on_token(self, text: str, frame: object) -> None:
@@ -394,6 +401,7 @@ class MainWindow(QMainWindow):
 
         self.chat.generating(False)
         self.chat.set_analysis_available(bool(text) and text != "Thinking…" and not stats["cancelled"])
+        self.chat.set_regenerate_available(bool(text) and text != "Thinking…" and not stats["cancelled"])
         self._assistant_bubble = None
         self._awaiting_first_token = False
 

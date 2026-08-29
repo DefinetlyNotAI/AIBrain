@@ -13,3 +13,8 @@ class MarkdownRenderingTests(unittest.TestCase):
         self.assertIn("<code>code</code>", rendered)
         self.assertIn('href="https://example.com"', rendered)
         self.assertIn("&lt;tag&gt;", rendered)
+
+    def test_encoded_apostrophe_is_rendered_as_plain_text(self) -> None:
+        rendered = markdown_to_html("The world says &#x27;hello&#x27;.")
+
+        self.assertEqual(rendered, "The world says 'hello'.")

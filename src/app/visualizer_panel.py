@@ -17,6 +17,7 @@ from ..connectome.mapper import ActivityMapper
 from ..connectome.renderer import ConnectomeRenderer
 from ..models.instrumented_backend import ActivationFrame
 from ..utils.gpu import discover_render_adapters, set_windows_gpu_preference
+from .theme import ColourSettingsDialog, load_colours, save_colours
 
 
 @dataclass(slots=True)
@@ -51,6 +52,9 @@ class NeuronInspectorLabel(QLabel):
 class VisualizerPanel(QWidget):
     gpuRestartRequested = Signal(str)
     rewindChanged = Signal(bool)
+    playbackChanged = Signal(bool)
+    analysisMemoryExceeded = Signal(bool)
+    coloursChanged = Signal(object)
 
     def __init__(self, model_key: str = "default") -> None:
         super().__init__()
@@ -66,9 +70,14 @@ class VisualizerPanel(QWidget):
         self._all_signals: list[PlaybackStep] = []
         self._playback_index = -1
         self._rewind_active = False
+        self._replay_active = False
         self._playback_timer = QTimer(self)
         self._playback_timer.timeout.connect(self._advance_playback)
         self._conversation: list[dict[str, object]] = []
+        self._analysis_memory_limit_bytes: int | None = None
+        self._analysis_memory_exceeded = False
+        self._analysis_retained_bytes = 0
+        self._colours = load_colours()
         self._build_graph("Medium")
         self._build_ui()
 
@@ -78,6 +87,8 @@ class VisualizerPanel(QWidget):
         self.analyzer = ConnectomeAnalyzer(self.graph)
         self.mapper = ActivityMapper(self.field)
         self.renderer = ConnectomeRenderer(self.graph, self.field)
+        self.renderer.setMinimumWidth(0)
+        self.renderer.set_background_colour(self._colours["renderer_background"])
         self.renderer.nodeSelected.connect(self._inspect)
         self.renderer.backendChanged.connect(self._set_backend)
         self.renderer.gpuRestartRequested.connect(self.gpuRestartRequested)
@@ -180,6 +191,9 @@ class VisualizerPanel(QWidget):
         self.settings_toggle.setCheckable(True)
         self.settings_toggle.setToolTip("Show or hide rendering and presentation settings")
         self.settings_toggle.toggled.connect(self._set_settings_visible)
+        self.colour_settings = QPushButton("Colour settings")
+        self.colour_settings.setToolTip("Customize the saved AIBrain interface palette")
+        self.colour_settings.clicked.connect(self._edit_colours)
 
         spacing_label = QLabel("Spacing")
         importance_label = QLabel("Importance")
@@ -187,10 +201,12 @@ class VisualizerPanel(QWidget):
         header.addWidget(title, 0, 0)
         header.addWidget(self.mode, 0, 1)
         header.addWidget(self.view_toggle, 0, 2)
-        header.addWidget(self.settings_toggle, 0, 3)
+        header.addWidget(self.reset_view, 0, 3)
+        header.addWidget(self.settings_toggle, 0, 4)
         header.addWidget(self.two_d_mode, 1, 1)
         header.addWidget(self.region_selector, 1, 2)
-        header.addWidget(self.analysis, 1, 3)
+        header.addWidget(self.analysis, 1, 3, 1, 2)
+        header.addWidget(self.colour_settings, 1, 0)
         header.setColumnStretch(0, 1)
 
         self.layout.addLayout(header)
@@ -211,30 +227,26 @@ class VisualizerPanel(QWidget):
         borders_layout.addWidget(self.neuron_borders)
         borders_layout.addWidget(self.border_width)
         settings_layout.addRow("Neuron Borders (0–1)", borders_row)
-        settings_layout.addRow("", self.reset_view)
         self.settings_panel.setVisible(False)
         self.layout.addWidget(self.settings_panel)
         self.layout.addWidget(self.renderer, 1)
         self.rewind_controls = QWidget()
         rewind_layout = QHBoxLayout(self.rewind_controls)
         rewind_layout.setContentsMargins(0, 4, 0, 4)
-        previous = QPushButton("Previous")
-        replay = QPushButton("Replay")
-        next_step = QPushButton("Next")
-        self.exit_rewind = QPushButton("Exit Rewind")
+        self.previous_rewind = QPushButton("Previous")
+        self.replay_rewind = QPushButton("Replay")
+        self.next_rewind = QPushButton("Next")
         for button, tip in (
-                (previous, "Show the previous recorded token frame"),
-                (replay, "Play recorded token frames from the beginning"),
-                (next_step, "Show the next recorded token frame"),
-                (self.exit_rewind, "Return to normal chat actions"),
+                (self.previous_rewind, "Show the previous recorded token frame"),
+                (self.replay_rewind, "Play recorded token frames from the beginning"),
+                (self.next_rewind, "Show the next recorded token frame"),
         ):
             button.setToolTip(tip)
             rewind_layout.addWidget(button)
         rewind_layout.addStretch(1)
-        previous.clicked.connect(self.playback_previous)
-        replay.clicked.connect(lambda: self.start_playback(1.0))
-        next_step.clicked.connect(self.playback_next)
-        self.exit_rewind.clicked.connect(self.exit_rewind_mode)
+        self.previous_rewind.clicked.connect(self.playback_previous)
+        self.replay_rewind.clicked.connect(lambda: self.start_playback(1.0))
+        self.next_rewind.clicked.connect(self.playback_next)
         self.rewind_controls.setVisible(False)
         self.layout.addWidget(self.rewind_controls)
 
@@ -300,6 +312,15 @@ class VisualizerPanel(QWidget):
         self.settings_panel.setVisible(visible)
         self.settings_toggle.setText("Hide view settings" if visible else "View settings")
 
+    def _edit_colours(self) -> None:
+        dialog = ColourSettingsDialog(self._colours, self)
+        if not dialog.exec():
+            return
+        self._colours = dialog.colours
+        save_colours(self._colours)
+        self.renderer.set_background_colour(self._colours["renderer_background"])
+        self.coloursChanged.emit(self._colours.copy())
+
     def _populate_region_selector(self) -> None:
         selected = self.region_selector.currentData()
         self.region_selector.blockSignals(True)
@@ -337,18 +358,46 @@ class VisualizerPanel(QWidget):
             self._playback.append(signal)
             self._all_signals.append(signal)
             self.analyzer.observe(frame, self.field.values)
+            self._analysis_retained_bytes += self._signal_bytes(signal)
+            self._trim_analysis_memory()
         self._refresh_overlay()
 
     def begin_recording(self) -> None:
-        self._playback_timer.stop()
+        self._stop_playback()
         self._playback.clear()
         self._all_signals.clear()
         self._playback_index = -1
         self.analyzer.records.clear()
+        self._analysis_memory_exceeded = False
+        self._analysis_retained_bytes = 0
+        self.analysisMemoryExceeded.emit(False)
+
+    def set_analysis_memory_limit(self, megabytes: int | None) -> None:
+        self._analysis_memory_limit_bytes = None if megabytes is None else max(16, megabytes) * 1024 * 1024
+
+    @property
+    def analysis_memory_exceeded(self) -> bool:
+        return self._analysis_memory_exceeded
+
+    @staticmethod
+    def _signal_bytes(signal: PlaybackStep) -> int:
+        return signal.values.nbytes + signal.peaks.nbytes + len(signal.frame.token_text.encode("utf-8")) + 96
+
+    def _trim_analysis_memory(self) -> None:
+        if self._analysis_memory_limit_bytes is None:
+            return
+        while self._all_signals and self._analysis_retained_bytes > self._analysis_memory_limit_bytes:
+            oldest = self._all_signals.pop(0)
+            self._analysis_retained_bytes -= self._signal_bytes(oldest)
+            if self.analyzer.records:
+                self.analyzer.records.pop(0)
+            if not self._analysis_memory_exceeded:
+                self._analysis_memory_exceeded = True
+                self.analysisMemoryExceeded.emit(True)
 
     def begin_response_recording(self) -> None:
         """Start a new replay while retaining session-wide NN Analysis+ data."""
-        self._playback_timer.stop()
+        self._stop_playback()
         self._playback.clear()
         self._playback_index = -1
 
@@ -358,13 +407,23 @@ class VisualizerPanel(QWidget):
     def start_playback(self, speed: float) -> None:
         if not self._playback:
             return
+        if self._replay_active:
+            self._stop_playback()
+            return
         self._playback_index = -1
+        self._replay_active = True
+        self.renderer.paused = True
+        self.previous_rewind.setEnabled(False)
+        self.next_rewind.setEnabled(False)
+        self.replay_rewind.setText("Stop replay")
+        self.playbackChanged.emit(True)
         self._playback_timer.start(max(35, round(110 / max(.1, speed))))
 
     def enter_rewind_mode(self) -> None:
         if not self._playback or self._rewind_active:
             return
         self._rewind_active = True
+        self.renderer.paused = True
         self.rewind_controls.setVisible(True)
         self._show_playback_step(0)
         self.rewindChanged.emit(True)
@@ -372,22 +431,25 @@ class VisualizerPanel(QWidget):
     def exit_rewind_mode(self) -> None:
         if not self._rewind_active:
             return
-        self._playback_timer.stop()
+        self._stop_playback()
         self._rewind_active = False
+        self.renderer.paused = False
         self.rewind_controls.setVisible(False)
         self.rewindChanged.emit(False)
 
     def playback_next(self) -> None:
-        self._playback_timer.stop()
+        self._stop_playback()
+        self.renderer.paused = True
         self._show_playback_step(min(self._playback_index + 1, len(self._playback) - 1))
 
     def playback_previous(self) -> None:
-        self._playback_timer.stop()
+        self._stop_playback()
+        self.renderer.paused = True
         self._show_playback_step(max(0, self._playback_index - 1))
 
     def _advance_playback(self) -> None:
         if self._playback_index >= len(self._playback) - 1:
-            self._playback_timer.stop()
+            self._stop_playback()
             return
         self._show_playback_step(self._playback_index + 1)
 
@@ -411,6 +473,20 @@ class VisualizerPanel(QWidget):
         self.mode.setText(step.frame.source.value.upper())
         self.renderer.update()
         self._refresh_overlay()
+
+    def _stop_playback(self) -> None:
+        """Return rewind controls to manual inspection without stale flashes."""
+        self._playback_timer.stop()
+        if not self._replay_active:
+            return
+        self._replay_active = False
+        self.previous_rewind.setEnabled(True)
+        self.next_rewind.setEnabled(True)
+        self.replay_rewind.setText("Replay")
+        self.field.values.fill(0.0)
+        self.field.active_count_cached = 0
+        self.renderer.update()
+        self.playbackChanged.emit(False)
 
     def set_model(self, key: str) -> None:
         self.begin_recording()

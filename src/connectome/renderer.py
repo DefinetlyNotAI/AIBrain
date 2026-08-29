@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from .activity import ActivityField
-from .generator import CLUSTER_COLOR_MAP
+from .generator import CLUSTER_COLOR_MAP, cluster_colour_map_for_background
 from .graph import ConnectomeGraph
 from ..native.wrapper.connectome_kernels import native
 from ..utils.gpu import can_request_gpu_relaunch, should_prefer_high_performance_gpu
@@ -24,8 +24,8 @@ void main() { if (u_region_filter >= 0.0 && abs(in_region - u_region_filter) > .
 """
 
 
-def _shader_palette() -> str:
-    colours = tuple(CLUSTER_COLOR_MAP.values())
+def _shader_palette(colour_map: dict[str, str] = CLUSTER_COLOR_MAP) -> str:
+    colours = tuple(colour_map.values())
     clauses = []
     for index, colour in enumerate(colours):
         red, green, blue = (int(colour[offset:offset + 2], 16) / 255 for offset in (1, 3, 5))
@@ -33,13 +33,14 @@ def _shader_palette() -> str:
     return "\n ".join((*clauses, "return vec3(.35, .65, .85);"))
 
 
-POINT_FRAGMENT_SHADER = f"""#version 330
-in float region; in float activity; uniform float u_border_width; out vec4 f_color;
-vec3 cluster_colour(int cluster) {{ {_shader_palette()} }}
+def _point_fragment_shader(colour_map: dict[str, str]) -> str:
+    return f"""#version 330
+in float region; in float activity; uniform float u_border_width; uniform float u_idle_strength; out vec4 f_color;
+vec3 cluster_colour(int cluster) {{ {_shader_palette(colour_map)} }}
 void main() {{ vec2 p = gl_PointCoord * 2.0 - 1.0; float radius = dot(p, p); if (radius > 1.0) discard;
  vec3 base = cluster_colour(int(region + .5)); float glow = 1.0 - smoothstep(.20, 1.0, radius);
- vec3 fill = min(base * (.72 + activity * .42 + glow * .16), 1.0);
- float rim = smoothstep(1.0 - u_border_width, 1.0, radius); vec3 color = mix(fill, vec3(.015, .045, .065), rim);
+ vec3 fill = min(base * (u_idle_strength + activity * .78 + glow * .08), 1.0);
+ vec3 color = fill; if (u_border_width > .0) {{ float rim = smoothstep(1.0 - u_border_width, 1.0, radius); color = mix(fill, vec3(.015, .045, .065), rim); }}
  f_color = vec4(color, .78+activity*.22); }}
 """
 EDGE_VERTEX_SHADER = """#version 330
@@ -47,12 +48,17 @@ in vec3 in_position; in float in_region; in float in_activity; uniform mat4 u_mv
 void main() { if (u_region_filter >= 0.0 && abs(in_region - u_region_filter) > .5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
  gl_Position = u_mvp * vec4(in_position, 1.0); region = in_region; activity = in_activity; }
 """
-EDGE_FRAGMENT_SHADER = f"""#version 330
-in float region; in float activity; out vec4 f_color;
-vec3 cluster_colour(int cluster) {{ {_shader_palette()} }}
+def _edge_fragment_shader(colour_map: dict[str, str]) -> str:
+    return f"""#version 330
+in float region; in float activity; uniform float u_idle_strength; out vec4 f_color;
+vec3 cluster_colour(int cluster) {{ {_shader_palette(colour_map)} }}
 void main() {{ vec3 base = cluster_colour(int(region + .5));
- f_color = vec4(min(base * (.28 + activity * .72), 1.0), .09 + activity * .34); }}
+ f_color = vec4(min(base * (u_idle_strength * .35 + activity * .72), 1.0), .03 + activity * .38); }}
 """
+
+
+POINT_FRAGMENT_SHADER = _point_fragment_shader(CLUSTER_COLOR_MAP)
+EDGE_FRAGMENT_SHADER = _edge_fragment_shader(CLUSTER_COLOR_MAP)
 
 
 class ConnectomeRenderer(QOpenGLWidget):
@@ -81,7 +87,10 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.neuron_border_width = .12
         self.view_mode = "3d"
         self.region_filter: int | None = None
-        self.setMinimumSize(420, 350)
+        self.background_colour = "#071018"
+        self._cluster_colour_map = cluster_colour_map_for_background(self.background_colour)
+        self._palette_resources_pending = False
+        self.setMinimumSize(260, 240)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(16)
@@ -147,8 +156,9 @@ class ConnectomeRenderer(QOpenGLWidget):
         edge_region_buffer = self._ctx.buffer(edge_regions.tobytes())
         self._edge_activity_buffer = self._ctx.buffer(reserve=len(edge_positions) * 4, dynamic=True)
         self._point_program = self._ctx.program(vertex_shader=POINT_VERTEX_SHADER,
-                                                fragment_shader=POINT_FRAGMENT_SHADER)
-        self._edge_program = self._ctx.program(vertex_shader=EDGE_VERTEX_SHADER, fragment_shader=EDGE_FRAGMENT_SHADER)
+                                                fragment_shader=_point_fragment_shader(self._cluster_colour_map))
+        self._edge_program = self._ctx.program(
+            vertex_shader=EDGE_VERTEX_SHADER, fragment_shader=_edge_fragment_shader(self._cluster_colour_map))
         self._point_vao = self._ctx.vertex_array(self._point_program, [(position_buffer, "3f", "in_position"),
                                                                        (region_buffer, "1f", "in_region"),
                                                                        (self._node_activity_buffer, "1f",
@@ -169,7 +179,7 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def _mvp(self) -> np.ndarray:
         aspect = max(self.width(), 1) / max(self.height(), 1)
-        scale = 1.0 / ((12.0 if self.view_mode == "2d" else 16.0) * self.zoom)
+        scale = 1.0 / ((16.0 if self.view_mode == "2d" else 16.0) * self.zoom)
         depth_scale = 0.0 if self.view_mode == "2d" else .035
         projection = np.array(((scale / aspect, 0, 0, 0), (0, scale, 0, 0), (0, 0, depth_scale, 0), (0, 0, 0, 1)),
                               dtype="f4")
@@ -196,14 +206,21 @@ class ConnectomeRenderer(QOpenGLWidget):
         try:
             self._framebuffer = self._ctx.detect_framebuffer()
             self._framebuffer.use()
+            if self._palette_resources_pending:
+                self._build_gpu_resources()
+                self._palette_resources_pending = False
             ratio = self.devicePixelRatioF()
             self._ctx.viewport = (0, 0, max(1, int(self.width() * ratio)), max(1, int(self.height() * ratio)))
             matrix = self._mvp().tobytes()
             self._upload_activity()
-            self._ctx.clear(.025, .063, .090, 1.0, depth=1.0)
+            colour = QColor(self.background_colour)
+            self._ctx.clear(colour.redF(), colour.greenF(), colour.blueF(), 1.0, depth=1.0)
             self._edge_program["u_mvp"].write(matrix)
             self._point_program["u_mvp"].write(matrix)
             self._point_program["u_border_width"].value = self.neuron_border_width if self.show_neuron_borders else 0.0
+            idle_strength = .55 if self.view_mode == "2d" else .12
+            self._point_program["u_idle_strength"].value = idle_strength
+            self._edge_program["u_idle_strength"].value = idle_strength
             region_filter = float(self.region_filter) if self.region_filter is not None else -1.0
             self._point_program["u_region_filter"].value = region_filter
             self._edge_program["u_region_filter"].value = region_filter
@@ -217,13 +234,13 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def _paint_fallback(self) -> None:
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#071018"))
+        painter.fillRect(self.rect(), QColor(self.background_colour))
         indices = self._visible_indices()
         points = self._project_for_pick()[indices]
         stride = max(1, len(points) // 3000)
         for point, activity, region in zip(points[::stride], self.field.values[indices][::stride],
                                            self.graph.regions[indices][::stride]):
-            colour = QColor(CLUSTER_COLOR_MAP[self.graph.region_names[int(region)]])
+            colour = QColor(self._cluster_colour_map[self.graph.region_names[int(region)]])
             colour.setAlpha(int(155 + float(activity) * 100))
             painter.setPen(colour)
             painter.drawPoint(QPointF(*point))
@@ -233,7 +250,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         p = self.graph.positions
         if self.view_mode == "2d":
             x, y = p[:, 0], p[:, 1]
-            scale = min(self.width(), self.height()) / (24 * self.zoom)
+            scale = min(self.width(), self.height()) / (32 * self.zoom)
             return np.column_stack((self.width() / 2 + self.pan_x * self.width() / 2 + x * scale,
                                     self.height() / 2 - self.pan_y * self.height() / 2 - y * scale))
         cy, sy, cp, sp = np.cos(self.yaw), np.sin(self.yaw), np.cos(self.pitch), np.sin(self.pitch)
@@ -284,6 +301,16 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.show_neuron_borders = visible
         self.neuron_border_width = float(np.clip(width, 0.0, 1.0))
         self.update()
+
+    def set_background_colour(self, colour: str) -> None:
+        """Apply a validated renderer background immediately without a restart."""
+        if QColor(colour).isValid():
+            self.background_colour = QColor(colour).name(QColor.NameFormat.HexRgb)
+            palette = cluster_colour_map_for_background(self.background_colour)
+            if palette != self._cluster_colour_map:
+                self._cluster_colour_map = palette
+                self._palette_resources_pending = True
+            self.update()
 
     def set_projection_mode(self, mode: str, region_filter: int | None = None) -> None:
         """Switch between depth-aware 3D and flat, optionally sector-filtered 2D."""

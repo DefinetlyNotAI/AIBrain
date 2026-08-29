@@ -11,10 +11,31 @@ REGIONS = ("Input / tokens", "Embeddings", "Early processing", "Attention cluste
 
 # Region names are stable, so this map gives every procedural cluster the same
 # distinct color across launches, qualities, replay, and fallback rendering.
-CLUSTER_COLOR_MAP = dict(zip(REGIONS, (
-    "#4CC9F0", "#4895EF", "#4361EE", "#3A0CA3", "#7209B7",
-    "#B5179E", "#F72585", "#F77F00", "#90BE6D",
+DARK_BACKGROUND_CLUSTER_COLOR_MAP = dict(zip(REGIONS, (
+    "#75E6FF", "#78B7FF", "#8D9DFF", "#A786FF", "#D48CFF",
+    "#FF8CE2", "#FF91B5", "#FFB067", "#C5F28A",
 ), strict=True))
+# Bright colours are readable on the default dark renderer. A user-selected
+# light renderer background automatically gets a distinct, lower-luminance
+# map, keeping idle clusters legible without making colours user-configurable.
+LIGHT_BACKGROUND_CLUSTER_COLOR_MAP = dict(zip(REGIONS, (
+    "#007C9F", "#245BC1", "#5546BE", "#743CB5", "#9B328F",
+    "#B93D72", "#BE4A4A", "#A75B12", "#547D17",
+), strict=True))
+CLUSTER_COLOR_MAP = DARK_BACKGROUND_CLUSTER_COLOR_MAP
+
+
+def cluster_colour_map_for_background(background: str) -> dict[str, str]:
+    """Return a contrasting semantic-region palette for a renderer background."""
+    value = background.lstrip("#")
+    if len(value) != 6:
+        return DARK_BACKGROUND_CLUSTER_COLOR_MAP
+    try:
+        red, green, blue = (int(value[offset:offset + 2], 16) for offset in (0, 2, 4))
+    except ValueError:
+        return DARK_BACKGROUND_CLUSTER_COLOR_MAP
+    luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
+    return LIGHT_BACKGROUND_CLUSTER_COLOR_MAP if luminance >= .5 else DARK_BACKGROUND_CLUSTER_COLOR_MAP
 
 
 def _seed(key: str) -> int:
@@ -26,11 +47,11 @@ def build_connectome(model_key: str, quality: str = "Medium", cluster_spacing: f
     n = counts.get(quality, 11000)
     rng = np.random.default_rng(_seed(model_key + quality))
     region_ids = rng.choice(len(REGIONS), size=n, p=np.array([.07, .10, .12, .14, .16, .10, .12, .12, .07]))
-    centers = rng.normal(0, 4.5, size=(len(REGIONS), 3))
-    # Curving global spine prevents a layered, row-of-circles appearance.
-    phase = np.linspace(0, np.pi * 2.1, len(REGIONS))
-    centers[:, 0] += np.cos(phase) * 8
-    centers[:, 1] += np.sin(phase) * 5
+    # Nine deliberately separated 2D clusters. Keeping the z coordinate
+    # varied preserves depth in 3D while the flat map remains non-overlapping.
+    grid = np.array(((-1, 1), (0, 1), (1, 1), (-1, 0), (0, 0), (1, 0),
+                     (-1, -1), (0, -1), (1, -1)), dtype=np.float32)
+    centers = np.column_stack((grid[:, 0] * 12.0, grid[:, 1] * 9.5, rng.normal(0, 3.5, len(REGIONS))))
     centers *= cluster_spacing
     positions = centers[region_ids] + rng.normal(0, 1.35, size=(n, 3))
     positions += rng.normal(0, .25, size=(n, 1)) * np.array([1, -.4, .6])

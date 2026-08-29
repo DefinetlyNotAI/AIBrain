@@ -69,8 +69,7 @@ class InfiniteSimulationContextTests(unittest.TestCase):
 
         self.assertEqual(world.loaded, [Path("model.gguf")])
         self.assertEqual(participant.loaded, [Path("model.gguf")])
-        self.assertIn("Begin the scenario", participant.calls[0][-1]["content"])
-        self.assertIn("[WORLD EVENT]", participant.calls[1][-1]["content"])
+        self.assertIn("[WORLD EVENT]", participant.calls[0][-1]["content"])
         self.assertIn("[PARTICIPANT RESPONSE]", world.calls[1][-1]["content"])
         self.assertNotIn("[WORLD EVENT]", world.calls[1][-1]["content"])
         self.assertEqual(frames[0].step, 1)
@@ -87,7 +86,21 @@ class InfiniteSimulationContextTests(unittest.TestCase):
 
         self.assertGreaterEqual(effective.temperature, 1.25)
         self.assertGreaterEqual(effective.top_p, .96)
-        self.assertEqual(effective.max_tokens, 512)
+        self.assertEqual(effective.max_tokens, 2048)
+
+    def test_continuation_restores_both_roles_and_the_last_turn_number(self) -> None:
+        transcript = [
+            {"role": "world", "content": "A bell rings.", "turn": 1},
+            {"role": "participant", "content": "I follow the sound.", "turn": 2},
+        ]
+
+        world, participant, turn = InfiniteSimulationWorker._histories("direction", "opening", transcript)
+
+        self.assertEqual(turn, 2)
+        self.assertEqual(world[-1]["role"], "user")
+        self.assertIn("I follow the sound.", world[-1]["content"])
+        self.assertEqual(participant[-1]["role"], "assistant")
+        self.assertEqual(participant[-1]["content"], "I follow the sound.")
 
 
 if __name__ == "__main__":
