@@ -223,10 +223,10 @@ class VisualizerPanel(QWidget):
         next_step = QPushButton("Next")
         self.exit_rewind = QPushButton("Exit Rewind")
         for button, tip in (
-            (previous, "Show the previous recorded token frame"),
-            (replay, "Play recorded token frames from the beginning"),
-            (next_step, "Show the next recorded token frame"),
-            (self.exit_rewind, "Return to normal chat actions"),
+                (previous, "Show the previous recorded token frame"),
+                (replay, "Play recorded token frames from the beginning"),
+                (next_step, "Show the next recorded token frame"),
+                (self.exit_rewind, "Return to normal chat actions"),
         ):
             button.setToolTip(tip)
             rewind_layout.addWidget(button)
@@ -324,8 +324,9 @@ class VisualizerPanel(QWidget):
         region = int(selected) if sector and selected is not None else None
         self.renderer.set_projection_mode("2d" if two_dimensional else "3d", region)
         self.spacing.setEnabled(not two_dimensional)
-        self.spacing.setToolTip("Cluster spacing is unavailable in 2D because the flat projection uses a fixed readable layout."
-                                if two_dimensional else "Cluster spacing")
+        self.spacing.setToolTip(
+            "Cluster spacing is unavailable in 2D because the flat projection uses a fixed readable layout."
+            if two_dimensional else "Cluster spacing")
         self._refresh_overlay()
 
     def apply_frame(self, frame: ActivationFrame, *, record: bool = True) -> None:
@@ -519,7 +520,7 @@ class VisualizerPanel(QWidget):
             QMessageBox.information(self, "Analysis", "Generate a normal chat response before exporting session data.")
             return
         filename, _ = QFileDialog.getSaveFileName(self, "Create session analysis data file", "session-analysis.json",
-                                                   "JSON data (*.json);;Compressed JSON data (*.json.gz)")
+                                                  "JSON data (*.json);;Compressed JSON data (*.json.gz)")
         if filename:
             export_session_analysis(Path(filename), self.graph, self.analyzer, self._conversation)
 

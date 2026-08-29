@@ -173,9 +173,12 @@ class ConnectomeAnalyzer:
             target[:] = loaded[name]
         self.frames_seen = frames_seen
         if has_metrics:
-            self.reconstruction_history = [float(value) for value in np.asarray(histories["reconstruction_history"])[-METRIC_HISTORY_LIMIT:]]
-            self.novelty_history = [float(value) for value in np.asarray(histories["novelty_history"])[-METRIC_HISTORY_LIMIT:]]
-            self.update_magnitude_history = [float(value) for value in np.asarray(histories["update_magnitude_history"])[-METRIC_HISTORY_LIMIT:]]
+            self.reconstruction_history = [float(value) for value in
+                                           np.asarray(histories["reconstruction_history"])[-METRIC_HISTORY_LIMIT:]]
+            self.novelty_history = [float(value) for value in
+                                    np.asarray(histories["novelty_history"])[-METRIC_HISTORY_LIMIT:]]
+            self.update_magnitude_history = [float(value) for value in
+                                             np.asarray(histories["update_magnitude_history"])[-METRIC_HISTORY_LIMIT:]]
             self.maturity_state = stored_state if stored_state in MATURITY_STATES else "Baby"
             self.transition_count = transition_count
             self.weights_frozen = weights_frozen
@@ -239,9 +242,9 @@ class ConnectomeAnalyzer:
 
     def _append_metrics(self, reconstruction_error: float, novelty: float, update_magnitude: float) -> None:
         for history, value in (
-            (self.reconstruction_history, reconstruction_error),
-            (self.novelty_history, novelty),
-            (self.update_magnitude_history, update_magnitude),
+                (self.reconstruction_history, reconstruction_error),
+                (self.novelty_history, novelty),
+                (self.update_magnitude_history, update_magnitude),
         ):
             history.append(float(value))
             del history[:-METRIC_HISTORY_LIMIT]

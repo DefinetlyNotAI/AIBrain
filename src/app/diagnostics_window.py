@@ -20,11 +20,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .dashboard import metric_card
 from ..models.diagnostics import ModelDiagnostic, OllamaDiagnostics
+from ..utils.console_ui import strip_ansi
 from ..utils.gpu import discover_render_adapters, should_prefer_high_performance_gpu
 from ..utils.logging import PROJECT_ROOT
-from ..utils.console_ui import strip_ansi
-from .dashboard import metric_card, metric_grid
 
 LOG = logging.getLogger(__name__)
 
@@ -115,7 +115,8 @@ class DiagnosticsWindow(QDialog):
         layout.addWidget(help_text)
         self.subsystem_cards = {}
         cards = QHBoxLayout()
-        for title in ("Models", "GPU / CUDA", "OpenGL rendering", "Python environment", "pip / libraries", "Native DLLs", ".cache"):
+        for title in ("Models", "GPU / CUDA", "OpenGL rendering", "Python environment", "pip / libraries",
+                      "Native DLLs", ".cache"):
             card, value, detail = metric_card(title, "Checking…")
             cards.addWidget(card)
             self.subsystem_cards[title] = (value, detail)
@@ -158,7 +159,8 @@ class DiagnosticsWindow(QDialog):
         self.remove_button.clicked.connect(self.remove_selected)
         self.cache_button.clicked.connect(self.repair_validation_cache)
         self.open_logs_button.clicked.connect(self.open_logs)
-        for button in (self.refresh_button, self.repair_button, self.remove_button, self.cache_button, self.open_logs_button):
+        for button in (self.refresh_button, self.repair_button, self.remove_button, self.cache_button,
+                       self.open_logs_button):
             actions.addWidget(button)
         actions.addStretch(1)
         layout.addLayout(actions)
@@ -339,7 +341,8 @@ class DiagnosticsWindow(QDialog):
 
     def _refresh_subsystem_cards(self, adapters: list[object]) -> None:
         checks = OllamaDiagnostics().subsystem_health()
-        checks["GPU / CUDA"] = ("Ready" if adapters else "Info", "Adapter discovery is a preference signal; actual OpenGL is verified at launch.")
+        checks["GPU / CUDA"] = ("Ready" if adapters else "Info",
+                                "Adapter discovery is a preference signal; actual OpenGL is verified at launch.")
         mismatch = str(QSettings().value("opengl_gpu_mismatch_reason", ""))
         checks["OpenGL rendering"] = (
             "Needs repair" if mismatch else "Checking",

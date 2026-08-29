@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .console_ui import error, header, instruction_list
 
-
 REQUIRED_MODULES = {
     "PySide6": "PySide6",
     "numpy": "NumPy",
@@ -37,13 +36,15 @@ def require_managed_runtime(root: Path, feature: str) -> bool:
         if venv_python.is_file():
             error("Activate the managed virtual environment before running this command.")
             instruction_list(
-                [("1.", "Activate:", r".\.venv\Scripts\Activate.ps1"), ("2.", "Run again:", f"python cli\\{feature}.py")],
+                [("1.", "Activate:", r".\.venv\Scripts\Activate.ps1"),
+                 ("2.", "Run again:", f"python cli\\{feature}.py")],
                 stream=sys.stderr,
             )
         else:
             error("The managed virtual environment has not been installed.")
             instruction_list(
-                [("1.", "Create and install:", r"py cli\installer.py"), ("2.", "Activate:", r".\.venv\Scripts\Activate.ps1")],
+                [("1.", "Create and install:", r"py cli\installer.py"),
+                 ("2.", "Activate:", r".\.venv\Scripts\Activate.ps1")],
                 stream=sys.stderr,
             )
         return False

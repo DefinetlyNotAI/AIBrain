@@ -244,7 +244,8 @@ class ChatPanel(QWidget):
         self._infinite_mode = infinite
         self.normal_mode.setChecked(not infinite)
         self.infinite_mode.setChecked(infinite)
-        self.input.setPlaceholderText("Describe a world opening…" if infinite else "Message your local model…  (Ctrl+Enter to send)")
+        self.input.setPlaceholderText(
+            "Describe a world opening…" if infinite else "Message your local model…  (Ctrl+Enter to send)")
         self.regenerate.setVisible(not infinite)
         self.infinite.setVisible(infinite)
         self.open_analysis.setText("Analysis+" if infinite else "Analysis")

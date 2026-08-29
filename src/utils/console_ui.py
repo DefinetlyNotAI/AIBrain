@@ -16,7 +16,7 @@ DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
 RIGHT_EDGE_MARGIN = 4
 COMMAND_INDENT = 2
-ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
+ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|][^\x07]*(?:\x07|\x1b\\))")
 
 
 class _ConsoleCoord(ctypes.Structure):
@@ -233,6 +233,7 @@ def _clear_native_console() -> bool:
         if owns_handle:
             kernel32.close_handle(handle)
 
+
 _ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 
 
@@ -372,8 +373,11 @@ def wrap_prefixed_text(prefix: str, text: str, *, width: int, continuation: str 
 
 def _box_line(content: str, *, width: int, tone: str) -> None:
     content_width = width - 4
-    print(color(BOX_VERTICAL, tone) + " " + color(content.ljust(content_width), Color.WHITE) + " " + color(BOX_VERTICAL,
-                                                                                                               tone))
+    print(
+        color(BOX_VERTICAL, tone) + " " +
+        color(content.ljust(content_width), Color.WHITE) + " " +
+        color(BOX_VERTICAL, tone)
+    )
 
 
 def header(title: str = "AIBrain", subtitle: str = "Neural Runtime Installer") -> None:

@@ -43,12 +43,12 @@ class LoadingWindow(QWidget):
     cancelled = Signal()
 
     def __init__(
-        self,
-        *,
-        eyebrow_text: str = "AIBRAIN  /  STARTUP",
-        title_text: str = "Preparing your local workspace",
-        subtitle_text: str = "Checking installed GGUF models before opening the connectome.",
-        detail_text: str = "Starting local services",
+            self,
+            *,
+            eyebrow_text: str = "AIBRAIN  /  STARTUP",
+            title_text: str = "Preparing your local workspace",
+            subtitle_text: str = "Checking installed GGUF models before opening the connectome.",
+            detail_text: str = "Starting local services",
     ) -> None:
         super().__init__()
         self._completed = False

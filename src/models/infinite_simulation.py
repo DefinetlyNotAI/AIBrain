@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 from hashlib import blake2b
+from pathlib import Path
 from threading import Event
 from time import monotonic
 

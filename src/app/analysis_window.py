@@ -11,8 +11,8 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QMainWindow, QPlainTextEdit, QPushButton, QTabWidget, \
     QVBoxLayout, QWidget
 
+from .dashboard import metric_card, metric_grid, progress_card
 from ..connectome.analysis import ConnectomeAnalyzer
-from .dashboard import metric_card, metric_grid, progress_card, status_badge
 
 _TENSOR_NAMES = ("encoder_weights", "encoder_bias", "decoder_weights", "decoder_bias", "embedding_centroid")
 _REQUIRED_NAMES = (*_TENSOR_NAMES, "frames_seen")
@@ -103,7 +103,7 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
         "weights_frozen": frozen,
         "readiness": "ready" if state in {"Adult", "Elder"} and history_present else "caution",
         "note": "Legacy files retain their learned tensors but are conservatively treated as Baby until new rolling metrics are observed."
-                if not history_present else "Maturity is a persisted learning-health signal, not an accuracy guarantee.",
+        if not history_present else "Maturity is a persisted learning-health signal, not an accuracy guarantee.",
     }
     parameter_count = sum(int(value.size) for value in tensors.values() if value.ndim)
     return {
@@ -328,18 +328,24 @@ class AnalysisWindow(QMainWindow):
         self.health_detail.setText("All tensor, finite-value, and architecture checks passed.")
         state = str(maturity.get("state", "Baby"))
         self.state_value.setText(state.upper())
-        self.state_detail.setText("Weights frozen" if maturity.get("weights_frozen") else "Training weights remain active")
+        self.state_detail.setText(
+            "Weights frozen" if maturity.get("weights_frozen") else "Training weights remain active")
         frames = int(learning.get("lifetime_frames_seen", 0)) if isinstance(learning, dict) else 0
         self.frame_value.setText(f"{frames:,} frames")
-        self.frame_detail.setText(str(file_data.get("age", "Unknown persistence age")) if isinstance(file_data, dict) else "")
+        self.frame_detail.setText(
+            str(file_data.get("age", "Unknown persistence age")) if isinstance(file_data, dict) else "")
         progress = int(maturity.get("progress_percent", 0))
         self.maturity_progress.setValue(progress)
         next_state = maturity.get("next_state") or "terminal Elder state"
         self.maturity_detail.setText(f"Toward {next_state}: {maturity.get('note', '')}")
-        self.architecture_value.setText(str(architecture.get("shape", "Unknown")) if isinstance(architecture, dict) else "Unknown")
-        self.architecture_detail.setText(f"{architecture.get('learned_parameters', 0):,} learned parameters" if isinstance(architecture, dict) else "")
+        self.architecture_value.setText(
+            str(architecture.get("shape", "Unknown")) if isinstance(architecture, dict) else "Unknown")
+        self.architecture_detail.setText(
+            f"{architecture.get('learned_parameters', 0):,} learned parameters" if isinstance(architecture,
+                                                                                              dict) else "")
         self.quality_value.setText("Consistent" if maturity.get("consistency_sustained") else "Learning")
         self.quality_detail.setText("Rolling reconstruction and update metrics are persisted.")
         readiness = str(maturity.get("readiness", "caution")).upper()
         self.export_value.setText(readiness)
-        self.export_detail.setText("Normal smart-analysis report" if readiness == "READY" else "Export remains valid with explicit readiness caution.")
+        self.export_detail.setText(
+            "Normal smart-analysis report" if readiness == "READY" else "Export remains valid with explicit readiness caution.")

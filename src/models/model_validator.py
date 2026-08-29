@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Callable
 from dataclasses import replace
-import json
 from pathlib import Path
-import re
 from threading import Event
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from .model_info import ModelInfo
 from .ollama_discovery import OllamaDiscovery
-
 
 CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache"
 _VALIDATION_FORMAT = 2

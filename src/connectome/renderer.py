@@ -171,7 +171,8 @@ class ConnectomeRenderer(QOpenGLWidget):
         aspect = max(self.width(), 1) / max(self.height(), 1)
         scale = 1.0 / ((12.0 if self.view_mode == "2d" else 16.0) * self.zoom)
         depth_scale = 0.0 if self.view_mode == "2d" else .035
-        projection = np.array(((scale / aspect, 0, 0, 0), (0, scale, 0, 0), (0, 0, depth_scale, 0), (0, 0, 0, 1)), dtype="f4")
+        projection = np.array(((scale / aspect, 0, 0, 0), (0, scale, 0, 0), (0, 0, depth_scale, 0), (0, 0, 0, 1)),
+                              dtype="f4")
         if self.view_mode == "2d":
             projection[0, 3] = getattr(self, "pan_x", 0.0)
             projection[1, 3] = getattr(self, "pan_y", 0.0)
