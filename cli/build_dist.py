@@ -42,6 +42,11 @@ DIST_ROOT = ROOT / "dist"
 RUNTIME_DLLS = ("vcomp140.dll",)
 NATIVE_LIBRARY = ROOT / "dll" / "aibrain.connectome.dll"
 
+# ModernGL advertises glcontext to freezer tools through its packaging hook.
+# AIBrain always supplies ModernGL with the current Qt OpenGL context instead,
+# so compiling glcontext is unnecessary and can stall Nuitka's import pass.
+EXCLUDED_PACKAGING_IMPORTS = ("glcontext",)
+
 
 # ConPTY output can contain terminal control sequences. CommandOutputBox handles
 # the actual presentation, so terminal cursor manipulation must not leak into it.
@@ -773,6 +778,9 @@ def nuitka_command(
         ),
         str(target.entry_point),
     ]
+
+    for module_name in EXCLUDED_PACKAGING_IMPORTS:
+        command_line.insert(-1, f"--nofollow-import-to={module_name}")
 
     for runtime in runtimes:
         command_line.insert(

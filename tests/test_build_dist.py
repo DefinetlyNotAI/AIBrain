@@ -15,6 +15,15 @@ from src.utils.console_ui import BOX_TOP_LEFT
 
 
 class BuildDistributionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        """Use the subprocess runner for tests that supply Popen doubles."""
+        conpty_support = patch(
+            "cli.build_dist._supports_conpty",
+            return_value=False,
+        )
+        conpty_support.start()
+        self.addCleanup(conpty_support.stop)
+
     @patch("cli.build_dist.time.sleep")
     @patch("cli.build_dist.subprocess.Popen")
     def test_build_command_streams_output_inside_shared_framed_panel(self, popen_mock,
@@ -169,6 +178,7 @@ class BuildDistributionTests(unittest.TestCase):
             command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")])
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
+            self.assertIn("--nofollow-import-to=glcontext", command)
             self.assertNotIn("--include-package=src", command)
             self.assertEqual(command[1:3], ["-u", "-m"])
 

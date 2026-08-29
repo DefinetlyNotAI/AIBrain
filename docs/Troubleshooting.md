@@ -75,6 +75,17 @@ py cli\build_native.py --compiler "C:\path\to\compiler.exe"
 
 See [Native acceleration](Native%20Acceleration.md) for supported toolchains and all build options.
 
+## Distribution build stalls while processing `glcontext`
+
+Use the maintained distribution command, rather than invoking Nuitka directly:
+
+```powershell
+.\.venv\Scripts\python.exe cli\build_dist.py
+```
+
+The builder excludes ModernGL's optional `glcontext` packaging hook. AIBrain renders through Qt's current Windows OpenGL
+context, so the hook is not needed in the distribution and excluding it avoids a known long-running Nuitka import pass.
+
 ## NN Analysis+ does nothing
 
 Complete an Infinite-mode run first. Analysis+ processes the session's recorded visual frames through its online
