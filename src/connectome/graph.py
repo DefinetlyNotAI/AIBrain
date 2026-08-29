@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
+from ..utils.array_api import array_api as np
 
 
 @dataclass(slots=True)

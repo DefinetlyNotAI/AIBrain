@@ -4,7 +4,7 @@ import ctypes
 import sys
 from pathlib import Path
 
-import numpy as np
+from ...utils.array_api import GPU_ACCELERATED, array_api as np
 
 _APP_ROOT = (
     Path(sys.argv[0]).resolve().parent
@@ -23,7 +23,7 @@ class NativeConnectome:
     def __init__(self) -> None:
         self.dll: ctypes.WinDLL | None = None
 
-        if not _DLL_PATH.exists():
+        if GPU_ACCELERATED or not _DLL_PATH.exists():
             return
 
         try:
@@ -66,10 +66,10 @@ class NativeConnectome:
         return self.dll is not None
 
     def decay(
-            self,
-            values: np.ndarray,
-            factor: float,
-            threshold: float,
+        self,
+        values: np.ndarray,
+        factor: float,
+        threshold: float,
     ) -> int:
         self._validate_float32(values, "values")
 
@@ -87,10 +87,10 @@ class NativeConnectome:
         )
 
     def edges(
-            self,
-            values: np.ndarray,
-            edges: np.ndarray,
-            output: np.ndarray,
+        self,
+        values: np.ndarray,
+        edges: np.ndarray,
+        output: np.ndarray,
     ) -> None:
         self._validate_float32(values, "values")
         self._validate_int32(edges, "edges")
@@ -115,10 +115,10 @@ class NativeConnectome:
             destination = edges[:, 1]
 
             valid = (
-                    (source >= 0)
-                    & (destination >= 0)
-                    & (source < values.size)
-                    & (destination < values.size)
+                (source >= 0)
+                & (destination >= 0)
+                & (source < values.size)
+                & (destination < values.size)
             )
 
             activity = np.zeros(edges.shape[0], dtype=np.float32)
@@ -140,11 +140,11 @@ class NativeConnectome:
         )
 
     def regions(
-            self,
-            values: np.ndarray,
-            region_ids: np.ndarray,
-            region_count: int,
-            threshold: float = 0.1,
+        self,
+        values: np.ndarray,
+        region_ids: np.ndarray,
+        region_count: int,
+        threshold: float = 0.1,
     ) -> tuple[np.ndarray, int]:
         self._validate_float32(values, "values")
         self._validate_int16(region_ids, "region_ids")
@@ -153,9 +153,7 @@ class NativeConnectome:
             raise ValueError(f"values must be 1D, got shape {values.shape}")
 
         if region_ids.ndim != 1:
-            raise ValueError(
-                f"region_ids must be 1D, got shape {region_ids.shape}"
-            )
+            raise ValueError(f"region_ids must be 1D, got shape {region_ids.shape}")
 
         if values.size != region_ids.size:
             raise ValueError(
@@ -168,10 +166,7 @@ class NativeConnectome:
         sums = np.zeros(region_count, dtype=np.float32)
 
         if self.dll is None:
-            valid = (
-                    (region_ids >= 0)
-                    & (region_ids < region_count)
-            )
+            valid = (region_ids >= 0) & (region_ids < region_count)
 
             if np.any(valid):
                 sums[:] = np.bincount(
@@ -196,9 +191,7 @@ class NativeConnectome:
     @staticmethod
     def _validate_float32(array: np.ndarray, name: str) -> None:
         if array.dtype != np.float32:
-            raise TypeError(
-                f"{name} must use float32, got {array.dtype.name}"
-            )
+            raise TypeError(f"{name} must use float32, got {array.dtype.name}")
 
         if not array.flags.c_contiguous:
             raise ValueError(f"{name} must be C-contiguous")
@@ -206,9 +199,7 @@ class NativeConnectome:
     @staticmethod
     def _validate_int32(array: np.ndarray, name: str) -> None:
         if array.dtype != np.int32:
-            raise TypeError(
-                f"{name} must use int32, got {array.dtype.name}"
-            )
+            raise TypeError(f"{name} must use int32, got {array.dtype.name}")
 
         if not array.flags.c_contiguous:
             raise ValueError(f"{name} must be C-contiguous")
@@ -216,9 +207,7 @@ class NativeConnectome:
     @staticmethod
     def _validate_int16(array: np.ndarray, name: str) -> None:
         if array.dtype != np.int16:
-            raise TypeError(
-                f"{name} must use int16, got {array.dtype.name}"
-            )
+            raise TypeError(f"{name} must use int16, got {array.dtype.name}")
 
         if not array.flags.c_contiguous:
             raise ValueError(f"{name} must be C-contiguous")

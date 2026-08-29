@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,7 +11,9 @@ from cli import installer
 
 class InstallerRepairTests(unittest.TestCase):
     def test_final_health_covers_runtime_model_cache_and_dll_contracts(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, patch("cli.installer.OllamaDiagnostics") as diagnostics:
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "cli.installer.OllamaDiagnostics"
+        ) as diagnostics:
             root = Path(directory)
             python = root / "Scripts" / "python.exe"
             python.parent.mkdir(parents=True)
@@ -28,7 +31,9 @@ class InstallerRepairTests(unittest.TestCase):
         self.assertEqual(by_name["Model manifests / blobs"].status, "Ready")
         self.assertEqual(by_name["Native DLLs"].status, "Ready")
 
-    def test_cache_repair_only_rebuilds_the_disposable_validation_directory(self) -> None:
+    def test_cache_repair_only_rebuilds_the_disposable_validation_directory(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             validation = root / ".cache" / "validation"
@@ -49,10 +54,34 @@ class InstallerRepairTests(unittest.TestCase):
 
     def test_dependency_repair_is_scoped_to_the_selected_subsystem(self) -> None:
         with patch("cli.installer.install_dependencies") as install_dependencies:
-            repaired = installer.repair_selected_subsystem("dependencies", "managed-python", None)
+            repaired = installer.repair_selected_subsystem(
+                "dependencies", "managed-python", None
+            )
 
         self.assertEqual(repaired, "dependencies")
-        install_dependencies.assert_called_once_with("managed-python")
+        install_dependencies.assert_called_once_with("managed-python", None)
+
+    def test_cuda_umd_banner_is_detected(self) -> None:
+        query = subprocess.CompletedProcess([], 0, "NVIDIA RTX, 610.88\n", "")
+        status = subprocess.CompletedProcess([], 0, "CUDA UMD Version: 13.3", "")
+        with patch("cli.installer.subprocess.run", side_effect=[query, status]):
+            gpu = installer.detect_nvidia()
+
+        self.assertIsNotNone(gpu)
+        self.assertEqual(gpu.cuda_version, (13, 3))
+        self.assertEqual(installer.numerical_package(gpu), "cupy-cuda13x[ctk]>=14,<15")
+
+    @patch("cli.installer.available_wheel", return_value=True)
+    def test_cuda_backend_is_the_noninteractive_default(self, _available) -> None:  # type: ignore[no-untyped-def]
+        gpu = installer.GpuCapability("NVIDIA RTX", "610.88", (13, 3))
+
+        wheel, description = installer.select_wheel(gpu)
+
+        self.assertEqual(wheel, "cu132")
+        self.assertIn("CUDA", description)
+
+    def test_cpu_array_package_is_used_without_cuda(self) -> None:
+        self.assertEqual(installer.numerical_package(None), "numpy>=1.26,<3")
 
 
 if __name__ == "__main__":

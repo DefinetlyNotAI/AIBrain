@@ -1,4 +1,5 @@
 """Interactive, installer-style test launcher for AIBrain."""
+
 from __future__ import annotations
 
 import argparse
@@ -33,6 +34,7 @@ SUITES: dict[str, tuple[str, list[str]]] = {
             "tests.test_model_diagnostics",
             "tests.test_llama_backend",
             "tests.test_native_wrapper",
+            "tests.test_array_api",
         ],
     ),
     "2": (
@@ -145,9 +147,9 @@ def run_suite(name: str, modules: list[str]) -> int:
 
 
 def run_separated_suite(
-        name: str,
-        modules: list[str],
-        start_section: int,
+    name: str,
+    modules: list[str],
+    start_section: int,
 ) -> int:
     """Run each module in a suite under its own console section."""
     failures = 0
@@ -202,10 +204,7 @@ def choose_suite() -> str | None:
     """Display the verification menu and return the selected suite."""
     panel(
         "TEST MENU",
-        [
-            (key, title)
-            for key, (title, _modules) in SUITES.items()
-        ]
+        [(key, title) for key, (title, _modules) in SUITES.items()]
         + [
             ("A", "Run every suite"),
             ("Q", "Exit"),
@@ -239,9 +238,7 @@ def main() -> int:
     runtime_log, _ = configure_cli_logging("test")
     if not require_managed_runtime(ROOT, "test"):
         return 1
-    parser = argparse.ArgumentParser(
-        description="Run AIBrain verification suites."
-    )
+    parser = argparse.ArgumentParser(description="Run AIBrain verification suites.")
 
     parser.add_argument(
         "--all",
@@ -281,9 +278,7 @@ def main() -> int:
 
     if choice == "a":
         all_modules = [
-            module
-            for _name, modules in SUITES.values()
-            for module in modules
+            module for _name, modules in SUITES.values() for module in modules
         ]
 
         return run_separated_suite(

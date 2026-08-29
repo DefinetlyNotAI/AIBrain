@@ -4,10 +4,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
-import numpy as np
+from ..utils.array_api import array_api as np
 from PySide6.QtCore import QSettings, QTimer, Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, \
-    QLabel, QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget, QInputDialog
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+    QInputDialog,
+)
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
@@ -40,8 +54,8 @@ class NeuronInspectorLabel(QLabel):
         prefix_width = self.fontMetrics().horizontalAdvance(self._prefix)
         number_width = self.fontMetrics().horizontalAdvance("00000")
         if (
-                event.button() == Qt.MouseButton.LeftButton and
-                prefix_width <= event.position().x() <= prefix_width + number_width
+            event.button() == Qt.MouseButton.LeftButton
+            and prefix_width <= event.position().x() <= prefix_width + number_width
         ):
             self.neuronNumberClicked.emit()
             event.accept()
@@ -137,30 +151,26 @@ class VisualizerPanel(QWidget):
 
         neuron_borders_value = settings.value("neuron_borders", True)
         self.neuron_borders.setChecked(
-            neuron_borders_value
-            if isinstance(neuron_borders_value, bool)
-            else True
+            neuron_borders_value if isinstance(neuron_borders_value, bool) else True
         )
 
         self.neuron_borders.toggled.connect(self._set_neuron_borders)
 
         self.border_width = QDoubleSpinBox()
         self.border_width.setRange(0, 1)
-        self.border_width.setSingleStep(.01)
+        self.border_width.setSingleStep(0.01)
         self.border_width.setDecimals(2)
 
-        border_width_value = settings.value("neuron_border_width", .12)
+        border_width_value = settings.value("neuron_border_width", 0.12)
         self.border_width.setValue(
             float(border_width_value)
             if isinstance(border_width_value, (int, float, str))
-            else .12
+            else 0.12
         )
 
         self.border_width.setToolTip("Neuron outline width")
         self.border_width.valueChanged.connect(
-            lambda _: self._set_neuron_borders(
-                self.neuron_borders.isChecked()
-            )
+            lambda _: self._set_neuron_borders(self.neuron_borders.isChecked())
         )
 
         self.analysis = QPushButton("NN Analysis+")
@@ -185,11 +195,15 @@ class VisualizerPanel(QWidget):
         self._populate_region_selector()
 
         self.reset_view = QPushButton("Reset view")
-        self.reset_view.setToolTip("Restore the default 2D or 3D camera position and zoom")
+        self.reset_view.setToolTip(
+            "Restore the default 2D or 3D camera position and zoom"
+        )
         self.reset_view.clicked.connect(lambda: self.renderer.reset_camera())
         self.settings_toggle = QPushButton("View settings")
         self.settings_toggle.setCheckable(True)
-        self.settings_toggle.setToolTip("Show or hide rendering and presentation settings")
+        self.settings_toggle.setToolTip(
+            "Show or hide rendering and presentation settings"
+        )
         self.settings_toggle.toggled.connect(self._set_settings_visible)
         self.colour_settings = QPushButton("Colour settings")
         self.colour_settings.setToolTip("Customize the saved AIBrain interface palette")
@@ -237,9 +251,9 @@ class VisualizerPanel(QWidget):
         self.replay_rewind = QPushButton("Replay")
         self.next_rewind = QPushButton("Next")
         for button, tip in (
-                (self.previous_rewind, "Show the previous recorded token frame"),
-                (self.replay_rewind, "Play recorded token frames from the beginning"),
-                (self.next_rewind, "Show the next recorded token frame"),
+            (self.previous_rewind, "Show the previous recorded token frame"),
+            (self.replay_rewind, "Play recorded token frames from the beginning"),
+            (self.next_rewind, "Show the next recorded token frame"),
         ):
             button.setToolTip(tip)
             rewind_layout.addWidget(button)
@@ -273,7 +287,7 @@ class VisualizerPanel(QWidget):
 
         self.importance = QDoubleSpinBox()
         self.importance.setRange(0, 3)
-        self.importance.setSingleStep(.1)
+        self.importance.setSingleStep(0.1)
         self.importance.setValue(1)
         self.importance.valueChanged.connect(self._change_importance)
         self.importance.setEnabled(False)
@@ -304,13 +318,17 @@ class VisualizerPanel(QWidget):
             self._populate_region_selector()
             self._apply_view_mode()
         if hasattr(self, "neuron_borders"):
-            self.renderer.set_neuron_borders(self.neuron_borders.isChecked(), self.border_width.value())
+            self.renderer.set_neuron_borders(
+                self.neuron_borders.isChecked(), self.border_width.value()
+            )
         self.layout.insertWidget(index, self.renderer, 1)
         self._refresh_overlay()
 
     def _set_settings_visible(self, visible: bool) -> None:
         self.settings_panel.setVisible(visible)
-        self.settings_toggle.setText("Hide view settings" if visible else "View settings")
+        self.settings_toggle.setText(
+            "Hide view settings" if visible else "View settings"
+        )
 
     def _edit_colours(self) -> None:
         dialog = ColourSettingsDialog(self._colours, self)
@@ -334,7 +352,9 @@ class VisualizerPanel(QWidget):
     def _set_view_mode(self, two_dimensional: bool) -> None:
         self.view_toggle.setText("2D View" if two_dimensional else "3D View")
         self.two_d_mode.setVisible(two_dimensional)
-        self.region_selector.setVisible(two_dimensional and self.two_d_mode.currentData() == "sector")
+        self.region_selector.setVisible(
+            two_dimensional and self.two_d_mode.currentData() == "sector"
+        )
         self._apply_view_mode()
 
     def _apply_view_mode(self, *_: object) -> None:
@@ -347,14 +367,18 @@ class VisualizerPanel(QWidget):
         self.spacing.setEnabled(not two_dimensional)
         self.spacing.setToolTip(
             "Cluster spacing is unavailable in 2D because the flat projection uses a fixed readable layout."
-            if two_dimensional else "Cluster spacing")
+            if two_dimensional
+            else "Cluster spacing"
+        )
         self._refresh_overlay()
 
     def apply_frame(self, frame: ActivationFrame, *, record: bool = True) -> None:
         self.mode.setText(frame.source.value.upper())
         self.mapper.apply(frame)
         if record:
-            signal = PlaybackStep(frame, self.field.values.copy(), self.field.peaks.copy())
+            signal = PlaybackStep(
+                frame, self.field.values.copy(), self.field.peaks.copy()
+            )
             self._playback.append(signal)
             self._all_signals.append(signal)
             self.analyzer.observe(frame, self.field.values)
@@ -373,7 +397,9 @@ class VisualizerPanel(QWidget):
         self.analysisMemoryExceeded.emit(False)
 
     def set_analysis_memory_limit(self, megabytes: int | None) -> None:
-        self._analysis_memory_limit_bytes = None if megabytes is None else max(16, megabytes) * 1024 * 1024
+        self._analysis_memory_limit_bytes = (
+            None if megabytes is None else max(16, megabytes) * 1024 * 1024
+        )
 
     @property
     def analysis_memory_exceeded(self) -> bool:
@@ -381,12 +407,20 @@ class VisualizerPanel(QWidget):
 
     @staticmethod
     def _signal_bytes(signal: PlaybackStep) -> int:
-        return signal.values.nbytes + signal.peaks.nbytes + len(signal.frame.token_text.encode("utf-8")) + 96
+        return (
+            signal.values.nbytes
+            + signal.peaks.nbytes
+            + len(signal.frame.token_text.encode("utf-8"))
+            + 96
+        )
 
     def _trim_analysis_memory(self) -> None:
         if self._analysis_memory_limit_bytes is None:
             return
-        while self._all_signals and self._analysis_retained_bytes > self._analysis_memory_limit_bytes:
+        while (
+            self._all_signals
+            and self._analysis_retained_bytes > self._analysis_memory_limit_bytes
+        ):
             oldest = self._all_signals.pop(0)
             self._analysis_retained_bytes -= self._signal_bytes(oldest)
             if self.analyzer.records:
@@ -417,7 +451,7 @@ class VisualizerPanel(QWidget):
         self.next_rewind.setEnabled(False)
         self.replay_rewind.setText("Stop replay")
         self.playbackChanged.emit(True)
-        self._playback_timer.start(max(35, round(110 / max(.1, speed))))
+        self._playback_timer.start(max(35, round(110 / max(0.1, speed))))
 
     def enter_rewind_mode(self) -> None:
         if not self._playback or self._rewind_active:
@@ -462,7 +496,8 @@ class VisualizerPanel(QWidget):
             self._playback.clear()
             self._playback_index = -1
             self.inspector.setText(
-                "Replay discarded because the connectome graph changed. Generate a new response to record it.")
+                "Replay discarded because the connectome graph changed. Generate a new response to record it."
+            )
             return
         self._playback_index = index
         self.field.values[:] = step.values
@@ -495,7 +530,11 @@ class VisualizerPanel(QWidget):
 
     def _refresh_overlay(self) -> None:
         active_edges = int(
-            sum((self.field.values[self.graph.edges[:, 0]] > .1) | (self.field.values[self.graph.edges[:, 1]] > .1)))
+            sum(
+                (self.field.values[self.graph.edges[:, 0]] > 0.1)
+                | (self.field.values[self.graph.edges[:, 1]] > 0.1)
+            )
+        )
         strongest = int(self.field.values.argmax()) if len(self.field.values) else 0
         region = self.graph.region_names[int(self.graph.regions[strongest])]
         backend = getattr(self, "_backend", "ModernGL GPU renderer initializing…")
@@ -507,7 +546,8 @@ class VisualizerPanel(QWidget):
             f"  ·  Active neurons {self.field.active_count:,}"
             f"  ·  Active pathways {active_edges:,}"
             f"  ·  Strongest: {region}"
-            f"  ·  Token: {self.field.current_token!r}")
+            f"  ·  Token: {self.field.current_token!r}"
+        )
 
     def _set_backend(self, backend: str) -> None:
         self._backend = backend
@@ -523,13 +563,19 @@ class VisualizerPanel(QWidget):
             f"  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}"
             f"  ·  Current activity: {self.field.values[index]:.3f}"
             f"  ·  Peak: {self.field.peaks[index]:.3f}"
-            f"  ·  Data source: Simulation"
+            f"  ·  Data source: Simulation",
         )
 
     def _prompt_for_neuron(self) -> None:
         current = self._selected_node if self._selected_node is not None else 0
-        index, accepted = QInputDialog.getInt(self, "Select visual neuron", "Neuron number:", current, 0,
-                                              len(self.graph.positions) - 1)
+        index, accepted = QInputDialog.getInt(
+            self,
+            "Select visual neuron",
+            "Neuron number:",
+            current,
+            0,
+            len(self.graph.positions) - 1,
+        )
         if accepted:
             self._inspect(index)
 
@@ -539,7 +585,9 @@ class VisualizerPanel(QWidget):
         index = self._selected_node
         disabled = not bool(self.field.disabled[index])
         self.field.set_disabled(index, disabled)
-        self.silence.setText("Restore selected neuron" if disabled else "Silence selected neuron")
+        self.silence.setText(
+            "Restore selected neuron" if disabled else "Silence selected neuron"
+        )
         self.renderer.update()
 
     def _change_importance(self, value: float) -> None:
@@ -552,7 +600,7 @@ class VisualizerPanel(QWidget):
         self._spacing_timer.start()
 
     def _commit_cluster_spacing(self) -> None:
-        if abs(self._pending_cluster_spacing - self._cluster_spacing) < .001:
+        if abs(self._pending_cluster_spacing - self._cluster_spacing) < 0.001:
             return
         self._cluster_spacing = self._pending_cluster_spacing
         self._rebuild(self.quality.currentText())
@@ -568,18 +616,21 @@ class VisualizerPanel(QWidget):
             QMessageBox.information(
                 self,
                 "NN Analysis+",
-                "Generate a response or start an infinite simulation before creating an analysis file."
+                "Generate a response or start an infinite simulation before creating an analysis file.",
             )
             return
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Create NN Analysis+ data file",
             "nn-analysis-plus.json",
-            "JSON data (*.json);;Compressed JSON data (*.json.gz)")
+            "JSON data (*.json);;Compressed JSON data (*.json.gz)",
+        )
         if not filename:
             return
         try:
-            export_nn_analysis_plus(Path(filename), self.graph, self.analyzer, self._conversation)
+            export_nn_analysis_plus(
+                Path(filename), self.graph, self.analyzer, self._conversation
+            )
         except OSError as exc:
             QMessageBox.critical(self, "NN Analysis+ export failed", str(exc))
             return
@@ -589,16 +640,27 @@ class VisualizerPanel(QWidget):
             f"Created {Path(filename).name}\n\n"
             f"Conversation turns: {len(self._conversation)}\n"
             f"Visual brain-signal frames analyzed: {len(self.analyzer.records)}\n\n"
-            f"The JSON contains compact neural-network findings, not a raw frame dump.")
+            f"The JSON contains compact neural-network findings, not a raw frame dump.",
+        )
 
     def run_session_analysis(self) -> None:
         if not self.analyzer.records:
-            QMessageBox.information(self, "Analysis", "Generate a normal chat response before exporting session data.")
+            QMessageBox.information(
+                self,
+                "Analysis",
+                "Generate a normal chat response before exporting session data.",
+            )
             return
-        filename, _ = QFileDialog.getSaveFileName(self, "Create session analysis data file", "session-analysis.json",
-                                                  "JSON data (*.json);;Compressed JSON data (*.json.gz)")
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Create session analysis data file",
+            "session-analysis.json",
+            "JSON data (*.json);;Compressed JSON data (*.json.gz)",
+        )
         if filename:
-            export_session_analysis(Path(filename), self.graph, self.analyzer, self._conversation)
+            export_session_analysis(
+                Path(filename), self.graph, self.analyzer, self._conversation
+            )
 
     def _populate_render_adapters(self) -> None:
         settings = QSettings()
@@ -626,8 +688,11 @@ class VisualizerPanel(QWidget):
             self._refresh_overlay()
             return
         applied = set_windows_gpu_preference(True)
-        self._backend = "High-performance GPU saved; AIBrain will relaunch on the next start" if applied else \
-            "GPU preference could not be saved; configure Windows Graphics Settings"
+        self._backend = (
+            "High-performance GPU saved; AIBrain will relaunch on the next start"
+            if applied
+            else "GPU preference could not be saved; configure Windows Graphics Settings"
+        )
         self._refresh_overlay()
         QMessageBox.information(
             self,
