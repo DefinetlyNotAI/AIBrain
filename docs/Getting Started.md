@@ -72,6 +72,9 @@ The result is `dist\AIBrain_YYYYMMDD_HHMMSS\` with three self-contained applicat
 llama.cpp, native connectome, and required Visual C++ runtime files, and runs without activating the development
 `.venv`.
 
+The builder invokes Nuitka in unbuffered mode, so its carriage-return progress frames are shown live in an interactive
+terminal while each application is compiling.
+
 ## First run
 
 At launch, AIBrain first shows a loading window while it scans local Ollama manifests and blobs, validates each

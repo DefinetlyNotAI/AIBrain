@@ -152,6 +152,12 @@ def nuitka_command(target: ApplicationTarget, build_root: Path, runtimes: list[P
     """Build a reproducible standalone command for one application target."""
     command_line = [
         str(VENV_PYTHON),
+        # Nuitka uses carriage-return frames for its progress bars. Its stdout
+        # is deliberately redirected to a file so compiler workers cannot keep
+        # a pipe open after the main process exits; ``-u`` is therefore needed
+        # to make those frames reach the tailer immediately rather than when
+        # Python flushes the file at the end of compilation.
+        "-u",
         "-m",
         "nuitka",
         "--standalone",

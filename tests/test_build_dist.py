@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+import sys
+import time
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
@@ -96,6 +98,37 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertEqual(output_box.partial, ["Downloading: 25%", "Downloading: 25%", "Downloading: 50%"])
         self.assertEqual(output_box.completed, ["Done"])
 
+    def test_run_renders_unbuffered_progress_before_the_child_completes(self) -> None:
+        class OutputBox:
+            partial_times: list[float] = []
+            completed_times: list[float] = []
+
+            def __enter__(self) -> OutputBox:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def write(self, _text: str) -> None:
+                self.completed_times.append(time.monotonic())
+
+            def write_partial(self, _text: str) -> None:
+                self.partial_times.append(time.monotonic())
+
+        command = [
+            sys.executable,
+            "-u",
+            "-c",
+            "import sys, time; sys.stdout.write('Nuitka: 25%\\r'); time.sleep(0.3); print('Nuitka: done')",
+        ]
+
+        with patch("cli.build_dist.CommandOutputBox", OutputBox):
+            build_dist.run(command)
+
+        self.assertEqual(len(OutputBox.partial_times), 1)
+        self.assertEqual(len(OutputBox.completed_times), 1)
+        self.assertLess(OutputBox.partial_times[0], OutputBox.completed_times[0])
+
     @patch("cli.build_dist.subprocess.run")
     @patch("cli.build_dist.subprocess.Popen")
     def test_interrupted_build_terminates_the_child_tree_before_propagating(self, popen_mock, taskkill_mock) -> None:  # type: ignore[no-untyped-def]
@@ -137,6 +170,7 @@ class BuildDistributionTests(unittest.TestCase):
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
             self.assertNotIn("--include-package=src", command)
+            self.assertEqual(command[1:3], ["-u", "-m"])
 
 
 if __name__ == "__main__":
