@@ -39,14 +39,51 @@ from src.utils.logging import configure_cli_logging
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
+SITE_PACKAGES = VENV_PYTHON.parents[1] / "Lib" / "site-packages"
+NUMPY_PACKAGE_ROOT = SITE_PACKAGES / "numpy"
+NUMPY_DLL_ROOT = SITE_PACKAGES / "numpy.libs"
 
 RUNTIME_DLLS = ("vcomp140.dll",)
 NATIVE_LIBRARY = ROOT / "dll" / "aibrain.connectome.dll"
 
-# ModernGL advertises glcontext to freezer tools through its packaging hook.
-# AIBrain always supplies ModernGL with the current Qt OpenGL context instead,
-# so compiling glcontext is unnecessary and can stall Nuitka's import pass.
-EXCLUDED_PACKAGING_IMPORTS = ("glcontext",)
+# Keep Nuitka's module graph aligned with the application rather than with the
+# optional feature sets advertised by dependency package hooks. ModernGL is
+# supplied with Qt's current OpenGL context. NumPy is staged as CPython source
+# and prebuilt extension modules so Nuitka never compiles its large package.
+EXCLUDED_PACKAGING_IMPORTS = (
+    "glcontext",
+    "numpy",
+)
+
+# These are the only NumPy implementation branches AIBrain requires: array
+# core, type metadata, random generation, linear algebra, and NPZ archive I/O.
+# Deliberately omit compatibility, FFT, masked arrays, polynomial, test, f2py,
+# documentation, and build-tool namespaces.
+NUMPY_RUNTIME_SUBDIRECTORIES = (
+    "_core",
+    "_typing",
+    "_utils",
+    "lib",
+    "linalg",
+    "matrixlib",
+    "random",
+)
+
+# NumPy's staged Python modules dynamically load this observed CPython support
+# closure. Nuitka cannot discover it after NumPy is deliberately no-follow, so
+# include these exact helpers explicitly. This is not a NumPy package include.
+NUMPY_RUNTIME_SUPPORT_MODULES = (
+    "_collections_abc", "_compat_pickle", "_compression", "_ctypes", "_hashlib", "_lzma", "_weakrefset",
+    "abc", "ast", "base64", "bisect", "bz2", "codecs", "collections", "collections.abc", "contextlib",
+    "contextvars", "copyreg", "ctypes", "ctypes._endian", "datetime", "dis", "encodings",
+    "encodings.aliases", "encodings.cp1252", "encodings.cp437", "encodings.utf_8", "enum", "fnmatch",
+    "functools", "genericpath", "hashlib", "hmac", "importlib", "importlib._abc", "importlib.machinery",
+    "importlib.util", "inspect", "io", "ipaddress", "keyword", "linecache", "lzma", "ntpath", "numbers",
+    "opcode", "operator", "os", "pathlib", "pickle", "platform", "posixpath", "random", "re",
+    "re._casefix", "re._compiler", "re._constants", "re._parser", "reprlib", "secrets", "shutil", "stat",
+    "struct", "textwrap", "threading", "token", "tokenize", "types", "typing", "urllib", "urllib.parse",
+    "warnings", "weakref", "zipfile",
+)
 
 
 # ConPTY output can contain terminal control sequences. CommandOutputBox handles
@@ -755,10 +792,48 @@ def runtime_dlls() -> list[Path]:
     return resolved
 
 
+def stage_numpy_runtime(build_root: Path) -> tuple[Path, Path]:
+    """Stage only AIBrain's prebuilt NumPy runtime beside Nuitka's output.
+
+    Nuitka follows NumPy's package configuration into optional scientific
+    namespaces and then compiles their Python wrappers. Keeping these selected
+    CPython files raw preserves NumPy's extension-module loader while avoiding
+    that expensive and unnecessary compilation work.
+    """
+    if not NUMPY_PACKAGE_ROOT.is_dir():
+        raise RuntimeError(
+            "Managed NumPy package is missing. Run: py cli\\installer.py"
+        )
+    if not NUMPY_DLL_ROOT.is_dir():
+        raise RuntimeError(
+            "Managed NumPy native DLL directory is missing. Run: py cli\\installer.py"
+        )
+
+    runtime_root = build_root / "_numpy_runtime"
+    package_target = runtime_root / "numpy"
+    dll_target = runtime_root / "numpy.libs"
+    package_target.mkdir(parents=True, exist_ok=True)
+
+    for source in NUMPY_PACKAGE_ROOT.glob("*.py"):
+        if source.name == "conftest.py":
+            continue
+        shutil.copy2(source, package_target / source.name)
+
+    for name in NUMPY_RUNTIME_SUBDIRECTORIES:
+        source = NUMPY_PACKAGE_ROOT / name
+        if not source.is_dir():
+            raise RuntimeError(f"Managed NumPy runtime submodule is missing: {name}")
+        shutil.copytree(source, package_target / name, dirs_exist_ok=True)
+
+    shutil.copytree(NUMPY_DLL_ROOT, dll_target, dirs_exist_ok=True)
+    return package_target, dll_target
+
+
 def nuitka_command(
         target: ApplicationTarget,
         build_root: Path,
         runtimes: list[Path],
+        numpy_runtime: tuple[Path, Path] | None = None,
 ) -> list[str]:
     """Build a reproducible standalone Nuitka command."""
     command_line = [
@@ -768,6 +843,7 @@ def nuitka_command(
         "nuitka",
         "--standalone",
         "--assume-yes-for-downloads",
+        "--show-progress",
         "--enable-plugin=pyside6",
         f"--windows-console-mode={target.console_mode}",
         f"--windows-icon-from-ico={target.icon}",
@@ -782,6 +858,13 @@ def nuitka_command(
 
     for module_name in EXCLUDED_PACKAGING_IMPORTS:
         command_line.insert(-1, f"--nofollow-import-to={module_name}")
+
+    if numpy_runtime is not None:
+        package_root, dll_root = numpy_runtime
+        command_line.insert(-1, f"--include-raw-dir={package_root}=numpy")
+        command_line.insert(-1, f"--include-raw-dir={dll_root}=numpy.libs")
+        for module_name in NUMPY_RUNTIME_SUPPORT_MODULES:
+            command_line.insert(-1, f"--include-module={module_name}")
 
     for runtime in runtimes:
         command_line.insert(
@@ -911,11 +994,14 @@ def build(
                     / target.directory
             )
 
+            numpy_runtime = stage_numpy_runtime(build_root)
+
             run(
                 nuitka_command(
                     target,
                     build_root,
                     runtimes,
+                    numpy_runtime,
                 )
             )
 

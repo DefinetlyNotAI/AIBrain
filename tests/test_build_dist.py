@@ -171,16 +171,55 @@ class BuildDistributionTests(unittest.TestCase):
 
     def test_each_packaged_application_has_its_named_entry_point_and_icon(self) -> None:
         targets = {target.executable: target for target in build_dist.APPLICATIONS}
+        numpy_runtime = (Path("numpy-runtime"), Path("numpy-dlls"))
 
         self.assertEqual(set(targets), {"ai_brain.exe", "diagnostic.exe", "analysis.exe"})
         self.assertTrue(all(target.console_mode == "attach" for target in targets.values()))
         for target in targets.values():
-            command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")])
+            command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")], numpy_runtime)
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
-            self.assertIn("--nofollow-import-to=glcontext", command)
+            self.assertIn("--show-progress", command)
+            excluded = {
+                item.removeprefix("--nofollow-import-to=")
+                for item in command
+                if item.startswith("--nofollow-import-to=")
+            }
+            self.assertEqual(excluded, set(build_dist.EXCLUDED_PACKAGING_IMPORTS))
+            self.assertEqual(excluded, {"glcontext", "numpy"})
+            self.assertIn("--include-raw-dir=numpy-runtime=numpy", command)
+            self.assertIn("--include-raw-dir=numpy-dlls=numpy.libs", command)
+            self.assertIn("--include-module=textwrap", command)
+            self.assertNotIn("--include-module=numpy", command)
             self.assertNotIn("--include-package=src", command)
             self.assertEqual(command[1:3], ["-u", "-m"])
+
+    def test_numpy_runtime_staging_keeps_only_required_submodules(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_package = root / "source" / "numpy"
+            source_dlls = root / "source" / "numpy.libs"
+            source_package.mkdir(parents=True)
+            source_dlls.mkdir(parents=True)
+            (source_package / "__init__.py").write_text("", encoding="utf-8")
+            (source_package / "conftest.py").write_text("", encoding="utf-8")
+            (source_dlls / "numpy.dll").write_bytes(b"dll")
+            for name in build_dist.NUMPY_RUNTIME_SUBDIRECTORIES:
+                module = source_package / name
+                module.mkdir()
+                (module / "__init__.py").write_text("", encoding="utf-8")
+            (source_package / "fft").mkdir()
+            (source_package / "fft" / "unused.py").write_text("", encoding="utf-8")
+
+            with patch("cli.build_dist.NUMPY_PACKAGE_ROOT", source_package), \
+                    patch("cli.build_dist.NUMPY_DLL_ROOT", source_dlls):
+                package, dlls = build_dist.stage_numpy_runtime(root / "stage")
+
+            self.assertTrue((package / "__init__.py").is_file())
+            self.assertFalse((package / "conftest.py").exists())
+            self.assertTrue((package / "random" / "__init__.py").is_file())
+            self.assertFalse((package / "fft").exists())
+            self.assertEqual((dlls / "numpy.dll").read_bytes(), b"dll")
 
 
 if __name__ == "__main__":
