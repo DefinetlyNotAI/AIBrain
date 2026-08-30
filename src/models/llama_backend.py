@@ -110,6 +110,7 @@ class LlamaBackend:
                 "Model load with %s GPU layer(s) failed (%s); retrying the same GGUF on CPU layers",
                 config.gpu_layers,
                 exc,
+                exc_info=True,
             )
             self._llm = Llama(
                 model_path=str(path),

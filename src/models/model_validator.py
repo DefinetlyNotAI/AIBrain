@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import re
-import traceback
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -12,7 +12,10 @@ from threading import Event
 from PySide6.QtCore import QObject, Signal, Slot
 
 from .model_info import ModelInfo
+from ..utils.logging import format_exception
 from .ollama_discovery import OllamaDiscovery
+
+LOG = logging.getLogger(__name__)
 
 CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache" / "validation"
 _VALIDATION_FORMAT = 4
@@ -163,9 +166,14 @@ class ModelValidator:
                                 GenerationConfig(context_length=512, gpu_layers=0),
                             )
                         except Exception as exc:
+                            LOG.exception(
+                                "llama.cpp compatibility check failed for %s:%s",
+                                model.name,
+                                model.tag,
+                            )
                             error = (
                                 f"llama.cpp compatibility check failed: {exc}\n"
-                                + traceback.format_exc().rstrip()
+                                + format_exception(exc)
                             )
                         finally:
                             backend.unload()
@@ -208,6 +216,7 @@ class StartupWorker(QObject):
             )
             self.finished.emit(models)
         except Exception as exc:
+            LOG.exception("Startup model validation failed")
             self.failed.emit(f"Startup validation failed: {exc}")
 
     @Slot()

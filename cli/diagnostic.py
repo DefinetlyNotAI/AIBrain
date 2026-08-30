@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.utils.console_ui import clear_screen, error, header, section, status
-from src.utils.logging import configure_cli_logging
+from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
@@ -88,3 +88,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         error("Diagnostics cancelled by keyboard interrupt.")
         raise SystemExit(130)
+    except Exception as exc:
+        report_exception("AIBrain Diagnostics launcher failed", exc)
+        raise SystemExit(1)

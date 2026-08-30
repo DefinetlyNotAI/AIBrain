@@ -454,7 +454,16 @@ def warning(message: str) -> None:
 
 
 def error(message: str) -> None:
-    print(f"  {color(CROSS, Color.RED, Color.BOLD)} {message}", file=sys.stderr)
+    """Render an error without collapsing a multiline traceback into one row."""
+    prefix = f"  {CROSS} "
+    lines = str(message).splitlines() or [""]
+    print(
+        color(prefix, Color.RED, Color.BOLD) + lines[0],
+        file=sys.stderr,
+    )
+    continuation = " " * len(prefix)
+    for line in lines[1:]:
+        print(continuation + line, file=sys.stderr)
 
 
 def detail(label: str, value: str) -> None:

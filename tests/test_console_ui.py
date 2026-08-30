@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,6 +30,22 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn(console_ui.BOX_HORIZONTAL, rendered)
         self.assertIn(console_ui.BOX_BOTTOM_LEFT, rendered)
         self.assertNotIn("\ufffd", rendered)
+
+    def test_error_preserves_each_traceback_line_with_an_aligned_gutter(self) -> None:
+        output = StringIO()
+        with redirect_stderr(output):
+            console_ui.error(
+                "Model validation failed\n"
+                "Traceback (most recent call last):\n"
+                "  File \"model.py\", line 7, in validate\n"
+                "RuntimeError: incompatible backend"
+            )
+
+        rendered = console_ui.strip_ansi(output.getvalue()).splitlines()
+        self.assertEqual(rendered[0], f"  {console_ui.CROSS} Model validation failed")
+        self.assertEqual(rendered[1], " " * 4 + "Traceback (most recent call last):")
+        self.assertEqual(rendered[2], " " * 6 + 'File "model.py", line 7, in validate')
+        self.assertEqual(rendered[3], " " * 4 + "RuntimeError: incompatible backend")
 
     def test_cli_sources_contain_no_common_mojibake_markers(self) -> None:
         root = Path(__file__).resolve().parents[1]

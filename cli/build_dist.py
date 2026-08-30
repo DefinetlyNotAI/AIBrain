@@ -35,7 +35,7 @@ from src.utils.console_ui import (
 )
 from src.utils.gpu import set_windows_executable_gpu_preference
 from src.utils.runtime import require_managed_runtime
-from src.utils.logging import configure_cli_logging
+from src.utils.logging import configure_cli_logging, report_exception
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
@@ -1135,3 +1135,6 @@ if __name__ == "__main__":
         )
         print()
         raise SystemExit(130)
+    except Exception as exc:
+        report_exception("AIBrain distribution build failed", exc)
+        raise SystemExit(1)

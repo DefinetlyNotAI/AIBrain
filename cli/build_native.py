@@ -36,7 +36,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.runtime import require_managed_runtime
-from src.utils.logging import configure_cli_logging
+from src.utils.logging import configure_cli_logging, report_exception
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
@@ -439,3 +439,6 @@ if __name__ == "__main__":
             "Native build cancelled by keyboard interrupt."
         )
         raise SystemExit(130)
+    except Exception as exc:
+        report_exception("AIBrain native build failed", exc)
+        raise SystemExit(1)

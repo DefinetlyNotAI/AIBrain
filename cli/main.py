@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import clear_screen, error, header, instruction_list, section, status
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
-from src.utils.logging import configure_cli_logging
+from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
@@ -242,3 +242,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         error("AIBrain cancelled by keyboard interrupt.")
         raise SystemExit(130)
+    except Exception as exc:
+        report_exception("AIBrain desktop launcher failed", exc)
+        raise SystemExit(1)

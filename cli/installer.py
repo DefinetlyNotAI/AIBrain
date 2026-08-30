@@ -38,7 +38,7 @@ from src.utils.console_ui import (
 )
 from cli.build_dist import run as run_with_live_output
 from src.models.diagnostics import OllamaDiagnostics
-from src.utils.logging import configure_cli_logging
+from src.utils.logging import configure_cli_logging, report_exception
 
 VENV_DIR = ROOT / ".venv"
 
@@ -685,7 +685,7 @@ def main() -> int:
         try:
             create_environment()
         except Exception as exc:
-            error(f"Unable to create the virtual environment: {exc}")
+            report_exception("Unable to create the virtual environment", exc)
             return 1
     else:
         success("Existing managed runtime selected for repair")
@@ -740,3 +740,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         error("Installation cancelled by keyboard interrupt.")
         raise SystemExit(130)
+    except Exception as exc:
+        report_exception("AIBrain installer failed", exc)
+        raise SystemExit(1)

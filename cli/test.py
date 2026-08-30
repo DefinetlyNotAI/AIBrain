@@ -25,7 +25,7 @@ from src.utils.console_ui import (
 )
 from src.utils.runtime import require_managed_runtime
 from src.utils.runtime import in_managed_virtual_environment
-from src.utils.logging import configure_cli_logging
+from src.utils.logging import configure_cli_logging, report_exception
 
 SUITES: dict[str, tuple[str, list[str]]] = {
     "1": (
@@ -310,3 +310,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         error("Test run cancelled by keyboard interrupt.")
         raise SystemExit(130)
+    except Exception as exc:
+        report_exception("AIBrain test runner failed", exc)
+        raise SystemExit(1)

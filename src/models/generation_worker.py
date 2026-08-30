@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from threading import Event
 from time import monotonic
@@ -8,6 +9,8 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from .instrumented_backend import ActivationFrame, ActivitySource
 from .llama_backend import GenerationConfig, LlamaBackend, reached_sentence_end, sentence_grace_config
+
+LOG = logging.getLogger(__name__)
 
 
 class GenerationWorker(QObject):
@@ -51,6 +54,7 @@ class GenerationWorker(QObject):
             self.finished.emit({"prompt_tokens": prompt_tokens, "generated_tokens": generated_tokens,
                                 "seconds": elapsed, "cancelled": self._cancelled.is_set()})
         except Exception as exc:
+            LOG.exception("Local model generation failed")
             self.failed.emit(f"Generation failed: {exc}")
 
     @Slot()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import blake2b
+import logging
 from pathlib import Path
 from threading import Event
 from time import monotonic
@@ -9,6 +10,8 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from .instrumented_backend import ActivationFrame, ActivitySource
 from .llama_backend import GenerationConfig, LlamaBackend, reached_sentence_end, sentence_grace_config
+
+LOG = logging.getLogger(__name__)
 
 WORLD_SYSTEM = """You are the WORLD DIRECTOR for an open-ended, fictional embodied simulation.
 Write only external world events: sensory detail, other people, places, consequences, and continuity. Never use
@@ -141,6 +144,7 @@ class InfiniteSimulationWorker(QObject):
             self.finished.emit({"turns": turn, "participant_tokens": participant_tokens,
                                 "seconds": monotonic() - started, "cancelled": self._cancelled.is_set()})
         except Exception as exc:
+            LOG.exception("Infinite simulation failed")
             self.failed.emit(f"Infinite simulation failed: {exc}")
         finally:
             self.world.unload()

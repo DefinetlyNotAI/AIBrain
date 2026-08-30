@@ -13,6 +13,7 @@ from src.utils.logging import (
     _uncaught_exception,
     configure_cli_logging,
     configure_logging,
+    report_exception,
     _start_fresh_log,
     restore_cli_output,
 )
@@ -60,6 +61,24 @@ class LoggingTests(unittest.TestCase):
                 _uncaught_exception(type(exc), exc, exc.__traceback__)
             self.assertIn("RuntimeError: boom", crash_log.read_text(encoding="utf-8"))
             self._close_root_handlers()
+
+    def test_handled_exception_preserves_traceback_in_runtime_and_crash_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_log, crash_log = configure_logging("test", Path(directory))
+            try:
+                raise RuntimeError("complete traceback")
+            except RuntimeError as exc:
+                report_exception("Test entry point failed", exc)
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+            runtime_text = runtime_log.read_text(encoding="utf-8")
+            crash_text = crash_log.read_text(encoding="utf-8")
+            self._close_root_handlers()
+
+        self.assertIn("Test entry point failed", runtime_text)
+        self.assertIn("Traceback (most recent call last)", runtime_text)
+        self.assertIn("RuntimeError: complete traceback", runtime_text)
+        self.assertIn("Traceback (most recent call last)", crash_text)
 
     def test_bounded_handler_discards_oldest_data(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -152,6 +171,7 @@ class LoggingTests(unittest.TestCase):
         for script in scripts:
             source = (root / "cli" / script).read_text(encoding="utf-8-sig")
             self.assertIn("configure_cli_logging", source, script)
+            self.assertIn("report_exception", source, script)
 
     def test_diagnostics_cli_records_startup_and_shutdown_lifecycle(self) -> None:
         root = Path(__file__).resolve().parents[1]

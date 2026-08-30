@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from types import ModuleType
 from typing import Any
 
 import numpy as _numpy
+
+LOG = logging.getLogger(__name__)
 
 
 def _select_backend() -> tuple[ModuleType, str, str | None]:
@@ -17,6 +20,11 @@ def _select_backend() -> tuple[ModuleType, str, str | None]:
         _cupy.zeros(1, dtype=_cupy.float32).sum().item()
         return _cupy, "CuPy / CUDA", None
     except Exception as exc:
+        LOG.info(
+            "CUDA array runtime is unavailable; using the NumPy CPU fallback: %s",
+            exc,
+            exc_info=True,
+        )
         return _numpy, "NumPy / CPU", str(exc)
 
 

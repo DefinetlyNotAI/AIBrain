@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import threading
+import traceback as traceback_module
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
@@ -71,7 +72,10 @@ def _strip_ansi(text: str) -> str:
 
 def restore_cli_output() -> None:
     """Restore host streams after a CLI logger is reconfigured or tested."""
-    for stream in (sys.stdout, sys.stderr):
+    streams = (sys.stdout, sys.stderr)
+    if not any(isinstance(stream, ConsoleLogTee) for stream in streams):
+        return
+    for stream in streams:
         if isinstance(stream, ConsoleLogTee):
             stream.flush()
             stream.close()
@@ -155,8 +159,40 @@ def _uncaught_exception(
 ) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         return
-    logging.getLogger("aibrain.crash").critical(
-        "Unhandled application exception", exc_info=(exc_type, value, traceback)
+    report_exception("Unhandled application exception", value, traceback)
+
+
+def format_exception(exception: BaseException) -> str:
+    """Return an exception with every traceback line preserved for display."""
+    return "".join(
+        traceback_module.format_exception(
+            type(exception), exception, exception.__traceback__
+        )
+    ).rstrip()
+
+
+def report_exception(
+        context: str,
+        exception: BaseException,
+        traceback: TracebackType | None = None,
+) -> None:
+    """Record a handled fatal exception once, including its complete traceback.
+
+    CLI entry points call this at their outer boundary.  When logging has not
+    started yet (for example, a failure while configuring it), fall back to
+    stderr so no traceback is swallowed.
+    """
+    exception_traceback = traceback if traceback is not None else exception.__traceback__
+    if logging.getLogger().handlers:
+        logging.getLogger("aibrain.crash").critical(
+            context,
+            exc_info=(type(exception), exception, exception_traceback),
+        )
+        return
+
+    sys.stderr.write(f"{context}\n")
+    traceback_module.print_exception(
+        type(exception), exception, exception_traceback, file=sys.stderr
     )
 
 
