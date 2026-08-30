@@ -97,6 +97,22 @@ class LoggingTests(unittest.TestCase):
         self.assertIn("CLI error output", captured)
         self.assertNotIn("\x1b[31m", captured)
 
+    def test_cli_logging_records_application_logger_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_log, _ = configure_cli_logging("analysis", Path(directory))
+            try:
+                logging.getLogger("aibrain.analysis").info(
+                    "inspection complete: Healthy"
+                )
+                for handler in logging.getLogger().handlers:
+                    handler.flush()
+                captured = runtime_log.read_text(encoding="utf-8")
+            finally:
+                restore_cli_output()
+                self._close_root_handlers()
+
+        self.assertIn("inspection complete: Healthy", captured)
+
     def test_every_cli_entry_point_configures_console_capture(self) -> None:
         root = Path(__file__).resolve().parents[1]
         scripts = (

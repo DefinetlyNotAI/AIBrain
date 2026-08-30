@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from ..connectome.analysis import (
 )
 from ..utils.array_api import BACKEND_NAME, array_api as np
 
+LOG = logging.getLogger(__name__)
 _TENSOR_NAMES = (
     "encoder_weights",
     "encoder_bias",
@@ -287,7 +289,15 @@ class AnalysisInspectionWorker(QObject):
         try:
             self.completed.emit(inspect_npz_model(self._path))
         except (OSError, ValueError) as exc:
+            LOG.warning("Analysis model inspection failed for %s: %s", self._path, exc)
             self.failed.emit(str(exc))
+        except Exception:
+            LOG.exception(
+                "Unexpected failure while inspecting Analysis+ model at %s", self._path
+            )
+            self.failed.emit(
+                "Unexpected inspection failure. See the Analysis runtime log."
+            )
 
 
 class AnalysisWindow(QMainWindow):
@@ -332,7 +342,6 @@ class AnalysisWindow(QMainWindow):
         actions.addStretch(1)
         layout.addLayout(actions)
         self.tabs = QTabWidget()
-        self.tabs.setToolTip("Dashboard overview and optional raw export details")
         overview = QWidget()
         overview_layout = QVBoxLayout(overview)
         self.health_row = QWidget()
@@ -387,6 +396,8 @@ class AnalysisWindow(QMainWindow):
         self.raw.setPlaceholderText("Raw JSON is available only when needed.")
         self.tabs.addTab(overview, "Dashboard")
         self.tabs.addTab(self.raw, "Raw JSON / details")
+        self.tabs.setTabToolTip(0, "Model-health dashboard")
+        self.tabs.setTabToolTip(1, "Optional raw model metadata and export summaries")
         layout.addWidget(self.tabs, 1)
         self.setCentralWidget(page)
         if auto_refresh:
@@ -394,12 +405,19 @@ class AnalysisWindow(QMainWindow):
 
     def refresh(self) -> None:
         if self._closing or self._inspection_thread is not None:
+            LOG.debug(
+                "Ignoring Analysis+ refresh request (closing=%s, inspection_active=%s)",
+                self._closing,
+                self._inspection_thread is not None,
+            )
             return
         path = ConnectomeAnalyzer.default_model_path()
         if not path.is_file():
+            LOG.info("No persisted Analysis+ model found at %s", path)
             self._show_empty(path)
             QTimer.singleShot(0, lambda: self.inspection_finished.emit(False))
             return
+        LOG.info("Starting Analysis+ model inspection for %s", path)
         self.raw.setPlainText("Reading persisted Analysis+ model in the background…")
         thread = QThread(self)
         worker = AnalysisInspectionWorker(path)
@@ -419,11 +437,34 @@ class AnalysisWindow(QMainWindow):
     @Slot(object)
     def _inspection_ready(self, metadata: object) -> None:
         if isinstance(metadata, dict):
+            health = metadata.get("health", {})
+            learning = metadata.get("learning", {})
+            score = (
+                health.get("score_percent", "unknown")
+                if isinstance(health, dict)
+                else "unknown"
+            )
+            frames = (
+                learning.get("lifetime_frames_seen", "unknown")
+                if isinstance(learning, dict)
+                else "unknown"
+            )
+            LOG.info(
+                "Analysis+ model inspection completed (status=%s, health=%s%%, frames=%s)",
+                metadata.get("status", "Unknown"),
+                score,
+                frames,
+            )
             self._show_metadata(metadata)
+        else:
+            LOG.error(
+                "Analysis+ model inspection returned unexpected metadata: %r", metadata
+            )
         self.raw.setPlainText(json.dumps(metadata, indent=2))
 
     @Slot(str)
     def _inspection_failed(self, message: str) -> None:
+        LOG.warning("Analysis+ model is unavailable or invalid: %s", message)
         self._last_healthy = False
         self.health_value.setText("Needs repair")
         self.health_detail.setText(message)
@@ -434,12 +475,19 @@ class AnalysisWindow(QMainWindow):
         self._inspection_thread = None
         self._inspection_worker = None
         if self._closing:
+            LOG.info(
+                "Analysis inspector closed while background inspection was stopping"
+            )
             QTimer.singleShot(0, self.close)
             return
+        LOG.info("Analysis+ inspection cycle finished (healthy=%s)", self._last_healthy)
         self.inspection_finished.emit(self._last_healthy)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._inspection_thread is not None:
+            LOG.info(
+                "Deferring Analysis inspector close until background inspection finishes"
+            )
             self._closing = True
             self._inspection_thread.quit()
             self.hide()
@@ -452,32 +500,36 @@ class AnalysisWindow(QMainWindow):
             self, "Inspect analysis export", "", "Analysis data (*.json *.json.gz)"
         )
         if not filename:
+            LOG.info("Analysis export inspection cancelled")
             return
         try:
             selected = Path(filename)
+            LOG.info("Reading selected Analysis export: %s", selected)
             if selected.suffix == ".gz":
                 with gzip.open(selected, "rt", encoding="utf-8") as handle:
                     payload = json.load(handle)
             else:
                 payload = json.loads(selected.read_text(encoding="utf-8"))
+            summary = {
+                "path": str(selected),
+                "schema": payload.get("schema"),
+                "created_at": payload.get("created_at"),
+                "conversation_turns": len(payload.get("conversation", [])),
+                "has_nn_findings": "analysis_plus" in payload
+                or "neural_network" in payload,
+                "recorded_frame_summary": payload.get("recorded_frame_summary", {}),
+            }
+            LOG.info(
+                "Analysis export inspected (schema=%s, conversation_turns=%s, nn_findings=%s)",
+                summary["schema"],
+                summary["conversation_turns"],
+                summary["has_nn_findings"],
+            )
             self.raw.appendPlainText(
-                "\n\nExport summary:\n"
-                + json.dumps(
-                    {
-                        "path": str(selected),
-                        "schema": payload.get("schema"),
-                        "created_at": payload.get("created_at"),
-                        "conversation_turns": len(payload.get("conversation", [])),
-                        "has_nn_findings": "analysis_plus" in payload
-                        or "neural_network" in payload,
-                        "recorded_frame_summary": payload.get(
-                            "recorded_frame_summary", {}
-                        ),
-                    },
-                    indent=2,
-                )
+                "\n\nExport summary:\n" + json.dumps(summary, indent=2)
             )
         except (OSError, ValueError, json.JSONDecodeError) as exc:
+            LOG.warning("Could not read selected Analysis export: %s", exc)
             self.raw.appendPlainText(f"\n\nCould not read export: {exc}")
 
     def _show_empty(self, path: Path) -> None:

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import sys
+import logging
 import signal
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,10 +15,13 @@ from src.utils.console_ui import clear_screen, error, header, section, status
 from src.utils.logging import configure_cli_logging
 from src.utils.runtime import require_managed_runtime
 
+LOG = logging.getLogger(__name__)
 
 def main() -> int:
     runtime_log, _ = configure_cli_logging("analysis")
+    LOG.info("Starting AIBrain Analysis CLI (runtime log: %s)", runtime_log)
     if not require_managed_runtime(ROOT, "analysis"):
+        LOG.error("Analysis CLI startup stopped because runtime preflight failed")
         return 1
     clear_screen()
     from PySide6.QtCore import QTimer, Qt
@@ -29,6 +33,7 @@ def main() -> int:
     section("Desktop startup", 1)
     status("LOG", f"CLI output: {runtime_log}")
     status("START", "Opening the Analysis+ model inspector")
+    LOG.info("Analysis runtime preflight passed; creating the desktop inspector")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("AIBrain Analysis")
@@ -53,6 +58,10 @@ def main() -> int:
     window.destroyed.connect(app.quit)
 
     def open_inspector(_healthy: bool) -> None:
+        LOG.info(
+            "Initial Analysis+ inspection completed (healthy=%s); showing inspector",
+            _healthy,
+        )
         loading.finish()
         window.showMaximized()
 
@@ -61,7 +70,13 @@ def main() -> int:
     QTimer.singleShot(0, window.refresh)
     try:
         exit_code = app.exec()
-        return 130 if interrupted else exit_code
+        final_exit_code = 130 if interrupted else exit_code
+        LOG.info(
+            "Analysis inspector exited (exit_code=%s, interrupted=%s)",
+            final_exit_code,
+            interrupted,
+        )
+        return final_exit_code
     finally:
         signal.signal(signal.SIGINT, previous_sigint_handler)
 
