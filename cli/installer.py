@@ -26,8 +26,6 @@ from src.utils.console_ui import (
     Color,
     clear_screen,
     color,
-    command_preview,
-    command_output_box,
     detail,
     error,
     header,
@@ -38,6 +36,7 @@ from src.utils.console_ui import (
     success,
     warning,
 )
+from cli.build_dist import run as run_with_live_output
 from src.models.diagnostics import OllamaDiagnostics
 from src.utils.logging import configure_cli_logging
 
@@ -232,35 +231,8 @@ def repair_selected_subsystem(
 
 
 def run(command: list[str]) -> None:
-    command_preview(command)
-
-    process = subprocess.run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-
-    output_parts: list[str] = []
-
-    if process.stdout.strip():
-        output_parts.append(process.stdout.rstrip())
-
-    if process.stderr.strip():
-        output_parts.append(process.stderr.rstrip())
-
-    if output_parts:
-        command_output_box("\n".join(output_parts))
-
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(
-            process.returncode,
-            command,
-            output=process.stdout,
-            stderr=process.stderr,
-        )
+    """Run installer work through the shared live command-output renderer."""
+    run_with_live_output(command)
 
 
 def detect_nvidia() -> GpuCapability | None:
@@ -337,15 +309,45 @@ def _ask_choice(prompt: str, choices: dict[str, str], default: str) -> str:
     rendered = " / ".join(f"[{key.upper()}]{label}" for key, label in choices.items())
     while True:
         try:
-            answer = (
-                input(f"  {prompt} ({rendered}) [{default.upper()}]: ").strip().lower()
-                or default
-            )
+            answer = input(
+                f"  {prompt} ({rendered}) [{default.upper()}]: "
+            ).strip().lower()
         except EOFError:
+            return default
+        if not answer:
+            print(color(default.upper(), Color.GRAY))
             return default
         if answer in choices:
             return answer
         warning(f"Choose one of: {', '.join(choices)}")
+
+
+def select_install_action(
+    *,
+    runtime_exists: bool,
+    install_requested: bool = False,
+    repair_requested: bool = False,
+    assume_yes: bool = False,
+) -> str:
+    """Select the top-level installer action before probing or changing the runtime."""
+    if install_requested:
+        return "install"
+    if repair_requested:
+        if not runtime_exists:
+            raise ValueError("Repair is unavailable until the managed runtime has been installed.")
+        return "repair"
+
+    default = "r" if runtime_exists else "i"
+    if assume_yes:
+        return "repair" if default == "r" else "install"
+
+    choices = {"i": "nstall"}
+    if runtime_exists:
+        choices["r"] = "epair"
+    else:
+        info("Repair is unavailable until the managed runtime has been installed.")
+    selected = _ask_choice("Choose installer action", choices, default)
+    return "repair" if selected == "r" else "install"
 
 
 def select_wheel(
@@ -577,6 +579,8 @@ def verify_installation(
 def completion_screen(
     gpu: GpuCapability | None,
     wheel_tag: str,
+    *,
+    action: str,
 ) -> None:
     backend = (
         "Existing installed backend"
@@ -584,7 +588,7 @@ def completion_screen(
         else f"CUDA / {wheel_tag}" if wheel_tag != "cpu" else "CPU"
     )
     panel(
-        "INSTALLATION COMPLETE",
+        "INSTALLATION COMPLETE" if action == "install" else "REPAIR COMPLETE",
         [
             ("Environment", relative_path(VENV_DIR)),
             ("Backend", backend),
@@ -601,12 +605,12 @@ def print_help_banner() -> None:
         [
             ("-h, --help", "Show this help screen and exit."),
             (
-                "--repair <subsystem>",
-                "Repair only dependencies, backend, native, cache, or models.",
+                "--install",
+                "Select Install mode without showing the action menu.",
             ),
             (
-                "--model <name:tag>",
-                "Required with --repair models; pulls only that model.",
+                "--repair",
+                "Select Repair mode; available only after a managed runtime exists.",
             ),
             (
                 "--backend <auto|cuda|cpu>",
@@ -614,7 +618,7 @@ def print_help_banner() -> None:
             ),
             (
                 "-y, --yes",
-                "Accept recommended CUDA and full-install choices without prompting.",
+                "Accept the recommended action without prompting.",
             ),
         ],
         subtitle="Available Runtime Flags",
@@ -635,10 +639,9 @@ def parse_args() -> argparse.Namespace:
         description=("Install and configure the AIBrain runtime."),
         add_help=True,
     )
-    parser.add_argument(
-        "--repair", choices=("dependencies", "backend", "native", "cache", "models")
-    )
-    parser.add_argument("--model")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--install", action="store_true")
+    action.add_argument("--repair", action="store_true")
     parser.add_argument("--backend", choices=("auto", "cuda", "cpu"), default="auto")
     parser.add_argument("-y", "--yes", action="store_true")
 
@@ -653,7 +656,21 @@ def main() -> int:
     header()
     detail("Log file", str(runtime_log))
 
-    section("System check", 1)
+    existing_runtime = venv_python().exists()
+    section("Choose installer action", 1)
+    try:
+        action = select_install_action(
+            runtime_exists=existing_runtime,
+            install_requested=args.install,
+            repair_requested=args.repair,
+            assume_yes=args.yes,
+        )
+    except ValueError as exc:
+        error(f"REASON: {exc}")
+        return 1
+    success(f"Selected {action} mode")
+
+    section("System check", 2)
 
     if not verify_python():
         return 1
@@ -661,67 +678,41 @@ def main() -> int:
     gpu = detect_nvidia()
     print_gpu(gpu)
 
-    section("Virtual environment", 2)
-    existing_runtime = venv_python().exists()
-
-    try:
-        create_environment()
-    except Exception as exc:
-        error(f"Unable to create the virtual environment: {exc}")
-        return 1
+    section("Virtual environment", 3)
+    if action == "install":
+        try:
+            create_environment()
+        except Exception as exc:
+            error(f"Unable to create the virtual environment: {exc}")
+            return 1
+    else:
+        success("Existing managed runtime selected for repair")
+        detail("Location", relative_path(VENV_DIR))
 
     python = str(venv_python())
 
-    if args.repair:
-        section(f"Targeted repair: {args.repair}", 3)
-        try:
-            repaired = repair_selected_subsystem(
-                args.repair, python, gpu, model=args.model
-            )
-        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
-            error(f"REASON: Targeted {args.repair} repair failed: {exc}")
-            return 1
-        success(f"Targeted {repaired} repair completed")
-        print_final_health(python, gpu)
-        return 0
+    section("Core dependencies", 4)
+    try:
+        install_dependencies(python, gpu)
+    except subprocess.CalledProcessError as exc:
+        error("Dependency installation failed with " f"exit code {exc.returncode}.")
+        return 1
 
-    install_scope = "a"
-    if existing_runtime and not args.yes:
-        install_scope = _ask_choice(
-            "An existing runtime was found. Choose what to install or repair",
-            {"a": "ll components", "d": "ependencies only", "b": "ackend only"},
-            "a",
+    section("Inference backend", 5)
+    try:
+        wheel_tag = install_llama(
+            python,
+            gpu,
+            preference=args.backend,
+            interactive=False,
         )
+    except subprocess.CalledProcessError as exc:
+        error(
+            "llama-cpp-python installation failed " f"with exit code {exc.returncode}."
+        )
+        return 1
 
-    section("Core dependencies", 3)
-
-    if install_scope in {"a", "d"}:
-        try:
-            install_dependencies(python, gpu)
-        except subprocess.CalledProcessError as exc:
-            error("Dependency installation failed with " f"exit code {exc.returncode}.")
-            return 1
-
-    section("Inference backend", 4)
-
-    wheel_tag = "existing"
-    if install_scope in {"a", "b"}:
-        try:
-            wheel_tag = install_llama(
-                python,
-                gpu,
-                preference=args.backend,
-                interactive=not args.yes,
-            )
-
-        except subprocess.CalledProcessError as exc:
-            error(
-                "llama-cpp-python installation failed "
-                f"with exit code {exc.returncode}."
-            )
-            return 1
-
-    section("Verification", 5)
+    section("Verification", 6)
 
     try:
         verify_installation(python)
@@ -734,6 +725,7 @@ def main() -> int:
     completion_screen(
         gpu,
         wheel_tag,
+        action=action,
     )
 
     return 0

@@ -5,7 +5,6 @@ import ctypes
 import os
 import re
 import shutil
-import subprocess
 import sys
 from ctypes import wintypes
 from pathlib import Path
@@ -325,7 +324,19 @@ def shorten_command_argument(argument: str) -> str:
 
 
 def display_command(command_line: list[str]) -> str:
-    return subprocess.list2cmdline([shorten_command_argument(part) for part in command_line])
+    """Render a command preview that can be pasted safely into PowerShell."""
+    arguments = [shorten_command_argument(part) for part in command_line]
+    rendered = [_powershell_quote(argument) for argument in arguments]
+    if rendered and rendered[0] != arguments[0]:
+        return "& " + " ".join(rendered)
+    return " ".join(rendered)
+
+
+def _powershell_quote(argument: str) -> str:
+    """Quote one PowerShell argument only when shell syntax could reinterpret it."""
+    if not argument or re.search(r"[\s'\"`$&|;<>()[\]{}*,#?~@]", argument):
+        return "'" + argument.replace("'", "''") + "'"
+    return argument
 
 
 def shorten_output_paths(text: str) -> str:

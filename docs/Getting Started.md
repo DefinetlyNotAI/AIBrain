@@ -17,11 +17,10 @@ model store directly and does not copy or redownload model blobs.
 
 ## Install into the managed environment
 
-The installer finishes with a read-only health report for hardware/CUDA fallback, Python, pip/libraries, model
-manifests and blobs, `.cache`, and native DLLs. For a narrow repair, use one selected subsystem instead of reinstalling
-everything: `python cli\installer.py --repair dependencies`, `--repair backend`, `--repair native`, or `--repair cache`.
-Model repair requires an explicit reference, for example `python cli\installer.py --repair models --model llama3:latest`;
-the installer never deletes model blobs implicitly.
+The installer starts with an **Install** or **Repair** menu. Repair is unavailable until the managed runtime exists. The
+selected mode then automatically uses the recommended dependency and CUDA/CPU backend choices, finishes with a
+read-only health report for hardware/CUDA fallback, Python, pip/libraries, model manifests and blobs, `.cache`, and
+native DLLs. It never deletes model blobs implicitly.
 
 From the project root, run:
 
@@ -33,6 +32,16 @@ py cli\installer.py
 PySide6, NumPy, ModernGL, and Nuitka, then chooses a prebuilt `llama-cpp-python` wheel. The installer checks
 `nvidia-smi` first: when a compatible published NVIDIA CUDA wheel is available it uses that; otherwise it installs the
 official CPU wheel. It does not fall back to a local C/C++ source build.
+
+For unattended installation or repair, choose the mode explicitly and accept the defaults:
+
+```powershell
+py cli\installer.py -y --install
+py cli\installer.py -y --repair
+```
+
+The installer previews commands with PowerShell-safe quoting and streams their output live in the same framed view used
+by the distribution builder.
 
 If PowerShell blocks activation, make the current user policy permit local scripts, then open a new terminal:
 

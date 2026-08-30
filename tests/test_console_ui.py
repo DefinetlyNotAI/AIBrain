@@ -300,6 +300,21 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertTrue(all(len(line) <= 58 for line in lines))
         self.assertFalse(any(line.endswith("...") for line in lines))
 
+    def test_command_preview_quotes_versioned_packages_for_powershell(self) -> None:
+        rendered = console_ui.display_command(
+            [
+                r".\.venv\Scripts\python.exe",
+                "-m",
+                "pip",
+                "install",
+                "PySide6>=6.7,<7",
+                "cupy-cuda13x[ctk]>=14,<15",
+            ]
+        )
+
+        self.assertIn("'PySide6>=6.7,<7'", rendered)
+        self.assertIn("'cupy-cuda13x[ctk]>=14,<15'", rendered)
+
     def test_live_command_box_keeps_and_redraws_its_footer_for_partial_output(self) -> None:
         class InteractiveText(StringIO):
             def isatty(self) -> bool:

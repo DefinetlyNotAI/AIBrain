@@ -3,10 +3,14 @@ from __future__ import annotations
 import tempfile
 import unittest
 import subprocess
+import sys
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 from cli import installer
+from src.utils.console_ui import Color, strip_ansi
 
 
 class InstallerRepairTests(unittest.TestCase):
@@ -60,6 +64,72 @@ class InstallerRepairTests(unittest.TestCase):
 
         self.assertEqual(repaired, "dependencies")
         install_dependencies.assert_called_once_with("managed-python", None)
+
+    def test_installer_uses_the_build_runner_for_live_command_output(self) -> None:
+        command = ["managed-python", "-m", "pip", "install", "PySide6>=6.7,<7"]
+
+        with patch("cli.installer.run_with_live_output") as run_live:
+            installer.run(command)
+
+        run_live.assert_called_once_with(command)
+
+    def test_repair_is_unavailable_before_the_first_install(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            installer.select_install_action(
+                runtime_exists=False,
+                repair_requested=True,
+            )
+
+    def test_automatic_action_uses_install_without_a_runtime_and_repair_with_one(self) -> None:
+        self.assertEqual(
+            installer.select_install_action(runtime_exists=False, assume_yes=True),
+            "install",
+        )
+        self.assertEqual(
+            installer.select_install_action(runtime_exists=True, assume_yes=True),
+            "repair",
+        )
+
+    def test_empty_interactive_action_writes_the_default_in_grey(self) -> None:
+        output = StringIO()
+        stdin = StringIO()
+        stdin.isatty = lambda: True  # type: ignore[method-assign]
+        with (
+            patch.object(installer.sys, "stdin", stdin),
+            patch("builtins.input", return_value=""),
+            redirect_stdout(output),
+        ):
+            action = installer.select_install_action(runtime_exists=True)
+
+        self.assertEqual(action, "repair")
+        self.assertIn(Color.GRAY, output.getvalue())
+        self.assertIn("R", strip_ansi(output.getvalue()))
+
+    def test_action_flags_select_the_requested_mode(self) -> None:
+        self.assertEqual(
+            installer.select_install_action(runtime_exists=True, install_requested=True),
+            "install",
+        )
+        self.assertEqual(
+            installer.select_install_action(runtime_exists=True, repair_requested=True),
+            "repair",
+        )
+
+    def test_install_and_repair_flags_are_mutually_exclusive(self) -> None:
+        with patch.object(sys, "argv", ["installer.py", "--install", "--repair"]):
+            with self.assertRaises(SystemExit):
+                installer.parse_args()
+
+    def test_automatic_install_and_repair_flags_are_accepted(self) -> None:
+        for action in ("--install", "--repair"):
+            with self.subTest(action=action), patch.object(
+                sys, "argv", ["installer.py", "-y", action]
+            ):
+                parsed = installer.parse_args()
+
+            self.assertTrue(parsed.yes)
+            self.assertEqual(parsed.install, action == "--install")
+            self.assertEqual(parsed.repair, action == "--repair")
 
     def test_cuda_umd_banner_is_detected(self) -> None:
         query = subprocess.CompletedProcess([], 0, "NVIDIA RTX, 610.88\n", "")
