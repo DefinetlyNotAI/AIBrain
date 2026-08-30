@@ -222,7 +222,7 @@ def main() -> int:
     loading.cancelled.connect(startup_worker.cancel)
     loading.cancelled.connect(startup_thread.quit)
     loading.cancelled.connect(app.quit)
-    loading.showMaximized()
+    loading.show_centered()
     QTimer.singleShot(0, startup_thread.start)
     QTimer.singleShot(0, gpu_probe.run)
     try:

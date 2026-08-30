@@ -66,7 +66,7 @@ def main() -> int:
         window.showMaximized()
 
     window.inspection_finished.connect(open_inspector)
-    loading.showMaximized()
+    loading.show_centered()
     QTimer.singleShot(0, window.refresh)
     try:
         exit_code = app.exec()

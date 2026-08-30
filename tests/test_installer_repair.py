@@ -73,6 +73,24 @@ class InstallerRepairTests(unittest.TestCase):
 
         run_live.assert_called_once_with(command)
 
+    def test_repair_reinstalls_dependencies_and_backend(self) -> None:
+        with patch("cli.installer.run") as run_command:
+            installer.install_dependencies("managed-python", None, force_reinstall=True)
+
+        dependency_command = run_command.call_args_list[-1].args[0]
+        self.assertIn("--upgrade", dependency_command)
+        self.assertIn("--force-reinstall", dependency_command)
+
+        with (
+            patch("cli.installer.select_wheel", return_value=("cpu", "CPU")),
+            patch("cli.installer.run") as run_command,
+        ):
+            installer.install_llama("managed-python", None, force_reinstall=True)
+
+        backend_command = run_command.call_args.args[0]
+        self.assertIn("--upgrade", backend_command)
+        self.assertIn("--force-reinstall", backend_command)
+
     def test_repair_is_unavailable_before_the_first_install(self) -> None:
         with self.assertRaisesRegex(ValueError, "unavailable"):
             installer.select_install_action(

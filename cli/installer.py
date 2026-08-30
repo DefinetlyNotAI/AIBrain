@@ -447,6 +447,8 @@ def create_environment() -> None:
 def install_dependencies(
     python: str,
     gpu: GpuCapability | None = None,
+    *,
+    force_reinstall: bool = False,
 ) -> None:
     info("Updating Python package manager")
 
@@ -470,15 +472,11 @@ def install_dependencies(
     for package in packages:
         detail("Package", package)
 
-    run(
-        [
-            python,
-            "-m",
-            "pip",
-            "install",
-            *packages,
-        ]
-    )
+    command = [python, "-m", "pip", "install"]
+    if force_reinstall:
+        command.extend(("--upgrade", "--force-reinstall"))
+    command.extend(packages)
+    run(command)
 
     success("Core dependencies installed")
 
@@ -489,6 +487,7 @@ def install_llama(
     *,
     preference: str = "auto",
     interactive: bool = False,
+    force_reinstall: bool = False,
 ) -> str:
     wheel_tag, description = select_wheel(
         gpu, preference=preference, interactive=interactive
@@ -517,6 +516,8 @@ def install_llama(
         f"{WHEEL_ROOT}/{wheel_tag}",
         "llama-cpp-python>=0.3.0",
     ]
+    if force_reinstall:
+        command[4:4] = ["--upgrade", "--force-reinstall"]
 
     try:
         run(command)
@@ -535,18 +536,19 @@ def install_llama(
         warning(f"{wheel_tag} installation failed.")
         warning("Retrying with the official CPU wheel.")
 
-        run(
-            [
-                python,
-                "-m",
-                "pip",
-                "install",
-                "--only-binary=llama-cpp-python",
-                "--extra-index-url",
-                f"{WHEEL_ROOT}/cpu",
-                "llama-cpp-python>=0.3.0",
-            ]
-        )
+        fallback_command = [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--only-binary=llama-cpp-python",
+            "--extra-index-url",
+            f"{WHEEL_ROOT}/cpu",
+            "llama-cpp-python>=0.3.0",
+        ]
+        if force_reinstall:
+            fallback_command[4:4] = ["--upgrade", "--force-reinstall"]
+        run(fallback_command)
 
         success("CPU fallback installed successfully")
 
@@ -693,7 +695,7 @@ def main() -> int:
 
     section("Core dependencies", 4)
     try:
-        install_dependencies(python, gpu)
+        install_dependencies(python, gpu, force_reinstall=action == "repair")
     except subprocess.CalledProcessError as exc:
         error("Dependency installation failed with " f"exit code {exc.returncode}.")
         return 1
@@ -705,6 +707,7 @@ def main() -> int:
             gpu,
             preference=args.backend,
             interactive=False,
+            force_reinstall=action == "repair",
         )
     except subprocess.CalledProcessError as exc:
         error(

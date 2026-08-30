@@ -129,6 +129,14 @@ class LoggingTests(unittest.TestCase):
             source = (root / "cli" / script).read_text(encoding="utf-8-sig")
             self.assertIn("configure_cli_logging", source, script)
 
+    def test_diagnostics_cli_records_startup_and_shutdown_lifecycle(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "cli" / "diagnostic.py").read_text(encoding="utf-8-sig")
+
+        self.assertIn("Starting AIBrain Diagnostics CLI", source)
+        self.assertIn("Diagnostics runtime preflight passed", source)
+        self.assertIn("Diagnostics window exited", source)
+
 
 if __name__ == "__main__":
     unittest.main()

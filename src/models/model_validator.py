@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import re
+import traceback
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -13,8 +14,8 @@ from PySide6.QtCore import QObject, Signal, Slot
 from .model_info import ModelInfo
 from .ollama_discovery import OllamaDiscovery
 
-CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache"
-_VALIDATION_FORMAT = 3
+CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache" / "validation"
+_VALIDATION_FORMAT = 4
 
 
 def _validate_digest(
@@ -92,7 +93,7 @@ def _store_result(model: ModelInfo, error: str | None, *, verify_backend: bool) 
     if model.blob_path is None:
         return
     try:
-        CACHE_DIRECTORY.mkdir(exist_ok=True)
+        CACHE_DIRECTORY.mkdir(parents=True, exist_ok=True)
         _cache_path(model).write_text(
             json.dumps(
                 {
@@ -162,7 +163,10 @@ class ModelValidator:
                                 GenerationConfig(context_length=512, gpu_layers=0),
                             )
                         except Exception as exc:
-                            error = f"llama.cpp compatibility check failed: {exc}"
+                            error = (
+                                f"llama.cpp compatibility check failed: {exc}\n"
+                                + traceback.format_exc().rstrip()
+                            )
                         finally:
                             backend.unload()
                 else:

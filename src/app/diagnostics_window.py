@@ -95,14 +95,16 @@ class DiagnosticsWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            self.completed.emit(
-                OllamaDiagnostics().inspect(
-                    verify_backend=True,
-                    cancelled=self._cancelled,
-                    progress=self.progress.emit,
-                )
+            LOG.info("Starting background Ollama model diagnostics")
+            diagnostics = OllamaDiagnostics().inspect(
+                verify_backend=True,
+                cancelled=self._cancelled,
+                progress=self.progress.emit,
             )
+            LOG.info("Background Ollama model diagnostics completed (%s models)", len(diagnostics))
+            self.completed.emit(diagnostics)
         except Exception as exc:
+            LOG.exception("Background Ollama model diagnostics failed")
             self.failed.emit(str(exc))
 
 
@@ -184,7 +186,8 @@ class DiagnosticsWindow(QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setUniformRowHeights(False)
-        self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.table.setWordWrap(True)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.table.itemSelectionChanged.connect(self._update_actions)
         self.table.itemClicked.connect(self._open_manifest_item)
         header = self.table.header()
@@ -247,6 +250,11 @@ class DiagnosticsWindow(QMainWindow):
 
     def refresh(self) -> None:
         if self._closing or self._diagnostics_thread is not None:
+            LOG.debug(
+                "Ignoring diagnostics refresh request (closing=%s, inspection_active=%s)",
+                self._closing,
+                self._diagnostics_thread is not None,
+            )
             return
         self.table.clear()
         self._log("SCAN", "Starting model, CUDA, OpenGL, runtime, and cache checks")
@@ -352,8 +360,10 @@ class DiagnosticsWindow(QMainWindow):
         self._set_refreshing(False)
         self._update_actions()
         if self._closing:
+            LOG.info("Diagnostics window closed while background inspection was stopping")
             QTimer.singleShot(0, self.close)
             return
+        LOG.info("Diagnostics inspection cycle finished (healthy=%s)", self._last_refresh_succeeded)
         self.inspection_finished.emit(self._last_refresh_succeeded)
 
     def _set_refreshing(self, refreshing: bool) -> None:
@@ -392,9 +402,9 @@ class DiagnosticsWindow(QMainWindow):
             arguments = [
                 str(PROJECT_ROOT / "cli" / "installer.py"),
                 "--repair",
-                "backend",
+                "-y",
             ]
-            action = "Repairing the llama.cpp backend; the Ollama model data is already usable"
+            action = "Reinstalling the llama.cpp backend; Ollama model data is preserved"
         else:
             confirmation = QMessageBox.question(
                 self,
@@ -424,6 +434,7 @@ class DiagnosticsWindow(QMainWindow):
         process.errorOccurred.connect(self._repair_error)
         process.finished.connect(self._repair_finished)
         self._repair_process = process
+        LOG.info("Starting diagnostics repair: %s", action)
         self._live_output.feed(f"Starting: {action}\n")
         self.output.setPlainText(self._live_output.render())
         process.start()
@@ -440,6 +451,15 @@ class DiagnosticsWindow(QMainWindow):
         self.output.moveCursor(QTextCursor.MoveOperation.End)
 
     def _log(self, level: str, message: str) -> None:
+        LOG.log(
+            {
+                "ERROR": logging.ERROR,
+                "WARN": logging.WARNING,
+            }.get(level, logging.INFO),
+            "%s: %s",
+            level,
+            message,
+        )
         line = f"[{datetime.now().strftime('%H:%M:%S')}] {level:<7} {message}"
         self._live_output.feed(line + "\n")
         self.output.setPlainText(self._live_output.render())
@@ -447,6 +467,7 @@ class DiagnosticsWindow(QMainWindow):
 
     def _repair_error(self, _error: QProcess.ProcessError) -> None:
         if self._repair_process is not None:
+            LOG.error("Diagnostics repair command error: %s", self._repair_process.errorString())
             self._live_output.feed(
                 f"Repair command error: {self._repair_process.errorString()}\n"
             )
@@ -457,6 +478,7 @@ class DiagnosticsWindow(QMainWindow):
         self._live_output.feed(f"Repair command finished with exit code {exit_code}.\n")
         self.output.setPlainText(self._live_output.render())
         self._repair_process = None
+        LOG.info("Diagnostics repair command finished with exit code %s", exit_code)
         if exit_code == 0:
             OllamaDiagnostics.invalidate_validation_cache(PROJECT_ROOT)
         self._update_actions()

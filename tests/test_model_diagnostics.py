@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import struct
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
+
+from src.app.loading_window import LoadingWindow
 from src.models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from src.app.analysis_window import AnalysisWindow
 from src.app.diagnostics_window import (
     DiagnosticsWindow,
+    DiagnosticsWorker,
     LiveOutputBuffer,
     normalize_process_output,
 )
@@ -19,6 +27,35 @@ from src.models.model_info import ModelInfo
 
 
 class ModelDiagnosticsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_loader_is_compact_and_centred_instead_of_maximized(self) -> None:
+        loader = LoadingWindow()
+        try:
+            loader.show_centered()
+            self.app.processEvents()
+
+            self.assertFalse(loader.isMaximized())
+            self.assertEqual(loader.size().width(), 560)
+            self.assertEqual(loader.size().height(), 270)
+        finally:
+            loader.finish()
+            self.app.processEvents()
+
+    def test_raw_error_trace_column_wraps_without_elision(self) -> None:
+        window = DiagnosticsWindow(auto_refresh=False)
+        try:
+            self.assertTrue(window.table.wordWrap())
+            self.assertEqual(
+                window.table.textElideMode(),
+                Qt.TextElideMode.ElideNone,
+            )
+        finally:
+            window.close()
+            self.app.processEvents()
+
     def test_process_output_removes_terminal_control_sequences(self) -> None:
         rendered = normalize_process_output(
             "writing manifest \x1b[K\rsuccess \x1b[K\x1b[?25h\x1b[?2026l"
@@ -47,6 +84,24 @@ class ModelDiagnosticsTests(unittest.TestCase):
 
         self.assertIn("itemClicked.connect(self._open_manifest_item)", source)
         self.assertNotIn("itemDoubleClicked", source)
+
+    def test_backend_repair_uses_the_current_noninteractive_installer_flags(self) -> None:
+        source = inspect.getsource(DiagnosticsWindow.repair_selected)
+
+        self.assertIn('"--repair",', source)
+        self.assertIn('"-y",', source)
+        self.assertNotIn('"backend",', source)
+
+    def test_background_diagnostics_logs_start_and_completion(self) -> None:
+        worker = DiagnosticsWorker()
+        with (
+            patch("src.app.diagnostics_window.OllamaDiagnostics.inspect", return_value=[]),
+            self.assertLogs("src.app.diagnostics_window", level="INFO") as captured,
+        ):
+            worker.run()
+
+        self.assertIn("Starting background Ollama model diagnostics", captured.output[0])
+        self.assertIn("completed (0 models)", captured.output[1])
 
     def _write_manifest(self, root: Path, *, blob_data: bytes) -> Path:
         manifest = (

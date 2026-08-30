@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QObject, Qt, Signal, Slot
-from PySide6.QtGui import QOffscreenSurface, QOpenGLContext, QSurfaceFormat
+from PySide6.QtGui import (
+    QGuiApplication,
+    QOffscreenSurface,
+    QOpenGLContext,
+    QSurfaceFormat,
+)
 from PySide6.QtWidgets import QLabel, QProgressBar, QVBoxLayout, QWidget
+
+LOG = logging.getLogger(__name__)
 
 
 class GpuProbe(QObject):
@@ -13,6 +22,7 @@ class GpuProbe(QObject):
 
     @Slot()
     def run(self) -> None:
+        LOG.info("Starting OpenGL adapter probe for startup loader")
         surface = QOffscreenSurface()
         surface.setFormat(QSurfaceFormat.defaultFormat())
         surface.create()
@@ -20,6 +30,7 @@ class GpuProbe(QObject):
         context.setFormat(surface.format())
 
         if not context.create() or not context.makeCurrent(surface):
+            LOG.warning("OpenGL startup probe could not create a current context")
             self.failed.emit("Could not create an OpenGL startup context")
             return
 
@@ -29,9 +40,11 @@ class GpuProbe(QObject):
             gl_context = moderngl.create_context(require=330)
             renderer = str(gl_context.info.get("GL_RENDERER", "Unknown renderer"))
             vendor = str(gl_context.info.get("GL_VENDOR", "Unknown vendor"))
+            LOG.info("Startup loader detected OpenGL adapter: vendor=%s renderer=%s", vendor, renderer)
             self.completed.emit(vendor, renderer)
             gl_context.release()
         except Exception as exc:
+            LOG.exception("Startup loader could not inspect the OpenGL adapter")
             self.failed.emit(f"Could not inspect the OpenGL adapter: {exc}")
         finally:
             context.doneCurrent()
@@ -94,18 +107,30 @@ class LoadingWindow(QWidget):
         layout.addWidget(self.detail)
         layout.addStretch(1)
 
+    def show_centered(self) -> None:
+        """Show the compact loader in the centre of the primary work area."""
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            self.move(available.center() - self.frameGeometry().center())
+        LOG.info("Showing compact startup loader (size=%sx%s)", self.width(), self.height())
+        self.show()
+
     def set_progress(self, current: int, total: int, detail: str) -> None:
         if total > 0:
             self.progress.setRange(0, total)
             self.progress.setValue(current)
         self.detail.setText(detail)
+        LOG.debug("Startup loader progress: %s/%s %s", current, total, detail)
 
     def finish(self) -> None:
         """Close after a successful handoff without treating it as cancellation."""
         self._completed = True
+        LOG.info("Startup loader handoff completed")
         self.close()
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if not self._completed:
+            LOG.info("Startup loader was cancelled")
             self.cancelled.emit()
         super().closeEvent(event)

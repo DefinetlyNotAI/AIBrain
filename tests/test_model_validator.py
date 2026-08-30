@@ -125,3 +125,32 @@ class ModelValidatorTests(unittest.TestCase):
                 )
 
             backend_type.return_value.load.assert_called_once()
+
+    def test_backend_validation_preserves_the_full_exception_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            blob = root / "model.gguf"
+            blob.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
+            model = ModelInfo("demo", "latest", blob, size_bytes=blob.stat().st_size)
+            with (
+                patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache" / "validation"),
+                patch(
+                    "src.models.model_validator.OllamaDiscovery._validate_gguf",
+                    return_value=None,
+                ),
+                patch("src.models.llama_backend.LlamaBackend") as backend_type,
+            ):
+                backend_type.return_value.load.side_effect = RuntimeError(
+                    "unsupported model architecture"
+                )
+                validated = ModelValidator.validate(
+                    [model], Event(), lambda *_: None, verify_backend=True
+                )
+
+        self.assertIn("llama.cpp compatibility check failed", validated[0].error)
+        self.assertIn("Traceback", validated[0].error)
+        self.assertIn("unsupported model architecture", validated[0].error)
+
+    def test_validation_cache_lives_in_the_repairable_validation_directory(self) -> None:
+        self.assertEqual(model_validator.CACHE_DIRECTORY.name, "validation")
+        self.assertEqual(model_validator.CACHE_DIRECTORY.parent.name, ".cache")

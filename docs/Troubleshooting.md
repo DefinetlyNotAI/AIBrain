@@ -31,7 +31,8 @@ backend-incompatible blobs by design.
 
 Run the installer in Repair mode to reinstall the managed dependencies and selected llama.cpp backend, then review its
 final health report: `py cli\installer.py -y --repair`. Repair is available only after the managed runtime has been
-installed. Each failure includes a `REASON`; model blobs and native DLLs are never removed by the standard repair flow.
+installed. It clears the disposable validation cache so a stale backend failure is not reused. Each failure includes a
+`REASON`; model blobs and native DLLs are never removed by the standard repair flow.
 
 Lower **Context** and set **GPU layers** to `0`, then try again. This reduces memory requirements and rules out
 GPU-offload incompatibility. A valid GGUF file may still require a different llama.cpp build or more memory than the
