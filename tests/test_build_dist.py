@@ -107,6 +107,23 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertEqual(output_box.partial, ["Downloading: 25%", "Downloading: 25%", "Downloading: 50%"])
         self.assertEqual(output_box.completed, ["Done"])
 
+    @patch("cli.build_dist.time.monotonic", return_value=115.0)
+    def test_silent_build_heartbeat_reports_live_work(self, _monotonic) -> None:  # type: ignore[no-untyped-def]
+        class OutputBox:
+            def __init__(self) -> None:
+                self.completed: list[str] = []
+
+            def write(self, text: str) -> None:
+                self.completed.append(text)
+
+        output_box = OutputBox()
+        next_heartbeat = build_dist._report_build_heartbeat(output_box, 100.0)  # type: ignore[arg-type]
+
+        self.assertEqual(next_heartbeat, 115.0)
+        self.assertEqual(len(output_box.completed), 1)
+        self.assertIn("Still working: Nuitka is running", output_box.completed[0])
+        self.assertIn("15s", output_box.completed[0])
+
     def test_run_renders_unbuffered_progress_before_the_child_completes(self) -> None:
         class OutputBox:
             partial_times: list[float] = []

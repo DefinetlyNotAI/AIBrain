@@ -45,6 +45,7 @@ NUMPY_DLL_ROOT = SITE_PACKAGES / "numpy.libs"
 
 RUNTIME_DLLS = ("vcomp140.dll",)
 NATIVE_LIBRARY = ROOT / "dll" / "aibrain.connectome.dll"
+BUILD_HEARTBEAT_SECONDS = 15.0
 
 # Keep Nuitka's module graph aligned with the application rather than with the
 # optional feature sets advertised by dependency package hooks. ModernGL is
@@ -366,6 +367,23 @@ def _render_new_build_output(
     return offset, pending
 
 
+def _report_build_heartbeat(
+        output_box: CommandOutputBox,
+        last_child_output: float,
+) -> float:
+    """Keep silent Nuitka stages visibly alive without implying progress."""
+    now = time.monotonic()
+    silent_seconds = now - last_child_output
+    if silent_seconds < BUILD_HEARTBEAT_SECONDS:
+        return last_child_output
+
+    output_box.write(
+        "Still working: Nuitka is running without new output "
+        f"for {silent_seconds:.0f}s (source generation, compilation, and linking can be silent)."
+    )
+    return now
+
+
 def _stop_process_tree(process_id: int) -> None:
     """Force-stop a process and every child process it created."""
     if os.name == "nt":
@@ -597,6 +615,7 @@ def _run_with_conpty(
 
     pending = ""
     reader_finished = False
+    last_child_output = time.monotonic()
 
     try:
         with CommandOutputBox() as output_box:
@@ -610,6 +629,7 @@ def _run_with_conpty(
                     reader_finished = True
 
                 elif chunk:
+                    last_child_output = time.monotonic()
                     text = decoder.decode(
                         chunk,
                         final=False,
@@ -623,6 +643,12 @@ def _run_with_conpty(
                         )
 
                 return_code = process.poll()
+
+                if return_code is None:
+                    last_child_output = _report_build_heartbeat(
+                        output_box,
+                        last_child_output,
+                    )
 
                 if return_code is not None:
                     process.close_terminal()
@@ -705,17 +731,27 @@ def _run_with_file_tailer(
             try:
                 offset = 0
                 pending = ""
+                last_child_output = time.monotonic()
 
                 with CommandOutputBox() as output_box:
                     while process.poll() is None:
                         output_file.flush()
 
+                        previous_offset = offset
                         offset, pending = _render_new_build_output(
                             output_path,
                             offset,
                             pending,
                             output_box,
                         )
+
+                        if offset != previous_offset:
+                            last_child_output = time.monotonic()
+                        else:
+                            last_child_output = _report_build_heartbeat(
+                                output_box,
+                                last_child_output,
+                            )
 
                         time.sleep(0.05)
 

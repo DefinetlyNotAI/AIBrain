@@ -84,7 +84,9 @@ llama.cpp, native connectome, and required Visual C++ runtime files, and runs wi
 `.venv`.
 
 The builder invokes Nuitka in unbuffered mode, so its carriage-return progress frames are shown live in an interactive
-terminal while each application is compiling.
+terminal while each application is compiling. Nuitka can be quiet during C-source generation, C compilation, or linking;
+the builder prints a **Still working** heartbeat every 15 seconds during those silent phases so they are not mistaken for
+a frozen build.
 
 ## Command logs
 
