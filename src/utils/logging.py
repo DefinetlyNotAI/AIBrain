@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import sys
 import threading
@@ -163,6 +164,17 @@ def _thread_exception(args: threading.ExceptHookArgs) -> None:
     _uncaught_exception(args.exc_type, args.exc_value, args.exc_traceback)
 
 
+def _start_fresh_log(path: Path) -> Path:
+    """Clear a run log or select an isolated run path when Windows holds it open."""
+    try:
+        path.unlink(missing_ok=True)
+        return path
+    except PermissionError:
+        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
+        fallback = path.with_name(f"{path.stem}.{timestamp}-{os.getpid()}{path.suffix}")
+        return fallback
+
+
 def configure_logging(feature: str | Path = "main", log_directory: Path | None = None) -> tuple[Path, Path]:
     """Start fresh normal and crash logs for this application run.
 
@@ -174,16 +186,15 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
         feature = "main"
     directory = log_directory or PROJECT_ROOT / "logs"
     directory.mkdir(parents=True, exist_ok=True)
-    runtime_log = directory / f"aibrain.{feature}.log"
-    crash_log = directory / f"crash.{feature}.log"
-    runtime_log.unlink(missing_ok=True)
-    crash_log.unlink(missing_ok=True)
 
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
     for handler in root.handlers[:]:
         root.removeHandler(handler)
         handler.close()
+
+    runtime_log = _start_fresh_log(directory / f"aibrain.{feature}.log")
+    crash_log = _start_fresh_log(directory / f"crash.{feature}.log")
+    root.setLevel(logging.INFO)
 
     formatter = AlignedFormatter(colour=sys.stderr.isatty())
     stream = logging.StreamHandler()
