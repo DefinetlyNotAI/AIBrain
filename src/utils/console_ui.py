@@ -310,10 +310,10 @@ def shorten_command_argument(argument: str) -> str:
         return rf".\{relative}" if relative else "."
 
     # Omit an absolute executable path only when PATH resolves its basename to
-    # the exact same file.  A local venv Python must remain explicit when a
-    # different global Python is on PATH.
+    # the exact same file. Keep an explicit relative venv path visible even
+    # when that same interpreter is also available on PATH.
     path = Path(argument)
-    if path.suffix.lower() == ".exe" and path.is_file():
+    if path.is_absolute() and path.suffix.lower() == ".exe" and path.is_file():
         resolved_on_path = shutil.which(path.name)
         if resolved_on_path:
             try:

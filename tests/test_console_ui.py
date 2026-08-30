@@ -361,3 +361,21 @@ class ConsoleUiTests(unittest.TestCase):
                 console_ui.shorten_command_argument(str(executable)),
                 str(executable),
             )
+
+    def test_relative_executable_path_remains_explicit_when_it_is_on_path(self) -> None:
+        local_executable = (
+            Path(console_ui.ROOT)
+            / ".venv"
+            / "Scripts"
+            / "python.exe"
+        )
+
+        with patch.object(
+            console_ui.shutil,
+            "which",
+            return_value=str(local_executable),
+        ):
+            self.assertEqual(
+                console_ui.shorten_command_argument(r".\.venv\Scripts\python.exe"),
+                r".\.venv\Scripts\python.exe",
+            )
