@@ -123,6 +123,13 @@ class ConsoleFormatter(logging.Formatter):
         return color(rendered, tone, Color.BOLD) if self.colour else rendered
 
 
+class ConsoleRecordFilter(logging.Filter):
+    """Keep file-only command transcripts out of the interactive console."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.name != "aibrain.command"
+
+
 class BoundedFileHandler(logging.FileHandler):
     """Keep the newest log data and discard old complete lines above the cap."""
 
@@ -271,6 +278,7 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
 
     formatter = ConsoleFormatter(colour=sys.stderr.isatty())
     stream = logging.StreamHandler()
+    stream.addFilter(ConsoleRecordFilter())
     stream.setFormatter(formatter)
     root.addHandler(stream)
 

@@ -4,6 +4,8 @@ import logging
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -177,16 +179,23 @@ class LoggingTests(unittest.TestCase):
 
     def test_completed_command_output_is_logged_once_without_console_decoration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            runtime_log, _ = configure_logging("test", Path(directory))
-            log_completed_command(["python", "-m", "unittest"], "ok\nfinished", return_code=0)
-            for handler in logging.getLogger().handlers:
-                handler.flush()
-            captured = runtime_log.read_text(encoding="utf-8")
-            self._close_root_handlers()
+            console = StringIO()
+            with redirect_stderr(console):
+                runtime_log, _ = configure_logging("test", Path(directory))
+                log_completed_command(
+                    ["python", "-m", "unittest"],
+                    "ok\nfinished",
+                    return_code=0,
+                )
+                for handler in logging.getLogger().handlers:
+                    handler.flush()
+                captured = runtime_log.read_text(encoding="utf-8")
+                self._close_root_handlers()
 
         self.assertIn("Command completed with exit code 0", captured)
         self.assertIn("ok", captured)
         self.assertNotIn("+---", captured)
+        self.assertEqual(console.getvalue(), "")
 
     def test_new_run_removes_all_stale_application_logs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
