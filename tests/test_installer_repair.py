@@ -154,7 +154,7 @@ class InstallerRepairTests(unittest.TestCase):
 
         self.assertEqual(action, "repair")
         self.assertIn(Color.GRAY, output.getvalue())
-        self.assertIn("R", strip_ansi(output.getvalue()))
+        self.assertIn("Repair", strip_ansi(output.getvalue()))
 
     def test_action_flags_select_the_requested_mode(self) -> None:
         self.assertEqual(

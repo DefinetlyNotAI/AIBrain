@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import (
     Color,
+    ask_choice,
     clear_screen,
     color,
     detail,
@@ -308,22 +309,8 @@ def available_wheel(tag: str) -> bool:
 
 def _ask_choice(prompt: str, choices: dict[str, str], default: str) -> str:
     """Ask one bounded installer question, defaulting safely without a TTY."""
-    if not sys.stdin.isatty():
-        return default
-    rendered = " / ".join(f"[{key.upper()}]{label}" for key, label in choices.items())
-    while True:
-        try:
-            answer = input(
-                f"  {prompt} ({rendered}) [{default.upper()}]: "
-            ).strip().lower()
-        except EOFError:
-            return default
-        if not answer:
-            print(color(default.upper(), Color.GRAY))
-            return default
-        if answer in choices:
-            return answer
-        warning(f"Choose one of: {', '.join(choices)}")
+    selected = ask_choice(prompt, choices, default=default)
+    return selected if selected is not None else default
 
 
 def select_install_action(
@@ -345,9 +332,9 @@ def select_install_action(
     if assume_yes:
         return "repair" if default == "r" else "install"
 
-    choices = {"i": "nstall"}
+    choices = {"i": "Install"}
     if runtime_exists:
-        choices["r"] = "epair"
+        choices["r"] = "Repair"
     else:
         info("Repair is unavailable until the managed runtime has been installed.")
     selected = _ask_choice("Choose installer action", choices, default)
@@ -368,7 +355,7 @@ def select_wheel(
                 if interactive and preference == "auto":
                     selected = _ask_choice(
                         f"Both {tag} CUDA and CPU inference are available. Select a llama.cpp backend",
-                        {"g": "PU / CUDA", "c": "PU"},
+                        {"g": "GPU / CUDA", "c": "CPU"},
                         "g",
                     )
                     if selected == "c":

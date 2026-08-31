@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import (
     Color,
+    ask_choice,
     clear_screen,
     command_output_box,
     command_preview,
@@ -213,8 +214,13 @@ def choose_suite() -> str | None:
         footer="Choose a suite number, A, or Q and press Enter.",
     )
 
+    choices = {
+        key: title
+        for key, (title, _modules) in SUITES.items()
+    }
+    choices.update({"a": "Run every suite", "q": "Exit"})
     try:
-        choice = input("  Selection: ").strip().lower()
+        choice = ask_choice("Selection", choices, show_choices=False)
     except EOFError:
         error("No interactive input is available. Exiting the test launcher.")
         return None
@@ -228,9 +234,9 @@ def choose_suite() -> str | None:
     if choice == "a":
         return "a"
 
-    if choice not in SUITES:
-        error("Unknown selection. Choose 1 to 5, A, or Q.")
-        return choose_suite()
+    if choice is None:
+        error("No interactive input is available. Exiting the test launcher.")
+        return None
 
     return choice
 

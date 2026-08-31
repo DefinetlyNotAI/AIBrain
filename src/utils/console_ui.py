@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Mapping
 from ctypes import wintypes
 from pathlib import Path
 from typing import Callable, TextIO, cast
@@ -169,6 +170,115 @@ class Color:
 def color(text: str, *styles: str) -> str:
     """Apply ANSI styles to CLI text."""
     return "".join(styles) + text + Color.RESET
+
+
+def _normalise_prompt_answer(answer: str) -> str:
+    """Make case, spacing, and punctuation irrelevant for menu answers."""
+    return re.sub(r"[^a-z0-9]+", "", answer.casefold())
+
+
+def _supports_prompt_redraw() -> bool:
+    """Return whether ANSI can safely replace an input line after Enter."""
+    if not sys.stdout.isatty():
+        return False
+    return os.name != "nt" or _enable_virtual_terminal()
+
+
+def _render_prompt_answer(prompt: str, answer: str, *styles: str) -> None:
+    """Show a normalized answer on the original prompt line where possible."""
+    rendered = prompt + color(answer, *styles)
+    if _supports_prompt_redraw():
+        sys.stdout.write("\x1b[1A\r\x1b[2K" + rendered + "\n")
+        sys.stdout.flush()
+    else:
+        print(color(answer, *styles))
+
+
+def _choice_label(key: str, label: str) -> str:
+    """Highlight a mnemonic key without assuming labels have one character."""
+    if label.casefold().startswith(key.casefold()):
+        return f"[{key.upper()}]{label[len(key):]}"
+    return f"[{key.upper()}] {label}"
+
+
+def ask_choice(
+    question: str,
+    choices: Mapping[str, str],
+    *,
+    default: str | None = None,
+    show_choices: bool = True,
+) -> str | None:
+    """Read a menu answer, accepting a key or a case-insensitive full label."""
+    if default is not None and default not in choices:
+        raise ValueError("Prompt default must be one of the available choices")
+    if not sys.stdin.isatty():
+        return default
+
+    aliases = {
+        _normalise_prompt_answer(alias): key
+        for key, label in choices.items()
+        for alias in (key, label)
+    }
+    rendered_choices = " / ".join(
+        _choice_label(key, label) for key, label in choices.items()
+    )
+    suffix = f" ({rendered_choices})" if show_choices else ""
+    suffix += f" [{default.upper()}]" if default is not None else ""
+    prompt = f"  {question}{suffix}: "
+
+    while True:
+        try:
+            answer = input(prompt).strip()
+        except EOFError:
+            return default
+
+        if not answer and default is not None:
+            _render_prompt_answer(prompt, choices[default], Color.GRAY)
+            return default
+
+        selected = aliases.get(_normalise_prompt_answer(answer))
+        if selected is not None:
+            _render_prompt_answer(prompt, choices[selected], Color.WHITE)
+            return selected
+
+        warning(f"Choose one of: {', '.join(choices)}")
+
+
+def ask_boolean(question: str, *, default: bool) -> bool:
+    """Read a yes/no answer with common aliases and a colored default value."""
+    if not sys.stdin.isatty():
+        return default
+
+    prompt = (
+        f"  {question} ("
+        f"{color('[Y]es', Color.GREEN)} / {color('[N]o', Color.RED)}"
+        f") [{('Y' if default else 'N')}]: "
+    )
+    true_answers = {"true", "yes", "y", "1"}
+    false_answers = {"false", "no", "n", "0"}
+
+    while True:
+        try:
+            answer = input(prompt).strip()
+        except EOFError:
+            return default
+
+        if not answer:
+            _render_prompt_answer(
+                prompt,
+                "Yes" if default else "No",
+                Color.GREEN if default else Color.RED,
+            )
+            return default
+
+        normalised = _normalise_prompt_answer(answer)
+        if normalised in true_answers:
+            _render_prompt_answer(prompt, "Yes", Color.WHITE)
+            return True
+        if normalised in false_answers:
+            _render_prompt_answer(prompt, "No", Color.WHITE)
+            return False
+        warning("Enter yes or no (yes, y, 1 / no, n, 0).")
 
 
 def terminal_width() -> int:

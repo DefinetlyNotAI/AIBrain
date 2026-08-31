@@ -410,3 +410,78 @@ class ConsoleUiTests(unittest.TestCase):
                 console_ui.shorten_command_argument(r".\.venv\Scripts\python.exe"),
                 r".\.venv\Scripts\python.exe",
             )
+
+    def test_choice_accepts_a_lowercase_full_label_and_renders_it_white(self) -> None:
+        output = StringIO()
+        stdin = StringIO()
+        stdin.isatty = lambda: True  # type: ignore[method-assign]
+
+        with (
+            patch.object(console_ui.sys, "stdin", stdin),
+            patch("builtins.input", return_value="repair"),
+            redirect_stdout(output),
+        ):
+            selected = console_ui.ask_choice(
+                "Choose action", {"i": "Install", "r": "Repair"}, default="i"
+            )
+
+        self.assertEqual(selected, "r")
+        self.assertIn(Color.WHITE, output.getvalue())
+        self.assertIn("Repair", console_ui.strip_ansi(output.getvalue()))
+
+    def test_empty_boolean_uses_a_colored_default_on_the_prompt_line(self) -> None:
+        output = StringIO()
+        stdin = StringIO()
+        stdin.isatty = lambda: True  # type: ignore[method-assign]
+
+        with (
+            patch.object(console_ui.sys, "stdin", stdin),
+            patch("builtins.input", return_value=""),
+            redirect_stdout(output),
+        ):
+            selected = console_ui.ask_boolean("Enable acceleration", default=True)
+
+        self.assertTrue(selected)
+        self.assertIn(Color.GREEN, output.getvalue())
+        self.assertIn("Yes", console_ui.strip_ansi(output.getvalue()))
+
+    def test_prompt_answer_redraws_the_original_terminal_line(self) -> None:
+        class InteractiveOutput(StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        output = InteractiveOutput()
+        with (
+            patch.object(console_ui.sys, "stdout", output),
+            patch.object(console_ui.os, "name", "posix"),
+        ):
+            console_ui._render_prompt_answer("  Continue [Y]: ", "Yes", Color.GREEN)
+
+        self.assertTrue(output.getvalue().startswith("\x1b[1A\r\x1b[2K"))
+        self.assertIn("Continue [Y]: ", console_ui.strip_ansi(output.getvalue()))
+        self.assertIn("Yes", console_ui.strip_ansi(output.getvalue()))
+
+    def test_boolean_accepts_common_true_and_false_aliases(self) -> None:
+        stdin = StringIO()
+        stdin.isatty = lambda: True  # type: ignore[method-assign]
+
+        cases = (
+            ("true", True),
+            ("yes", True),
+            ("y", True),
+            ("1", True),
+            ("false", False),
+            ("no", False),
+            ("n", False),
+            ("0", False),
+        )
+        for answer, expected in cases:
+            with (
+                self.subTest(answer=answer),
+                patch.object(console_ui.sys, "stdin", stdin),
+                patch("builtins.input", return_value=answer),
+                redirect_stdout(StringIO()),
+            ):
+                self.assertEqual(
+                    console_ui.ask_boolean("Continue", default=False), expected
+                )
