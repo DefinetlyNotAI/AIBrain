@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import codecs
 import ctypes
+import logging
 import os
 import queue
 import re
@@ -17,7 +18,6 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -118,19 +118,11 @@ class ApplicationTarget:
     console_mode: str
 
 
-BuildStallAction = Literal["ignore", "wait", "stop"]
-
-
-class BuildStalledError(RuntimeError):
-    """Raised after the user elects to stop a suspected frozen compilation."""
-
-
 @dataclass(frozen=True, slots=True)
 class BuildStallState:
-    """Track the next user-facing stall check separately from heartbeats."""
+    """Track the next non-blocking extended-silence warning."""
 
     next_check: float
-    awaiting_requested_recheck: bool = False
 
 
 APPLICATIONS = (
@@ -307,6 +299,41 @@ def _clean_terminal_output(text: str) -> str:
     return text
 
 
+def _record_build_output(line: str) -> None:
+    """Persist child output as it arrives without replaying it in the CLI."""
+    if line:
+        logging.getLogger("aibrain.command").info("%s", line)
+
+
+def _summarize_build_command(command_line: list[str]) -> list[str]:
+    """Keep interactive and completion records concise for long Nuitka commands."""
+    if "nuitka" not in command_line:
+        return command_line
+
+    return [
+        *command_line[:4],
+        *[
+            argument
+            for argument in command_line
+            if argument.startswith("--output-filename=")
+            or argument.startswith("--output-dir=")
+        ],
+        command_line[-1],
+    ]
+
+
+def _is_redundant_option_echo(line: str) -> bool:
+    """Identify Nuitka's copy of options already preserved in the log."""
+    return line.lstrip().startswith("Nuitka-Options:")
+
+
+def _write_completed_build_line(output_box: CommandOutputBox, line: str) -> None:
+    """Log every complete line while hiding redundant command option echoes."""
+    _record_build_output(line)
+    if not _is_redundant_option_echo(line):
+        output_box.write(line)
+
+
 def _render_output_text(
         text: str,
         pending: str,
@@ -315,6 +342,7 @@ def _render_output_text(
     """Render complete lines and immediately redraw carriage-return frames."""
     new_output = pending + _clean_terminal_output(text)
     pending = ""
+    live_frame: str | None = None
 
     while new_output:
         newline_index = new_output.find("\n")
@@ -329,10 +357,6 @@ def _render_output_text(
 
         if newline < 0:
             pending = new_output
-
-            if pending:
-                output_box.write_partial(pending)
-
             break
 
         line = new_output[:newline]
@@ -342,16 +366,23 @@ def _render_output_text(
         if terminator == "\r":
             # CRLF is a normal completed line.
             if new_output.startswith("\n"):
-                output_box.write(line)
+                _write_completed_build_line(output_box, line)
                 new_output = new_output[1:]
                 continue
 
             # A lone carriage return is a live terminal frame. Nuitka and SCons
-            # use this while updating compilation progress.
-            output_box.write_partial(line)
+            # use this while updating compilation progress. Retain only the
+            # newest frame so a verbose child cannot bury the renderer in old
+            # cursor updates.
+            live_frame = line
             continue
 
-        output_box.write(line)
+        _write_completed_build_line(output_box, line)
+        live_frame = None
+
+    visible_partial = pending or live_frame
+    if visible_partial and not _is_redundant_option_echo(visible_partial):
+        output_box.write_partial(visible_partial)
 
     return pending
 
@@ -369,13 +400,12 @@ def _render_new_build_output(
             errors="replace",
             newline="",
     ) as output_file:
-        output = output_file.read()
+        output_file.seek(offset)
+        text = output_file.read()
+        offset = output_file.tell()
 
-    if len(output) <= offset:
+    if not text:
         return offset, pending
-
-    text = output[offset:]
-    offset = len(output)
 
     pending = _render_output_text(
         text,
@@ -388,91 +418,37 @@ def _render_new_build_output(
 
 def _report_build_heartbeat(
         output_box: CommandOutputBox,
+        last_heartbeat: float,
         last_child_output: float,
 ) -> float:
     """Keep silent Nuitka stages visibly alive without implying progress."""
     now = time.monotonic()
-    silent_seconds = now - last_child_output
-    if silent_seconds < BUILD_HEARTBEAT_SECONDS:
-        return last_child_output
+    if now - last_heartbeat < BUILD_HEARTBEAT_SECONDS:
+        return last_heartbeat
 
-    output_box.write(
+    silent_seconds = now - last_child_output
+    output_box.write_partial(
         "Still working: Nuitka is running without new output "
         f"for {silent_seconds:.0f}s (source generation, compilation, and linking can be silent)."
     )
     return now
 
 
-def _show_build_stall_dialog(
-        silent_seconds: float,
-        *,
-        follow_up: bool,
-) -> BuildStallAction:
-    """Ask the Windows user how to handle a suspected frozen Nuitka build."""
-    if os.name != "nt":
-        return "wait"
-
-    try:
-        from PySide6.QtWidgets import QApplication, QMessageBox
-    except ImportError:
-        return "wait"
-
-    application = QApplication.instance()
-    owns_application = application is None
-    if application is None:
-        application = QApplication(sys.argv)
-
-    dialog = QMessageBox()
-    dialog.setIcon(QMessageBox.Icon.Critical)
-    dialog.setWindowTitle("Nuitka compilation may be frozen")
-    dialog.setText("Nuitka has produced no child output for several minutes.")
-    dialog.setInformativeText(
-        (
-            "The requested five-minute observation period has also elapsed without output."
-            if follow_up
-            else f"No compiler or SCons output has arrived for {silent_seconds:.0f} seconds."
-        )
-        + " You can continue without another warning, wait five minutes and check again, or stop the compilation."
-    )
-    ignore_button = dialog.addButton("Ignore", QMessageBox.ButtonRole.RejectRole)
-    wait_button = dialog.addButton("Wait 5 minutes", QMessageBox.ButtonRole.ActionRole)
-    stop_button = dialog.addButton(
-        "Stop compilation", QMessageBox.ButtonRole.DestructiveRole
-    )
-    dialog.exec()
-    selected = dialog.clickedButton()
-    if owns_application:
-        application.quit()
-    if selected is stop_button:
-        return "stop"
-    if selected is ignore_button:
-        return "ignore"
-    if selected is wait_button:
-        return "wait"
-    return "wait"
-
-
 def _monitor_build_stall(
         last_child_output: float,
         state: BuildStallState,
-) -> tuple[BuildStallAction | None, BuildStallState]:
-    """Prompt only after sustained silence, then honor the selected recheck plan."""
+) -> tuple[str | None, BuildStallState]:
+    """Report extended silence without blocking the output pump or Qt event loop."""
     now = time.monotonic()
     if now - last_child_output < BUILD_STALL_SECONDS or now < state.next_check:
         return None, state
 
-    action = _show_build_stall_dialog(
-        now - last_child_output,
-        follow_up=state.awaiting_requested_recheck,
+    message = (
+        f"No new Nuitka output for {now - last_child_output:.0f}s. "
+        "The process is still alive; native linking can remain silent for a long time. "
+        "Monitoring will continue. Press Ctrl+C once to stop the process tree."
     )
-    if action == "ignore":
-        return None, BuildStallState(float("inf"))
-    if action == "wait":
-        return None, BuildStallState(
-            now + BUILD_STALL_RECHECK_SECONDS,
-            awaiting_requested_recheck=True,
-        )
-    return action, state
+    return message, BuildStallState(now + BUILD_STALL_RECHECK_SECONDS)
 
 
 def _stop_process_tree(process_id: int) -> None:
@@ -515,8 +491,13 @@ def _stop_interrupted_build(
 
 
 def _supports_conpty() -> bool:
-    """Return whether Windows ConPTY can be used."""
-    return os.name == "nt"
+    """Keep builds on the incremental file tailer.
+
+    Windows ConPTY can leave ClosePseudoConsole waiting on its headless
+    conhost after Nuitka has already exited. The file tailer is unbuffered,
+    incremental, and does not have that lifecycle deadlock.
+    """
+    return False
 
 
 def _create_pipe() -> tuple[wintypes.HANDLE, wintypes.HANDLE]:
@@ -548,11 +529,9 @@ def _create_conpty_process(
         input_read, input_write = _create_pipe()
         output_read, output_write = _create_pipe()
 
-        terminal_size = shutil.get_terminal_size((120, 40))
-
         coord = _ConsoleCoord(
-            max(60, min(terminal_size.columns, 240)),
-            max(20, min(terminal_size.lines, 120)),
+            240,
+            max(20, min(shutil.get_terminal_size((120, 40)).lines, 120)),
         )
 
         pseudo_console = kernel32.create_pseudo_console(
@@ -705,7 +684,7 @@ def _run_with_conpty(
     )
 
     pending = ""
-    captured_chunks: list[str] = []
+    captured_tail = ""
     reader_finished = False
     last_child_output = time.monotonic()
     last_heartbeat = last_child_output
@@ -718,6 +697,19 @@ def _run_with_conpty(
                     chunk = chunks.get(timeout=0.05)
                 except queue.Empty:
                     chunk = b""
+
+                if chunk not in (b"", None):
+                    combined = bytearray(chunk)
+                    for _ in range(511):
+                        try:
+                            queued_chunk = chunks.get_nowait()
+                        except queue.Empty:
+                            break
+                        if queued_chunk is None:
+                            reader_finished = True
+                            break
+                        combined.extend(queued_chunk)
+                    chunk = bytes(combined)
 
                 if chunk is None:
                     reader_finished = True
@@ -734,7 +726,7 @@ def _run_with_conpty(
                     )
 
                     if text:
-                        captured_chunks.append(text)
+                        captured_tail = (captured_tail + text)[-65536:]
                         pending = _render_output_text(
                             text,
                             pending,
@@ -747,28 +739,14 @@ def _run_with_conpty(
                     last_heartbeat = _report_build_heartbeat(
                         output_box,
                         last_heartbeat,
+                        last_child_output,
                     )
-                    action, stall_state = _monitor_build_stall(
+                    stall_message, stall_state = _monitor_build_stall(
                         last_child_output,
                         stall_state,
                     )
-                    if action == "stop":
-                        output_box.write(
-                            "Stopping Nuitka after the user marked the silent compilation as frozen."
-                        )
-                        _stop_process_tree(process.pid)
-                        process.close_terminal()
-                        reader.join()
-                        return_code = process.wait()
-                        log_completed_command(
-                            command_line,
-                            "".join(captured_chunks),
-                            return_code=return_code,
-                            interrupted=True,
-                        )
-                        raise BuildStalledError(
-                            "Nuitka compilation was stopped after a suspected freeze."
-                        )
+                    if stall_message:
+                        output_box.write(stall_message)
 
                 if return_code is not None:
                     process.close_terminal()
@@ -782,7 +760,7 @@ def _run_with_conpty(
             )
 
             if remaining:
-                captured_chunks.append(remaining)
+                captured_tail = (captured_tail + remaining)[-65536:]
                 pending = _render_output_text(
                     remaining,
                     pending,
@@ -790,7 +768,7 @@ def _run_with_conpty(
                 )
 
             if pending:
-                output_box.write(pending)
+                _write_completed_build_line(output_box, pending)
 
         reader.join()
         return_code = process.wait()
@@ -803,8 +781,8 @@ def _run_with_conpty(
 
         process.wait()
         log_completed_command(
-            command_line,
-            "".join(captured_chunks),
+            _summarize_build_command(command_line),
+            "",
             return_code=None,
             interrupted=True,
         )
@@ -818,8 +796,10 @@ def _run_with_conpty(
 
         process.close()
 
-    captured_output = "".join(captured_chunks).rstrip()
-    log_completed_command(command_line, captured_output, return_code=return_code)
+    captured_output = captured_tail.rstrip()
+    log_completed_command(
+        _summarize_build_command(command_line), "", return_code=return_code
+    )
     if return_code:
         raise subprocess.CalledProcessError(
             return_code,
@@ -887,29 +867,15 @@ def _run_with_file_tailer(
                             last_heartbeat = _report_build_heartbeat(
                                 output_box,
                                 last_heartbeat,
+                                last_child_output,
                             )
 
-                        action, stall_state = _monitor_build_stall(
+                        stall_message, stall_state = _monitor_build_stall(
                             last_child_output,
                             stall_state,
                         )
-                        if action == "stop":
-                            output_box.write(
-                                "Stopping Nuitka after the user marked the silent compilation as frozen."
-                            )
-                            _stop_interrupted_build(process)
-                            output_file.flush()
-                            log_completed_command(
-                                command_line,
-                                output_path.read_text(
-                                    encoding="utf-8", errors="replace"
-                                ),
-                                return_code=process.returncode,
-                                interrupted=True,
-                            )
-                            raise BuildStalledError(
-                                "Nuitka compilation was stopped after a suspected freeze."
-                            )
+                        if stall_message:
+                            output_box.write(stall_message)
 
                         time.sleep(0.05)
 
@@ -923,7 +889,7 @@ def _run_with_file_tailer(
                     )
 
                     if pending:
-                        output_box.write(pending)
+                        _write_completed_build_line(output_box, pending)
 
                 return_code = process.wait()
 
@@ -931,8 +897,8 @@ def _run_with_file_tailer(
                 _stop_interrupted_build(process)
                 output_file.flush()
                 log_completed_command(
-                    command_line,
-                    output_path.read_text(encoding="utf-8", errors="replace"),
+                    _summarize_build_command(command_line),
+                    "",
                     return_code=None,
                     interrupted=True,
                 )
@@ -943,7 +909,9 @@ def _run_with_file_tailer(
             errors="replace",
         ).rstrip()
 
-    log_completed_command(command_line, captured_output, return_code=return_code)
+    log_completed_command(
+        _summarize_build_command(command_line), "", return_code=return_code
+    )
     if return_code:
         raise subprocess.CalledProcessError(
             return_code,
@@ -954,7 +922,14 @@ def _run_with_file_tailer(
 
 def run(command_line: list[str]) -> None:
     """Run a build command with live boxed output."""
-    command_preview(command_line)
+    preview = _summarize_build_command(command_line)
+    command_preview(preview)
+    if preview != command_line:
+        hidden = len(command_line) - len(preview)
+        logging.getLogger("aibrain.command").info(
+            "Command started: %s", subprocess.list2cmdline(command_line)
+        )
+        print(f"     {hidden} packaging options hidden; full command saved in the build log.")
 
     if _supports_conpty():
         _run_with_conpty(command_line)
@@ -1045,8 +1020,6 @@ def nuitka_command(
         "nuitka",
         "--standalone",
         "--assume-yes-for-downloads",
-        "--show-progress",
-        "--show-scons",
         "--enable-plugin=pyside6",
         f"--windows-console-mode={target.console_mode}",
         f"--windows-icon-from-ico={target.icon}",
@@ -1331,9 +1304,6 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
 
-    except BuildStalledError as exc:
-        error(str(exc))
-        raise SystemExit(130)
     except KeyboardInterrupt:
         report_keyboard_interrupt("the distribution build")
         raise SystemExit(130)
