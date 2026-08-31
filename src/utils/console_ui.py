@@ -655,10 +655,11 @@ class CommandOutputBox:
         self._bottom_visible = True
 
     def _erase_live_rows(self, rows: int) -> None:
-        """Remove the visible footer and optional partial rows before redrawing."""
-        if not self._live or not self._bottom_visible:
+        """Remove transient rows without repainting stable completed output."""
+        if not self._live:
             return
-        for _ in range(rows + 1):
+        visible_rows = rows + (1 if self._bottom_visible else 0)
+        for _ in range(visible_rows):
             sys.stdout.write("\x1b[1A\x1b[2K\r")
         sys.stdout.flush()
         self._bottom_visible = False
@@ -696,8 +697,6 @@ class CommandOutputBox:
         self._erase_live_rows(self._partial_rows)
         self._partial_rows = 0
         self._print_lines(lines)
-        if self._live:
-            self._print_bottom()
 
     def write_partial(self, output: str) -> None:
         """Redraw an unterminated subprocess line, including progress bars."""
@@ -713,8 +712,6 @@ class CommandOutputBox:
         self._erase_live_rows(self._partial_rows)
         self._partial_rows = len(lines)
         self._print_lines(lines)
-        if self._live:
-            self._print_bottom()
 
     def close(self) -> None:
         if not self._is_open:

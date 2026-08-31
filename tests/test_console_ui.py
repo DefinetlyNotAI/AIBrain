@@ -331,7 +331,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("'PySide6>=6.7,<7'", rendered)
         self.assertIn("'cupy-cuda13x[ctk]>=14,<15'", rendered)
 
-    def test_live_command_box_draws_its_footer_only_after_output_arrives(self) -> None:
+    def test_live_command_box_draws_its_footer_once_when_output_closes(self) -> None:
         class InteractiveText(StringIO):
             def isatty(self) -> bool:
                 return True
@@ -344,14 +344,20 @@ class ConsoleUiTests(unittest.TestCase):
             box = console_ui.CommandOutputBox(live=True)
             box.open()
             self.assertFalse(box._bottom_visible)
-            with box:
-                box.write_partial("Downloading model: 25%")
-                box.write_partial("Downloading model: 50%")
-                box.write("Download complete")
+            box.write_partial("Downloading model: 25%")
+            box.write_partial("Downloading model: 50%")
+            box.write("Download complete")
+            border = (
+                console_ui.BOX_TOP_LEFT
+                + console_ui.BOX_HORIZONTAL * box.inner
+                + console_ui.BOX_TOP_RIGHT
+            )
+            self.assertEqual(console_ui.strip_ansi(output.getvalue()).count(border), 1)
+            box.close()
 
         rendered = output.getvalue()
         self.assertIn("\x1b[1A\x1b[2K", rendered)
-        self.assertGreaterEqual(rendered.count(console_ui.BOX_BOTTOM_LEFT), 3)
+        self.assertEqual(console_ui.strip_ansi(rendered).count(border), 2)
         self.assertIn("Download complete", console_ui.strip_ansi(rendered))
 
     def test_executable_path_shortening_requires_an_exact_path_match(
