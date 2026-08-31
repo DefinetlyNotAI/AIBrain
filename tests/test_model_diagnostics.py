@@ -105,6 +105,55 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertIn('"--repair-subsystem",', source)
         self.assertIn('"backend",', source)
         self.assertIn('"-y",', source)
+        self.assertIn('environment.insert("PYTHONUNBUFFERED", "1")', source)
+
+    def test_valid_but_unsupported_model_cannot_be_repaired_or_removed(self) -> None:
+        window = DiagnosticsWindow(auto_refresh=False)
+        try:
+            diagnostic = ModelDiagnostic(
+                "qwen2.5vl:3b",
+                Path("vision-manifest"),
+                Path("vision-blob"),
+                False,
+                "qwen2.5vl:3b is a vision-capable Ollama model. AIBrain currently loads text-only GGUF models.",
+            )
+            window._diagnostics_ready([diagnostic])
+            item = window.table.topLevelItem(0)
+            window.table.setCurrentItem(item)
+            window._update_actions()
+
+            self.assertEqual(item.text(1), "Unsupported")
+            self.assertEqual(item.text(2), "Unsupported model type")
+            self.assertFalse(diagnostic.can_repair)
+            self.assertFalse(diagnostic.can_remove_manifest)
+            self.assertFalse(window.repair_button.isEnabled())
+            self.assertFalse(window.remove_button.isEnabled())
+            self.assertIn("no automatic repair", window.repair_button.toolTip())
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_live_repair_output_resets_heartbeat_and_tracks_exact_status(self) -> None:
+        class OutputProcess:
+            @staticmethod
+            def readAllStandardOutput() -> bytes:
+                return b"Downloading llama.cpp wheel 42%\n"
+
+        window = DiagnosticsWindow(auto_refresh=False)
+        try:
+            window._repair_process = OutputProcess()  # type: ignore[assignment]
+            with patch.object(window._repair_heartbeat, "start") as restart:
+                window._append_repair_output()
+
+            restart.assert_called_once_with()
+            self.assertEqual(
+                window._last_repair_status, "Downloading llama.cpp wheel 42%"
+            )
+            self.assertIn("Downloading llama.cpp wheel 42%", window.output.toPlainText())
+        finally:
+            window._repair_process = None
+            window.close()
+            self.app.processEvents()
 
     def test_hashing_progress_logs_only_the_start_and_completion(self) -> None:
         window = DiagnosticsWindow(auto_refresh=False)

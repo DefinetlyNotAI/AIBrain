@@ -40,6 +40,8 @@ class ModelDiagnostic:
             return "Invalid hash"
         if "missing" in lowered or "not a regular file" in lowered:
             return "Missing model data"
+        if "vision-capable" in lowered or "text-only gguf" in lowered:
+            return "Unsupported model type"
         if "llama.cpp" in lowered or "backend" in lowered:
             return "Backend incompatibility"
         if "gguf" in lowered or "header" in lowered:
@@ -50,7 +52,17 @@ class ModelDiagnostic:
 
     @property
     def can_remove_manifest(self) -> bool:
-        return not self.available and self.manifest_path.is_file()
+        return (
+            not self.available
+            and self.issue_code
+            not in {"Backend incompatibility", "Unsupported model type"}
+            and self.manifest_path.is_file()
+        )
+
+    @property
+    def can_repair(self) -> bool:
+        """Return whether an automated data or runtime repair can help."""
+        return not self.available and self.issue_code != "Unsupported model type"
 
     @property
     def reason(self) -> str:
@@ -144,7 +156,10 @@ class OllamaDiagnostics:
     @staticmethod
     def quarantine_for_redownload(diagnostic: ModelDiagnostic) -> Path | None:
         """Move the exact corrupt artifact aside so ``ollama pull`` must replace it."""
-        if diagnostic.available or diagnostic.issue_code == "Backend incompatibility":
+        if diagnostic.available or diagnostic.issue_code in {
+            "Backend incompatibility",
+            "Unsupported model type",
+        }:
             return None
         source = (
             diagnostic.blob_path

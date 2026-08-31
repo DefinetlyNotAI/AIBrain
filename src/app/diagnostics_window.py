@@ -126,6 +126,7 @@ class DiagnosticsWindow(QMainWindow):
         self.setMinimumSize(900, 620)
         self.setStyleSheet(stylesheet(load_colours()))
         self._repair_process: QProcess | None = None
+        self._last_repair_status = "No repair command has started"
         self._diagnostics_thread: QThread | None = None
         self._diagnostics_worker: DiagnosticsWorker | None = None
         self._last_refresh_succeeded = False
@@ -318,7 +319,13 @@ class DiagnosticsWindow(QMainWindow):
             )
             self.table.addTopLevelItem(item)
         for diagnostic in diagnostics:
-            status = "Ready" if diagnostic.available else "Needs repair"
+            status = (
+                "Ready"
+                if diagnostic.available
+                else "Unsupported"
+                if diagnostic.issue_code == "Unsupported model type"
+                else "Needs repair"
+            )
             item = QTreeWidgetItem(
                 [
                     diagnostic.reference,
@@ -396,7 +403,10 @@ class DiagnosticsWindow(QMainWindow):
     def _set_refreshing(self, refreshing: bool) -> None:
         self.refresh_button.setEnabled(not refreshing)
         self.repair_button.setEnabled(
-            not refreshing and self.selected_diagnostic() is not None
+            not refreshing
+            and bool(
+                self.selected_diagnostic() and self.selected_diagnostic().can_repair
+            )
         )
         self.remove_button.setEnabled(
             not refreshing and bool(self.selected_diagnostic())
@@ -412,7 +422,14 @@ class DiagnosticsWindow(QMainWindow):
     def _update_actions(self) -> None:
         diagnostic = self.selected_diagnostic()
         repair_running = self._repair_process is not None
-        self.repair_button.setEnabled(diagnostic is not None and not repair_running)
+        self.repair_button.setEnabled(
+            bool(diagnostic and diagnostic.can_repair and not repair_running)
+        )
+        self.repair_button.setToolTip(
+            "This model is valid but unsupported by the current AIBrain code; no automatic repair can change it"
+            if diagnostic and diagnostic.issue_code == "Unsupported model type"
+            else "Re-download the selected model or repair its llama.cpp backend"
+        )
         self.remove_button.setEnabled(
             bool(diagnostic and diagnostic.can_remove_manifest and not repair_running)
         )
@@ -420,7 +437,7 @@ class DiagnosticsWindow(QMainWindow):
 
     def repair_selected(self) -> None:
         diagnostic = self.selected_diagnostic()
-        if diagnostic is None:
+        if diagnostic is None or not diagnostic.can_repair:
             return
         self._live_output.clear()
         self.output.clear()
@@ -461,6 +478,7 @@ class DiagnosticsWindow(QMainWindow):
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("AIBRAIN_EMBEDDED_REPAIR", "1")
+        environment.insert("PYTHONUNBUFFERED", "1")
         process.setProcessEnvironment(environment)
         process.started.connect(self._repair_started)
         process.readyReadStandardOutput.connect(self._append_repair_output)
@@ -468,6 +486,7 @@ class DiagnosticsWindow(QMainWindow):
         process.finished.connect(self._repair_finished)
         self._repair_process = process
         LOG.info("Starting diagnostics repair: %s", action)
+        self._last_repair_status = action
         self._log("START", action)
         process.start()
         self._update_actions()
@@ -475,12 +494,20 @@ class DiagnosticsWindow(QMainWindow):
     @Slot()
     def _repair_started(self) -> None:
         self._repair_heartbeat.start()
-        self._log("RUN", "Repair command started; streaming package-manager output")
+        self._last_repair_status = (
+            "Repair command started; streaming package-manager output"
+        )
+        self._log("RUN", self._last_repair_status)
 
     @Slot()
     def _report_repair_heartbeat(self) -> None:
         if self._repair_process is not None:
-            self._log("WAIT", "Repair command is still running; waiting for the next update")
+            seconds = self._repair_heartbeat.interval() // 1000
+            self._log(
+                "WAIT",
+                f"No new command output for {seconds} seconds; last status: "
+                f"{self._last_repair_status}",
+            )
 
     def _append_repair_output(self) -> None:
         if self._repair_process is None:
@@ -488,6 +515,16 @@ class DiagnosticsWindow(QMainWindow):
         output = bytes(self._repair_process.readAllStandardOutput()).decode(
             "utf-8", errors="replace"
         )
+        if not output:
+            return
+        visible_lines = [
+            line.strip()
+            for line in normalize_process_output(output).splitlines()
+            if any(character.isalnum() for character in line)
+        ]
+        if visible_lines:
+            self._last_repair_status = visible_lines[-1]
+        self._repair_heartbeat.start()
         self._live_output.feed(output)
         self.output.setPlainText(self._live_output.render())
         self.output.moveCursor(QTextCursor.MoveOperation.End)
