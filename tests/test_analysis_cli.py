@@ -8,7 +8,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QFrame, QPushButton
 
 from src.app.analysis_window import (
     AnalysisInspectionWorker,
@@ -43,6 +43,14 @@ class AnalysisCliTests(unittest.TestCase):
                 buttons["Inspect exported analysis JSON"].toolTip(),
                 "Open an explicit JSON or JSON.GZ export for read-only inspection",
             )
+            metric_cards = [
+                card
+                for card in window.findChildren(QFrame)
+                if card.objectName() == "metricCard"
+            ]
+            self.assertEqual(len(metric_cards), 10)
+            self.assertTrue(all(card.toolTip() for card in metric_cards))
+            self.assertIn("Read-only model metadata", window.raw.toolTip())
         finally:
             window.close()
             self.app.processEvents()

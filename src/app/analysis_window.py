@@ -382,6 +382,20 @@ class AnalysisWindow(QMainWindow):
         self.storage_card, self.storage_value, self.storage_detail = metric_card(
             "MODEL STORAGE", "—"
         )
+        card_tooltips = {
+            health: "Overall integrity score for the persisted Analysis+ model",
+            self.state_card: "Current learning stage and whether training is active",
+            self.frame_card: "Total visual-activity frames retained across sessions",
+            progress: "Evidence and frame progress required for the next maturity stage",
+            self.architecture_card: "Autoencoder input, latent, and output dimensions",
+            self.quality_card: "Stability of recent reconstruction and weight updates",
+            self.export_card: "Whether learned findings are ready for normal reporting",
+            self.backend_card: "Numerical array backend selected for connectome analysis",
+            self.evidence_card: "Rolling samples available for maturity decisions",
+            self.storage_card: "Persisted model size and most recent update time",
+        }
+        for card, tooltip in card_tooltips.items():
+            card.setToolTip(tooltip)
         lower = QWidget()
         lower_grid = metric_grid(lower)
         lower_grid.addWidget(self.architecture_card, 0, 0)
@@ -395,6 +409,9 @@ class AnalysisWindow(QMainWindow):
         self.raw = QPlainTextEdit()
         self.raw.setReadOnly(True)
         self.raw.setPlaceholderText("Raw JSON is available only when needed.")
+        self.raw.setToolTip(
+            "Read-only model metadata and summaries from explicitly selected exports"
+        )
         self.tabs.addTab(overview, "Dashboard")
         self.tabs.addTab(self.raw, "Raw JSON / details")
         self.tabs.setTabToolTip(0, "Model-health dashboard")
