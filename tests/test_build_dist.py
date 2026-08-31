@@ -124,6 +124,35 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertIn("Still working: Nuitka is running", output_box.completed[0])
         self.assertIn("15s", output_box.completed[0])
 
+    @patch("cli.build_dist._show_build_stall_dialog", return_value="stop")
+    @patch("cli.build_dist.time.monotonic", return_value=300.0)
+    def test_stall_monitor_requests_a_stop_after_five_minutes_of_silence(
+        self, _monotonic, dialog
+    ) -> None:  # type: ignore[no-untyped-def]
+        action, state = build_dist._monitor_build_stall(
+            0.0,
+            build_dist.BuildStallState(build_dist.BUILD_STALL_SECONDS),
+        )
+
+        self.assertEqual(action, "stop")
+        self.assertEqual(state.next_check, build_dist.BUILD_STALL_SECONDS)
+        dialog.assert_called_once_with(300.0, follow_up=False)
+
+    @patch("cli.build_dist._show_build_stall_dialog", return_value="wait")
+    @patch("cli.build_dist.time.monotonic", return_value=300.0)
+    def test_stall_monitor_rechecks_after_the_requested_five_minutes(
+        self, _monotonic, dialog
+    ) -> None:  # type: ignore[no-untyped-def]
+        action, state = build_dist._monitor_build_stall(
+            0.0,
+            build_dist.BuildStallState(build_dist.BUILD_STALL_SECONDS),
+        )
+
+        self.assertIsNone(action)
+        self.assertEqual(state.next_check, 600.0)
+        self.assertTrue(state.awaiting_requested_recheck)
+        dialog.assert_called_once_with(300.0, follow_up=False)
+
     def test_run_renders_unbuffered_progress_before_the_child_completes(self) -> None:
         class OutputBox:
             partial_times: list[float] = []
@@ -197,6 +226,7 @@ class BuildDistributionTests(unittest.TestCase):
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
             self.assertIn("--show-progress", command)
+            self.assertIn("--show-scons", command)
             excluded = {
                 item.removeprefix("--nofollow-import-to=")
                 for item in command

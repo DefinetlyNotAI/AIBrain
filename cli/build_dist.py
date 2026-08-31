@@ -17,6 +17,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -46,6 +47,8 @@ NUMPY_DLL_ROOT = SITE_PACKAGES / "numpy.libs"
 RUNTIME_DLLS = ("vcomp140.dll",)
 NATIVE_LIBRARY = ROOT / "dll" / "aibrain.connectome.dll"
 BUILD_HEARTBEAT_SECONDS = 15.0
+BUILD_STALL_SECONDS = 5 * 60.0
+BUILD_STALL_RECHECK_SECONDS = 5 * 60.0
 
 # Keep Nuitka's module graph aligned with the application rather than with the
 # optional feature sets advertised by dependency package hooks. ModernGL is
@@ -112,6 +115,21 @@ class ApplicationTarget:
     entry_point: Path
     icon: Path
     console_mode: str
+
+
+BuildStallAction = Literal["ignore", "wait", "stop"]
+
+
+class BuildStalledError(RuntimeError):
+    """Raised after the user elects to stop a suspected frozen compilation."""
+
+
+@dataclass(frozen=True, slots=True)
+class BuildStallState:
+    """Track the next user-facing stall check separately from heartbeats."""
+
+    next_check: float
+    awaiting_requested_recheck: bool = False
 
 
 APPLICATIONS = (
@@ -384,6 +402,78 @@ def _report_build_heartbeat(
     return now
 
 
+def _show_build_stall_dialog(
+        silent_seconds: float,
+        *,
+        follow_up: bool,
+) -> BuildStallAction:
+    """Ask the Windows user how to handle a suspected frozen Nuitka build."""
+    if os.name != "nt":
+        return "wait"
+
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+    except ImportError:
+        return "wait"
+
+    application = QApplication.instance()
+    owns_application = application is None
+    if application is None:
+        application = QApplication(sys.argv)
+
+    dialog = QMessageBox()
+    dialog.setIcon(QMessageBox.Icon.Critical)
+    dialog.setWindowTitle("Nuitka compilation may be frozen")
+    dialog.setText("Nuitka has produced no child output for several minutes.")
+    dialog.setInformativeText(
+        (
+            "The requested five-minute observation period has also elapsed without output."
+            if follow_up
+            else f"No compiler or SCons output has arrived for {silent_seconds:.0f} seconds."
+        )
+        + " You can continue without another warning, wait five minutes and check again, or stop the compilation."
+    )
+    ignore_button = dialog.addButton("Ignore", QMessageBox.ButtonRole.RejectRole)
+    wait_button = dialog.addButton("Wait 5 minutes", QMessageBox.ButtonRole.ActionRole)
+    stop_button = dialog.addButton(
+        "Stop compilation", QMessageBox.ButtonRole.DestructiveRole
+    )
+    dialog.exec()
+    selected = dialog.clickedButton()
+    if owns_application:
+        application.quit()
+    if selected is stop_button:
+        return "stop"
+    if selected is ignore_button:
+        return "ignore"
+    if selected is wait_button:
+        return "wait"
+    return "wait"
+
+
+def _monitor_build_stall(
+        last_child_output: float,
+        state: BuildStallState,
+) -> tuple[BuildStallAction | None, BuildStallState]:
+    """Prompt only after sustained silence, then honor the selected recheck plan."""
+    now = time.monotonic()
+    if now - last_child_output < BUILD_STALL_SECONDS or now < state.next_check:
+        return None, state
+
+    action = _show_build_stall_dialog(
+        now - last_child_output,
+        follow_up=state.awaiting_requested_recheck,
+    )
+    if action == "ignore":
+        return None, BuildStallState(float("inf"))
+    if action == "wait":
+        return None, BuildStallState(
+            now + BUILD_STALL_RECHECK_SECONDS,
+            awaiting_requested_recheck=True,
+        )
+    return action, state
+
+
 def _stop_process_tree(process_id: int) -> None:
     """Force-stop a process and every child process it created."""
     if os.name == "nt":
@@ -617,6 +707,8 @@ def _run_with_conpty(
     captured_chunks: list[str] = []
     reader_finished = False
     last_child_output = time.monotonic()
+    last_heartbeat = last_child_output
+    stall_state = BuildStallState(last_child_output + BUILD_STALL_SECONDS)
 
     try:
         with CommandOutputBox() as output_box:
@@ -631,6 +723,10 @@ def _run_with_conpty(
 
                 elif chunk:
                     last_child_output = time.monotonic()
+                    last_heartbeat = last_child_output
+                    stall_state = BuildStallState(
+                        last_child_output + BUILD_STALL_SECONDS
+                    )
                     text = decoder.decode(
                         chunk,
                         final=False,
@@ -647,10 +743,31 @@ def _run_with_conpty(
                 return_code = process.poll()
 
                 if return_code is None:
-                    last_child_output = _report_build_heartbeat(
+                    last_heartbeat = _report_build_heartbeat(
                         output_box,
-                        last_child_output,
+                        last_heartbeat,
                     )
+                    action, stall_state = _monitor_build_stall(
+                        last_child_output,
+                        stall_state,
+                    )
+                    if action == "stop":
+                        output_box.write(
+                            "Stopping Nuitka after the user marked the silent compilation as frozen."
+                        )
+                        _stop_process_tree(process.pid)
+                        process.close_terminal()
+                        reader.join()
+                        return_code = process.wait()
+                        log_completed_command(
+                            command_line,
+                            "".join(captured_chunks),
+                            return_code=return_code,
+                            interrupted=True,
+                        )
+                        raise BuildStalledError(
+                            "Nuitka compilation was stopped after a suspected freeze."
+                        )
 
                 if return_code is not None:
                     process.close_terminal()
@@ -744,6 +861,8 @@ def _run_with_file_tailer(
                 offset = 0
                 pending = ""
                 last_child_output = time.monotonic()
+                last_heartbeat = last_child_output
+                stall_state = BuildStallState(last_child_output + BUILD_STALL_SECONDS)
 
                 with CommandOutputBox() as output_box:
                     while process.poll() is None:
@@ -759,10 +878,36 @@ def _run_with_file_tailer(
 
                         if offset != previous_offset:
                             last_child_output = time.monotonic()
+                            last_heartbeat = last_child_output
+                            stall_state = BuildStallState(
+                                last_child_output + BUILD_STALL_SECONDS
+                            )
                         else:
-                            last_child_output = _report_build_heartbeat(
+                            last_heartbeat = _report_build_heartbeat(
                                 output_box,
-                                last_child_output,
+                                last_heartbeat,
+                            )
+
+                        action, stall_state = _monitor_build_stall(
+                            last_child_output,
+                            stall_state,
+                        )
+                        if action == "stop":
+                            output_box.write(
+                                "Stopping Nuitka after the user marked the silent compilation as frozen."
+                            )
+                            _stop_interrupted_build(process)
+                            output_file.flush()
+                            log_completed_command(
+                                command_line,
+                                output_path.read_text(
+                                    encoding="utf-8", errors="replace"
+                                ),
+                                return_code=process.returncode,
+                                interrupted=True,
+                            )
+                            raise BuildStalledError(
+                                "Nuitka compilation was stopped after a suspected freeze."
                             )
 
                         time.sleep(0.05)
@@ -900,6 +1045,7 @@ def nuitka_command(
         "--standalone",
         "--assume-yes-for-downloads",
         "--show-progress",
+        "--show-scons",
         "--enable-plugin=pyside6",
         f"--windows-console-mode={target.console_mode}",
         f"--windows-icon-from-ico={target.icon}",
@@ -1184,6 +1330,9 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
 
+    except BuildStalledError as exc:
+        error(str(exc))
+        raise SystemExit(130)
     except KeyboardInterrupt:
         error(
             "Distribution build cancelled "
