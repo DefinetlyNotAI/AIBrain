@@ -76,6 +76,10 @@ class InstallerHealth:
     reason: str
 
 
+class LlamaRuntimeError(RuntimeError):
+    """The selected prebuilt llama.cpp wheel installed but cannot load."""
+
+
 def collect_final_health(
     python: str, gpu: GpuCapability | None, root: Path = ROOT
 ) -> list[InstallerHealth]:
@@ -481,6 +485,66 @@ def install_dependencies(
     success("Core dependencies installed")
 
 
+def llama_install_command(python: str, wheel_tag: str, *, force_reinstall: bool) -> list[str]:
+    """Build a cache-safe prebuilt-wheel installation command."""
+    command = [
+        python,
+        "-m",
+        "pip",
+        "install",
+        "--only-binary=llama-cpp-python",
+        "--extra-index-url",
+        f"{WHEEL_ROOT}/{wheel_tag}",
+        "llama-cpp-python>=0.3.0",
+    ]
+    if force_reinstall:
+        command[4:4] = ["--upgrade", "--force-reinstall", "--no-cache-dir"]
+    return command
+
+
+def probe_llama_runtime(python: str) -> tuple[bool, str]:
+    """Check the installed native backend without printing an import traceback."""
+    verification = (
+        "try:\n"
+        "    import llama_cpp\n"
+        "except Exception as exc:\n"
+        "    print(f'{type(exc).__name__}: {exc}')\n"
+        "    raise SystemExit(1)\n"
+        "print('llama-cpp-python native runtime loaded')"
+    )
+    try:
+        result = subprocess.run(
+            [python, "-c", verification],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"Could not run the backend probe: {exc}"
+
+    if result.returncode == 0:
+        return True, ""
+
+    output = result.stderr or result.stdout
+    reason = " ".join(output.split())
+    return False, reason or "The native backend import exited without a diagnostic."
+
+
+def install_cpu_fallback(python: str, *, reason: str) -> str:
+    """Replace an unavailable CUDA backend with a freshly downloaded CPU wheel."""
+    warning(f"Selected CUDA backend is unavailable: {reason}")
+    warning("Retrying with the official CPU wheel.")
+    run(llama_install_command(python, "cpu", force_reinstall=True))
+    ready, cpu_reason = probe_llama_runtime(python)
+    if not ready:
+        raise LlamaRuntimeError(
+            "The official CPU backend installed but could not load: " f"{cpu_reason}"
+        )
+    success("CPU fallback installed and loaded successfully")
+    return "cpu"
+
+
 def install_llama(
     python: str,
     gpu: GpuCapability | None,
@@ -506,25 +570,8 @@ def install_llama(
 
     detail("Wheel", wheel_tag)
 
-    command = [
-        python,
-        "-m",
-        "pip",
-        "install",
-        "--only-binary=llama-cpp-python",
-        "--extra-index-url",
-        f"{WHEEL_ROOT}/{wheel_tag}",
-        "llama-cpp-python>=0.3.0",
-    ]
-    if force_reinstall:
-        command[4:4] = ["--upgrade", "--force-reinstall"]
-
     try:
-        run(command)
-
-        success(f"llama-cpp-python installed using {wheel_tag}")
-
-        return wheel_tag
+        run(llama_install_command(python, wheel_tag, force_reinstall=force_reinstall))
 
     except subprocess.CalledProcessError:
         if wheel_tag == "cpu":
@@ -534,25 +581,18 @@ def install_llama(
 
         print()
         warning(f"{wheel_tag} installation failed.")
-        warning("Retrying with the official CPU wheel.")
+        return install_cpu_fallback(python, reason="the CUDA wheel could not be installed")
 
-        fallback_command = [
-            python,
-            "-m",
-            "pip",
-            "install",
-            "--only-binary=llama-cpp-python",
-            "--extra-index-url",
-            f"{WHEEL_ROOT}/cpu",
-            "llama-cpp-python>=0.3.0",
-        ]
-        if force_reinstall:
-            fallback_command[4:4] = ["--upgrade", "--force-reinstall"]
-        run(fallback_command)
+    ready, reason = probe_llama_runtime(python)
+    if ready:
+        success(f"llama-cpp-python installed and loaded using {wheel_tag}")
+        return wheel_tag
 
-        success("CPU fallback installed successfully")
-
-        return "cpu"
+    if wheel_tag == "cpu":
+        raise LlamaRuntimeError(
+            "The official CPU backend installed but could not load: " f"{reason}"
+        )
+    return install_cpu_fallback(python, reason=reason)
 
 
 def verify_installation(
@@ -561,7 +601,7 @@ def verify_installation(
     info("Running import and runtime verification")
 
     verification = (
-        "import llama_cpp, moderngl, nuitka; "
+        "import moderngl, nuitka; "
         "from PySide6 import QtCore; "
         "from src.utils.array_api import BACKEND_NAME, array_api; "
         "print('AIBrain dependency verification passed:', BACKEND_NAME)"
@@ -575,7 +615,7 @@ def verify_installation(
         ]
     )
 
-    success("All required dependencies are importable")
+    success("Core dependencies and the selected backend are ready")
 
 
 def completion_screen(
@@ -713,6 +753,9 @@ def main() -> int:
         error(
             "llama-cpp-python installation failed " f"with exit code {exc.returncode}."
         )
+        return 1
+    except LlamaRuntimeError as exc:
+        error(str(exc))
         return 1
 
     section("Verification", 6)

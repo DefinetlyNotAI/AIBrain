@@ -84,12 +84,45 @@ class InstallerRepairTests(unittest.TestCase):
         with (
             patch("cli.installer.select_wheel", return_value=("cpu", "CPU")),
             patch("cli.installer.run") as run_command,
+            patch("cli.installer.probe_llama_runtime", return_value=(True, "")),
         ):
             installer.install_llama("managed-python", None, force_reinstall=True)
 
         backend_command = run_command.call_args.args[0]
         self.assertIn("--upgrade", backend_command)
         self.assertIn("--force-reinstall", backend_command)
+        self.assertIn("--no-cache-dir", backend_command)
+
+    def test_unloadable_cuda_wheel_is_replaced_with_a_verified_cpu_wheel(self) -> None:
+        with (
+            patch("cli.installer.select_wheel", return_value=("cu124", "CUDA")),
+            patch("cli.installer.run") as run_command,
+            patch(
+                "cli.installer.probe_llama_runtime",
+                side_effect=[(False, "missing CUDA dependency"), (True, "")],
+            ),
+        ):
+            installed = installer.install_llama("managed-python", None)
+
+        self.assertEqual(installed, "cpu")
+        commands = [call.args[0] for call in run_command.call_args_list]
+        self.assertEqual(len(commands), 2)
+        self.assertIn("/cu124", commands[0][commands[0].index("--extra-index-url") + 1])
+        self.assertIn("/cpu", commands[1][commands[1].index("--extra-index-url") + 1])
+        self.assertIn("--force-reinstall", commands[1])
+        self.assertIn("--no-cache-dir", commands[1])
+
+    def test_unloadable_cpu_wheel_reports_a_short_backend_error(self) -> None:
+        with (
+            patch("cli.installer.select_wheel", return_value=("cpu", "CPU")),
+            patch("cli.installer.run"),
+            patch(
+                "cli.installer.probe_llama_runtime",
+                return_value=(False, "RuntimeError: missing llama.dll"),
+            ),
+        ):
+            with self.assertRaisesRegex(installer.LlamaRuntimeError, "missing llama.dll"):
+                installer.install_llama("managed-python", None)
 
     def test_repair_is_unavailable_before_the_first_install(self) -> None:
         with self.assertRaisesRegex(ValueError, "unavailable"):

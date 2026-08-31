@@ -41,9 +41,10 @@ py cli\installer.py -y --repair
 ```
 
 The installer previews commands with PowerShell-safe quoting and streams their output live in the same framed view used
-by the distribution builder. Repair mode forces a fresh dependency and llama.cpp backend reinstall, then clears the
-disposable validation cache so an earlier backend result cannot mask the repaired runtime. It preserves Ollama model
-blobs.
+by the distribution builder. It confirms that the selected `llama-cpp-python` wheel can load its native runtime. If a
+CUDA wheel installs but a required DLL cannot load, it automatically retries a fresh official CPU wheel without using the
+pip cache. Repair mode also forces a fresh dependency and backend reinstall, then clears the disposable validation cache
+so an earlier backend result cannot mask the repaired runtime. It preserves Ollama model blobs.
 
 If PowerShell blocks activation, make the current user policy permit local scripts, then open a new terminal:
 
