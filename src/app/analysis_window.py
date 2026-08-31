@@ -8,6 +8,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -29,7 +30,7 @@ from ..connectome.analysis import (
     CONSISTENCY_WINDOW,
     ConnectomeAnalyzer,
 )
-from ..utils.array_api import BACKEND_NAME, array_api as np
+from ..utils.array_api import BACKEND_NAME
 
 LOG = logging.getLogger(__name__)
 _TENSOR_NAMES = (

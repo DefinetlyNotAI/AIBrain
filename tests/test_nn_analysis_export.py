@@ -20,6 +20,7 @@ from src.connectome.export import export_nn_analysis_plus, export_session_analys
 from src.connectome.generator import REGIONS
 from src.connectome.graph import ConnectomeGraph
 from src.models.instrumented_backend import ActivationFrame, ActivitySource
+from src.utils.array_api import array_api, to_numpy
 
 
 class NNAnalysisExportTests(unittest.TestCase):
@@ -95,6 +96,32 @@ class NNAnalysisExportTests(unittest.TestCase):
 
         self.assertEqual(second.frames_seen, 1)
         self.assertTrue(np.array_equal(second.encoder_weights, first.encoder_weights))
+
+    def test_host_npz_restores_into_the_active_array_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "learned.npz"
+            backend_graph = ConnectomeGraph(
+                positions=array_api.asarray(self.graph.positions),
+                regions=array_api.asarray(self.graph.regions),
+                edges=array_api.asarray(self.graph.edges),
+                region_names=self.graph.region_names,
+            )
+            first = ConnectomeAnalyzer(backend_graph, hidden_width=4, model_path=path)
+            first.observe(
+                ActivationFrame(2, "gpu", 2, ActivitySource.SIMULATION),
+                array_api.asarray([0.3, 0.2], dtype=array_api.float32),
+            )
+            restored = ConnectomeAnalyzer(
+                backend_graph, hidden_width=4, model_path=path
+            )
+
+        self.assertEqual(restored.frames_seen, 1)
+        self.assertTrue(
+            np.array_equal(
+                to_numpy(restored.encoder_weights),
+                to_numpy(first.encoder_weights),
+            )
+        )
 
     def test_rolling_metrics_and_readiness_persist_with_the_model(self) -> None:
         report = self.analyzer.maturity_report()

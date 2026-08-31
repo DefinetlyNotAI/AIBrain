@@ -3,12 +3,19 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 
-import numpy as np
-
 from src.connectome.renderer import ConnectomeRenderer
+from src.utils.array_api import array_api as np
 
 
 class VisualizerModeTests(unittest.TestCase):
+    def test_neuron_border_width_uses_backend_independent_scalar_clamping(self) -> None:
+        renderer = SimpleNamespace(update=lambda: None)
+
+        ConnectomeRenderer.set_neuron_borders(renderer, True, 1.5)  # type: ignore[arg-type]
+
+        self.assertTrue(renderer.show_neuron_borders)
+        self.assertEqual(renderer.neuron_border_width, 1.0)
+
     def test_flat_projection_drops_depth_rotation(self) -> None:
         renderer = SimpleNamespace(view_mode="2d", zoom=1.0, width=lambda: 800, height=lambda: 600)
 

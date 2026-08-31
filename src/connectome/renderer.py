@@ -371,7 +371,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         ):
             delta = event.position() - self._last_pos
             self.yaw += delta.x() * 0.008
-            self.pitch = float(np.clip(self.pitch + delta.y() * 0.006, -1.3, 1.3))
+            self.pitch = min(1.3, max(-1.3, self.pitch + delta.y() * 0.006))
             self._last_pos = event.position()
             self.update()
         elif (
@@ -402,10 +402,12 @@ class ConnectomeRenderer(QOpenGLWidget):
     def wheelEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         # Smaller zoom is closer. 0.025 gives ~40x closer inspection than
         # the default view while retaining a finite, numerically stable scale.
-        self.zoom = float(
-            np.clip(
-                self.zoom * (0.82 if event.angleDelta().y() > 0 else 1.22), 0.025, 6.0
-            )
+        self.zoom = min(
+            6.0,
+            max(
+                0.025,
+                self.zoom * (0.82 if event.angleDelta().y() > 0 else 1.22),
+            ),
         )
         self.update()
 
@@ -416,7 +418,7 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def set_neuron_borders(self, visible: bool, width: float) -> None:
         self.show_neuron_borders = visible
-        self.neuron_border_width = float(np.clip(width, 0.0, 1.0))
+        self.neuron_border_width = min(1.0, max(0.0, width))
         self.update()
 
     def set_background_colour(self, colour: str) -> None:

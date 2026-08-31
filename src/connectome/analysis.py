@@ -12,7 +12,7 @@ import numpy as _numpy
 from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome_kernels import native
-from ..utils.array_api import array_api as np
+from ..utils.array_api import array_api as np, to_numpy
 
 LOG = logging.getLogger(__name__)
 MODEL_FILENAME = "aibrain.analyser.npz"
@@ -236,8 +236,15 @@ class ConnectomeAnalyzer:
         except (OSError, KeyError, TypeError, ValueError):
             return False
 
-        for name, target in tensors.items():
-            target[:] = loaded[name]
+        try:
+            for name, target in tensors.items():
+                # NPZ persistence is deliberately host-backed.  Convert each
+                # restored tensor to the graph's active array backend before
+                # assignment; CuPy otherwise treats a NumPy RHS as a scalar
+                # fill and raises while the desktop window is being built.
+                target[:] = self._array.asarray(loaded[name])
+        except (TypeError, ValueError):
+            return False
         self.frames_seen = frames_seen
         if has_metrics:
             self.reconstruction_history = [
@@ -286,11 +293,11 @@ class ConnectomeAnalyzer:
                 temporary_path = Path(handle.name)
                 _numpy.savez_compressed(
                     handle,
-                    encoder_weights=self.encoder_weights,
-                    encoder_bias=self.encoder_bias,
-                    decoder_weights=self.decoder_weights,
-                    decoder_bias=self.decoder_bias,
-                    embedding_centroid=self.embedding_centroid,
+                    encoder_weights=to_numpy(self.encoder_weights),
+                    encoder_bias=to_numpy(self.encoder_bias),
+                    decoder_weights=to_numpy(self.decoder_weights),
+                    decoder_bias=to_numpy(self.decoder_bias),
+                    embedding_centroid=to_numpy(self.embedding_centroid),
                     frames_seen=_numpy.array(self.frames_seen),
                     reconstruction_history=_numpy.asarray(
                         self.reconstruction_history, dtype="f4"
