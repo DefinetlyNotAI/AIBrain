@@ -11,7 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import clear_screen, error, header, section, status
+from src.utils.console_ui import (
+    clear_screen,
+    header,
+    report_gui_closed,
+    report_keyboard_interrupt,
+    section,
+    status,
+)
 from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
 
@@ -33,6 +40,7 @@ def main() -> int:
     section("Desktop startup", 1)
     status("LOG", f"CLI output: {runtime_log}")
     status("START", "Checking local model health before opening diagnostics")
+    print()
     LOG.info("Diagnostics runtime preflight passed; creating the desktop window")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -77,6 +85,10 @@ def main() -> int:
             final_exit_code,
             interrupted,
         )
+        if interrupted:
+            report_keyboard_interrupt("AIBrain Diagnostics")
+        elif final_exit_code == 0:
+            report_gui_closed("AIBrain Diagnostics")
         return final_exit_code
     finally:
         signal.signal(signal.SIGINT, previous_sigint_handler)
@@ -86,7 +98,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        error("Diagnostics cancelled by keyboard interrupt.")
+        report_keyboard_interrupt("AIBrain Diagnostics")
         raise SystemExit(130)
     except Exception as exc:
         report_exception("AIBrain Diagnostics launcher failed", exc)

@@ -559,6 +559,17 @@ def success(message: str) -> None:
     print(f"  {color(CHECK, Color.GREEN, Color.BOLD)} {message}")
 
 
+def report_gui_closed(application: str) -> None:
+    """Make a normal desktop-window close explicit in its launch console."""
+    success(f"User closed {application}.")
+
+
+def report_keyboard_interrupt(application: str) -> None:
+    """Render the shared clean cancellation message used by CLI entry points."""
+    print(flush=True)
+    error(f"User ended {application} with KeyboardInterrupt.")
+
+
 def warning(message: str) -> None:
     print(f"  {color('!', Color.YELLOW, Color.BOLD)} {message}")
 
@@ -635,8 +646,8 @@ class CommandOutputBox:
             return
         print(self.prefix + color(BOX_TOP_LEFT + BOX_HORIZONTAL * self.inner + BOX_TOP_RIGHT, Color.GRAY), flush=True)
         self._is_open = True
-        if self._live:
-            self._print_bottom()
+        self._bottom_visible = False
+        self._partial_rows = 0
 
     def _print_bottom(self) -> None:
         print(self.prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * self.inner + BOX_BOTTOM_RIGHT, Color.GRAY),
@@ -697,6 +708,8 @@ class CommandOutputBox:
         if not self._live:
             return
         lines = self._rendered_lines(output)
+        if not lines:
+            return
         self._erase_live_rows(self._partial_rows)
         self._partial_rows = len(lines)
         self._print_lines(lines)

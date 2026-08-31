@@ -11,7 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import clear_screen, error, header, section, status
+from src.utils.console_ui import (
+    clear_screen,
+    header,
+    report_gui_closed,
+    report_keyboard_interrupt,
+    section,
+    status,
+)
 from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
 
@@ -33,6 +40,7 @@ def main() -> int:
     section("Desktop startup", 1)
     status("LOG", f"CLI output: {runtime_log}")
     status("START", "Opening the Analysis+ model inspector")
+    print()
     LOG.info("Analysis runtime preflight passed; creating the desktop inspector")
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -76,6 +84,10 @@ def main() -> int:
             final_exit_code,
             interrupted,
         )
+        if interrupted:
+            report_keyboard_interrupt("AIBrain Analysis")
+        elif final_exit_code == 0:
+            report_gui_closed("AIBrain Analysis")
         return final_exit_code
     finally:
         signal.signal(signal.SIGINT, previous_sigint_handler)
@@ -85,7 +97,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        error("Analysis cancelled by keyboard interrupt.")
+        report_keyboard_interrupt("AIBrain Analysis")
         raise SystemExit(130)
     except Exception as exc:
         report_exception("AIBrain Analysis launcher failed", exc)

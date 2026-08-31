@@ -331,7 +331,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("'PySide6>=6.7,<7'", rendered)
         self.assertIn("'cupy-cuda13x[ctk]>=14,<15'", rendered)
 
-    def test_live_command_box_keeps_and_redraws_its_footer_for_partial_output(self) -> None:
+    def test_live_command_box_draws_its_footer_only_after_output_arrives(self) -> None:
         class InteractiveText(StringIO):
             def isatty(self) -> bool:
                 return True
@@ -341,14 +341,17 @@ class ConsoleUiTests(unittest.TestCase):
             patch.object(console_ui.os, "name", "posix"),
             redirect_stdout(output),
         ):
-            with console_ui.CommandOutputBox(live=True) as box:
+            box = console_ui.CommandOutputBox(live=True)
+            box.open()
+            self.assertFalse(box._bottom_visible)
+            with box:
                 box.write_partial("Downloading model: 25%")
                 box.write_partial("Downloading model: 50%")
                 box.write("Download complete")
 
         rendered = output.getvalue()
         self.assertIn("\x1b[1A\x1b[2K", rendered)
-        self.assertGreaterEqual(rendered.count(console_ui.BOX_BOTTOM_LEFT), 4)
+        self.assertGreaterEqual(rendered.count(console_ui.BOX_BOTTOM_LEFT), 3)
         self.assertIn("Download complete", console_ui.strip_ansi(rendered))
 
     def test_executable_path_shortening_requires_an_exact_path_match(
@@ -444,6 +447,20 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertTrue(selected)
         self.assertIn(Color.GREEN, output.getvalue())
         self.assertIn("Yes", console_ui.strip_ansi(output.getvalue()))
+
+    def test_exit_reports_distinguish_a_gui_close_from_keyboard_interrupt(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            console_ui.report_gui_closed("AIBrain Analysis")
+            console_ui.report_keyboard_interrupt("AIBrain Analysis")
+
+        self.assertIn(console_ui.CHECK, console_ui.strip_ansi(stdout.getvalue()))
+        self.assertIn("User closed AIBrain Analysis.", stdout.getvalue())
+        self.assertTrue(stdout.getvalue().endswith("\n\n"))
+        self.assertIn(console_ui.CROSS, console_ui.strip_ansi(stderr.getvalue()))
+        self.assertIn("User ended AIBrain Analysis with KeyboardInterrupt.", stderr.getvalue())
 
     def test_prompt_answer_redraws_the_original_terminal_line(self) -> None:
         class InteractiveOutput(StringIO):

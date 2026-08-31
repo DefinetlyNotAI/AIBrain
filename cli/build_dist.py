@@ -32,6 +32,7 @@ from src.utils.console_ui import (
     error,
     header,
     panel,
+    report_keyboard_interrupt,
     section,
 )
 from src.utils.gpu import set_windows_executable_gpu_preference
@@ -1183,7 +1184,7 @@ def build(
     try:
         for index, target in enumerate(
                 targets,
-                start=1,
+                start=2,
         ):
             section(
                 f"Compile {target.executable}",
@@ -1334,11 +1335,7 @@ if __name__ == "__main__":
         error(str(exc))
         raise SystemExit(130)
     except KeyboardInterrupt:
-        error(
-            "Distribution build cancelled "
-            "by keyboard interrupt."
-        )
-        print()
+        report_keyboard_interrupt("the distribution build")
         raise SystemExit(130)
     except Exception as exc:
         report_exception("AIBrain distribution build failed", exc)

@@ -33,6 +33,7 @@ from src.utils.console_ui import (
     info,
     panel,
     relative_path,
+    report_keyboard_interrupt,
     section,
     success,
     warning,
@@ -768,7 +769,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        error("Installation cancelled by keyboard interrupt.")
+        report_keyboard_interrupt("the installer")
         raise SystemExit(130)
     except Exception as exc:
         report_exception("AIBrain installer failed", exc)

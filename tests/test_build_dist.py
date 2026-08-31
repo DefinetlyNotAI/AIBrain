@@ -241,6 +241,12 @@ class BuildDistributionTests(unittest.TestCase):
             self.assertNotIn("--include-package=src", command)
             self.assertEqual(command[1:3], ["-u", "-m"])
 
+    def test_target_sections_follow_the_build_session_section(self) -> None:
+        source = Path(build_dist.__file__).read_text(encoding="utf-8")
+
+        self.assertIn('section("Build session", 1)', source)
+        self.assertIn("targets,\n                start=2,", source)
+
     def test_numpy_runtime_staging_keeps_only_required_submodules(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

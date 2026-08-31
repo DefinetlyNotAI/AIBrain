@@ -21,6 +21,7 @@ from src.utils.console_ui import (
     error,
     header,
     panel,
+    report_keyboard_interrupt,
     section,
     status,
 )
@@ -319,7 +320,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        error("Test run cancelled by keyboard interrupt.")
+        report_keyboard_interrupt("the test run")
         raise SystemExit(130)
     except Exception as exc:
         report_exception("AIBrain test runner failed", exc)

@@ -12,7 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import clear_screen, error, header, instruction_list, section, status
+from src.utils.console_ui import (
+    clear_screen,
+    error,
+    header,
+    instruction_list,
+    report_gui_closed,
+    report_keyboard_interrupt,
+    section,
+    status,
+)
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
 from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
@@ -79,6 +88,7 @@ def _supervise_gpu_launch() -> int:
                 except subprocess.TimeoutExpired:
                     child.kill()
                     child.wait()
+            report_keyboard_interrupt("AIBrain")
             return 130
 
         if exit_code != GPU_RELAUNCH_EXIT_CODE:
@@ -96,6 +106,7 @@ def main() -> int:
     section("Desktop startup", 1)
     status("LOG", f"CLI output: {runtime_log}")
     status("START", "Preparing Qt, local model validation, and the OpenGL adapter check")
+    print()
     os.environ.setdefault("QT_OPENGL", "desktop")
     from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, QTimer, Slot
     from PySide6.QtGui import QFont, QSurfaceFormat
@@ -264,7 +275,12 @@ def main() -> int:
     QTimer.singleShot(0, gpu_probe.run)
     try:
         exit_code = app.exec()
-        return 130 if interrupted else exit_code
+        final_exit_code = 130 if interrupted else exit_code
+        if interrupted:
+            report_keyboard_interrupt("AIBrain")
+        elif final_exit_code == 0:
+            report_gui_closed("AIBrain desktop")
+        return final_exit_code
     finally:
         signal.signal(signal.SIGINT, previous_sigint_handler)
         startup_worker.cancel()
@@ -277,7 +293,7 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        error("AIBrain cancelled by keyboard interrupt.")
+        report_keyboard_interrupt("AIBrain")
         raise SystemExit(130)
     except Exception as exc:
         report_exception("AIBrain desktop launcher failed", exc)
