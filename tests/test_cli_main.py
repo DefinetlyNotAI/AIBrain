@@ -1,6 +1,7 @@
 """Regression checks for the desktop entry point."""
 from __future__ import annotations
 
+import inspect
 import unittest
 from unittest.mock import patch
 
@@ -14,3 +15,10 @@ class MainEntryPointTests(unittest.TestCase):
                                                                                                          "base_prefix",
                                                                                                          "system"):
             main.require_virtual_environment()
+
+    def test_startup_waits_for_the_worker_before_exiting_after_a_fatal_error(self) -> None:
+        source = inspect.getsource(main.main)
+
+        self.assertIn("except Exception:", source)
+        self.assertIn("self._stop_startup(exit_code=1)", source)
+        self.assertIn("startup_thread.finished.connect(startup_coordinator.startup_thread_finished)", source)

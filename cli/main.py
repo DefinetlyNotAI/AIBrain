@@ -129,12 +129,6 @@ def main() -> int:
     interrupted = False
     previous_sigint_handler = signal.getsignal(signal.SIGINT)
 
-    def quit_for_keyboard_interrupt(_signal: int, _frame: object) -> None:
-        nonlocal interrupted
-        interrupted = True
-        app.quit()
-
-    signal.signal(signal.SIGINT, quit_for_keyboard_interrupt)
     interrupt_timer = QTimer(app)
     interrupt_timer.timeout.connect(lambda: None)
     interrupt_timer.start(200)
@@ -153,6 +147,9 @@ def main() -> int:
             self._models: list[object] | None = None
             self._gpu_checked = False
             self._gpu_relaunch_requested = False
+            self._stopping = False
+            self._main_window_started = False
+            self._shutdown_exit_code = 0
 
         @Slot(object)
         def models_ready(self, models: object) -> None:
@@ -173,10 +170,7 @@ def main() -> int:
                 # Mark this path terminal before asking Qt to leave its event
                 # loop so no MainWindow can flash between loader processes.
                 self._gpu_relaunch_requested = True
-                startup_worker.cancel()
-                startup_thread.quit()
-                loading.finish()
-                QCoreApplication.exit(GPU_RELAUNCH_EXIT_CODE)
+                self._stop_startup(exit_code=GPU_RELAUNCH_EXIT_CODE)
                 return
             self._gpu_checked = True
             self._show_main_when_ready()
@@ -190,19 +184,51 @@ def main() -> int:
 
         def _show_main_when_ready(self) -> None:
             if (
-                    self._gpu_relaunch_requested
+                    self._stopping
+                    or self._gpu_relaunch_requested
                     or not loading.isVisible()
                     or self._models is None
                     or not self._gpu_checked
+                    or self._main_window_started
             ):
                 return
-            window = MainWindow(self._models)
+            self._main_window_started = True
+            try:
+                window = MainWindow(self._models)
+            except Exception:
+                LOG.exception("Could not construct the AIBrain main window")
+                self._stop_startup(exit_code=1)
+                return
             app.main_window = window  # type: ignore[attr-defined]
             # Maximize as an ordinary resizable desktop window; never enter
             # borderless/fullscreen mode, so system controls remain available.
             window.showMaximized()
             loading.finish()
             startup_thread.quit()
+
+        def _stop_startup(self, *, exit_code: int = 0) -> None:
+            """Cancel startup and leave Qt only after its worker thread stops."""
+            if self._stopping:
+                return
+            self._stopping = True
+            self._shutdown_exit_code = exit_code
+            startup_worker.cancel()
+            loading.finish()
+            if startup_thread.isRunning():
+                startup_thread.quit()
+            else:
+                QTimer.singleShot(0, self.startup_thread_finished)
+
+        @Slot()
+        def cancel_startup(self) -> None:
+            """Handle loader cancellation without destroying an active QThread."""
+            LOG.info("Cancelling desktop startup and waiting for validation to stop")
+            self._stop_startup()
+
+        @Slot()
+        def startup_thread_finished(self) -> None:
+            if self._stopping:
+                QCoreApplication.exit(self._shutdown_exit_code)
 
         @Slot(str)
         def show_startup_error(self, message: str) -> None:
@@ -219,11 +245,22 @@ def main() -> int:
     gpu_probe.completed.connect(startup_coordinator.gpu_ready)
     gpu_probe.failed.connect(startup_coordinator.gpu_probe_failed)
     startup_thread.finished.connect(startup_worker.deleteLater)
-    loading.cancelled.connect(startup_worker.cancel)
-    loading.cancelled.connect(startup_thread.quit)
-    loading.cancelled.connect(app.quit)
+    startup_thread.finished.connect(startup_coordinator.startup_thread_finished)
+    loading.cancelled.connect(startup_coordinator.cancel_startup)
+
+    def quit_for_keyboard_interrupt(_signal: int, _frame: object) -> None:
+        nonlocal interrupted
+        interrupted = True
+        QTimer.singleShot(0, startup_coordinator.cancel_startup)
+
+    signal.signal(signal.SIGINT, quit_for_keyboard_interrupt)
+
+    def start_startup_worker() -> None:
+        if not startup_coordinator._stopping:
+            startup_thread.start()
+
     loading.show_centered()
-    QTimer.singleShot(0, startup_thread.start)
+    QTimer.singleShot(0, start_startup_worker)
     QTimer.singleShot(0, gpu_probe.run)
     try:
         exit_code = app.exec()

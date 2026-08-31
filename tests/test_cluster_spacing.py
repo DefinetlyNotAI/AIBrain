@@ -9,6 +9,13 @@ from src.connectome.generator import build_connectome
 
 
 class ClusterSpacingTests(unittest.TestCase):
+    def test_generator_supports_random_backends_without_choice(self) -> None:
+        graph = build_connectome("startup-regression", "Medium")
+
+        self.assertEqual(graph.positions.shape, (11000, 3))
+        self.assertEqual(graph.regions.shape, (11000,))
+        self.assertGreater(len(graph.edges), 0)
+
     def test_spacing_changes_the_deterministic_cluster_layout(self) -> None:
         compact = build_connectome("spacing-check", "Low", .6)
         spread = build_connectome("spacing-check", "Low", 1.8)

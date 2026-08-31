@@ -83,16 +83,30 @@ def _seed(key: str) -> int:
     )
 
 
+def _sample_indices(rng: object, population_size: int, size: int) -> np.ndarray:
+    """Return uniform integer indexes with NumPy and CuPy generators alike."""
+    return rng.integers(0, population_size, size=size)  # type: ignore[union-attr]
+
+
+def _normal(rng: object, mean: float, deviation: float, size: object) -> np.ndarray:
+    """Sample normal values with the generator APIs common to NumPy and CuPy."""
+    return mean + deviation * rng.standard_normal(size)  # type: ignore[union-attr]
+
+
 def build_connectome(
     model_key: str, quality: str = "Medium", cluster_spacing: float = 1.0
 ) -> ConnectomeGraph:
     counts = {"Low": 5000, "Medium": 11000, "High": 22000}
     n = counts.get(quality, 11000)
     rng = np.random.default_rng(_seed(model_key + quality))
-    region_ids = rng.choice(
-        len(REGIONS),
-        size=n,
-        p=np.array([0.07, 0.10, 0.12, 0.14, 0.16, 0.10, 0.12, 0.12, 0.07]),
+    # CuPy's Generator intentionally does not expose NumPy's ``choice`` API.
+    # Inverse-CDF sampling keeps the intended weighted region distribution and
+    # runs unchanged on either backend selected by ``array_api``.
+    region_weights = np.array(
+        [0.07, 0.10, 0.12, 0.14, 0.16, 0.10, 0.12, 0.12, 0.07]
+    )
+    region_ids = np.searchsorted(
+        np.cumsum(region_weights), rng.random(n), side="right"
     )
     # Nine deliberately separated 2D clusters. Keeping the z coordinate
     # varied preserves depth in 3D while the flat map remains non-overlapping.
@@ -101,19 +115,19 @@ def build_connectome(
         dtype=np.float32,
     )
     centers = np.column_stack(
-        (grid[:, 0] * 12.0, grid[:, 1] * 9.5, rng.normal(0, 3.5, len(REGIONS)))
+        (grid[:, 0] * 12.0, grid[:, 1] * 9.5, _normal(rng, 0, 3.5, len(REGIONS)))
     )
     centers *= cluster_spacing
-    positions = centers[region_ids] + rng.normal(0, 1.35, size=(n, 3))
-    positions += rng.normal(0, 0.25, size=(n, 1)) * np.array([1, -0.4, 0.6])
+    positions = centers[region_ids] + _normal(rng, 0, 1.35, (n, 3))
+    positions += _normal(rng, 0, 0.25, (n, 1)) * np.array([1, -0.4, 0.6])
     edges_per_node = {"Low": 5, "Medium": 7, "High": 9}.get(quality, 7)
     edge_parts: list[np.ndarray] = []
     for region in range(len(REGIONS)):
         nodes = np.flatnonzero(region_ids == region)
         if len(nodes) < 2:
             continue
-        source = rng.choice(nodes, size=len(nodes) * edges_per_node, replace=True)
-        destination = rng.choice(nodes, size=len(source), replace=True)
+        source = nodes[_sample_indices(rng, len(nodes), len(nodes) * edges_per_node)]
+        destination = nodes[_sample_indices(rng, len(nodes), len(source))]
         edge_parts.append(np.column_stack((source, destination)))
         # Directed-ish neighboring region bridges create activity paths.
         target_nodes = np.flatnonzero(region_ids == (region + 1) % len(REGIONS))
@@ -121,8 +135,12 @@ def build_connectome(
             edge_parts.append(
                 np.column_stack(
                     (
-                        rng.choice(nodes, size=max(20, len(nodes) // 18)),
-                        rng.choice(target_nodes, size=max(20, len(nodes) // 18)),
+                        nodes[_sample_indices(rng, len(nodes), max(20, len(nodes) // 18))],
+                        target_nodes[
+                            _sample_indices(
+                                rng, len(target_nodes), max(20, len(nodes) // 18)
+                            )
+                        ],
                     )
                 )
             )
