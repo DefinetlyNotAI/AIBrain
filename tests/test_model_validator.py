@@ -14,6 +14,69 @@ from src.models.model_validator import ModelValidator
 
 
 class ModelValidatorTests(unittest.TestCase):
+    def test_known_vision_models_are_rejected_before_llama_load(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gemma_blob = root / "gemma.gguf"
+            qwen_blob = root / "qwen.gguf"
+            gemma_blob.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
+            qwen_blob.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
+            models = [
+                ModelInfo(
+                    "gemma3",
+                    "4b",
+                    gemma_blob,
+                    family="gemma3",
+                    parameter_size="4B",
+                    size_bytes=gemma_blob.stat().st_size,
+                ),
+                ModelInfo(
+                    "qwen2.5vl",
+                    "3b",
+                    qwen_blob,
+                    family="qwen2.5vl",
+                    parameter_size="3B",
+                    size_bytes=qwen_blob.stat().st_size,
+                ),
+            ]
+            with (
+                patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache"),
+                patch("src.models.llama_backend.LlamaBackend") as backend_type,
+            ):
+                validated = ModelValidator.validate(
+                    models, Event(), lambda *_: None, verify_backend=True
+                )
+
+        self.assertTrue(all(not model.available for model in validated))
+        self.assertTrue(
+            all("vision-capable Ollama model" in model.error for model in validated)
+        )
+        backend_type.return_value.load.assert_not_called()
+
+    def test_text_only_gemma3_variant_still_reaches_llama_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            blob = root / "model.gguf"
+            blob.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
+            model = ModelInfo(
+                "gemma3",
+                "1b",
+                blob,
+                family="gemma3",
+                parameter_size="1B",
+                size_bytes=blob.stat().st_size,
+            )
+            with (
+                patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache"),
+                patch("src.models.llama_backend.LlamaBackend") as backend_type,
+            ):
+                validated = ModelValidator.validate(
+                    [model], Event(), lambda *_: None, verify_backend=True
+                )
+
+        self.assertTrue(validated[0].available)
+        backend_type.return_value.load.assert_called_once()
+
     def test_structural_validation_accepts_a_valid_gguf_without_loading_llama(
         self,
     ) -> None:

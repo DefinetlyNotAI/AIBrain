@@ -18,7 +18,27 @@ from .ollama_discovery import OllamaDiscovery
 LOG = logging.getLogger(__name__)
 
 CACHE_DIRECTORY = Path(__file__).resolve().parents[2] / ".cache" / "validation"
-_VALIDATION_FORMAT = 4
+_VALIDATION_FORMAT = 5
+
+
+def _direct_backend_compatibility_error(model: ModelInfo) -> str | None:
+    """Reject known vision-only Ollama families before the text backend loads them."""
+    identity = re.sub(
+        r"[^a-z0-9]+",
+        "",
+        f"{model.family} {model.name}",
+        flags=re.IGNORECASE,
+    ).lower()
+    parameter_size = model.parameter_size.upper().replace(" ", "")
+    qwen_vision = "qwen" in identity and "vl" in identity
+    gemma3_vision = "gemma3" in identity and parameter_size not in {"1B"}
+    if not (qwen_vision or gemma3_vision):
+        return None
+    return (
+        f"{model.name}:{model.tag} is a vision-capable Ollama model. "
+        "AIBrain currently loads text-only GGUF models directly through llama.cpp; "
+        "install or select a text-only model for chat and connectome analysis."
+    )
 
 
 def _validate_digest(
@@ -155,6 +175,8 @@ class ModelValidator:
                     error = OllamaDiscovery._validate_gguf(
                         model.blob_path, model.size_bytes
                     )
+                    if error is None and verify_backend:
+                        error = _direct_backend_compatibility_error(model)
                     if error is None:
                         error = _validate_digest(model, cancelled, report, index, total)
                     if error is None and backend is not None:
