@@ -69,12 +69,14 @@ class AnalysisCliTests(unittest.TestCase):
                 decoder_bias=np.ones(2),
                 embedding_centroid=np.ones(3),
                 frames_seen=np.array(7),
+                maturity_state=np.array("Teen"),
+                weights_frozen=np.array(False),
             )
             metadata = inspect_npz_model(path)
 
         self.assertEqual(metadata["status"], "Healthy")
         self.assertEqual(metadata["learning"]["lifetime_frames_seen"], 7)
-        self.assertEqual(metadata["learning"]["maturity"]["state"], "Baby")
+        self.assertEqual(metadata["learning"]["maturity"]["state"], "Teen")
         self.assertFalse(metadata["learning"]["maturity"]["metrics_persisted"])
         self.assertEqual(metadata["architecture"]["shape"], "2 -> 3 -> 2")
         self.assertEqual(metadata["tensors"]["encoder_weights"]["shape"], [2, 3])
