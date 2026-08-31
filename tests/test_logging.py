@@ -197,16 +197,24 @@ class LoggingTests(unittest.TestCase):
         self.assertNotIn("+---", captured)
         self.assertEqual(console.getvalue(), "")
 
-    def test_new_run_removes_all_stale_application_logs(self) -> None:
+    def test_new_run_removes_only_logs_for_the_same_feature(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log_directory = Path(directory)
-            stale = log_directory / "aibrain.main.earlier-run.log"
-            other_feature = log_directory / "crash.build_dist.log"
-            stale.write_text("old", encoding="utf-8")
-            other_feature.write_text("old crash", encoding="utf-8")
+            stale_runtime = log_directory / "aibrain.main.earlier-run.log"
+            stale_crash = log_directory / "crash.main.earlier-run.log"
+            other_runtime = log_directory / "aibrain.installer.log"
+            other_crash = log_directory / "crash.build_dist.log"
+            stale_runtime.write_text("old main", encoding="utf-8")
+            stale_crash.write_text("old main crash", encoding="utf-8")
+            other_runtime.write_text("installer history", encoding="utf-8")
+            other_crash.write_text("build history", encoding="utf-8")
             runtime_log, _ = configure_logging("main", log_directory)
-            self.assertFalse(stale.exists())
-            self.assertFalse(other_feature.exists())
+            self.assertFalse(stale_runtime.exists())
+            self.assertFalse(stale_crash.exists())
+            self.assertEqual(
+                other_runtime.read_text(encoding="utf-8"), "installer history"
+            )
+            self.assertEqual(other_crash.read_text(encoding="utf-8"), "build history")
             self._close_root_handlers()
 
         self.assertEqual(runtime_log.name, "aibrain.main.log")

@@ -242,16 +242,21 @@ def _start_fresh_log(path: Path) -> Path:
         return fallback
 
 
-def _clear_previous_run_logs(directory: Path) -> None:
-    """Remove stale normal and crash logs before any new application run."""
-    for prefix in ("aibrain", "crash"):
-        for path in directory.glob(f"{prefix}.*.log"):
-            try:
-                path.unlink()
-            except PermissionError:
-                # A concurrent process may still own a prior run file. Its
-                # timestamped fallback remains isolated instead of being lost.
-                continue
+def _clear_previous_run_logs(directory: Path, feature: str) -> None:
+    """Remove only stale logs belonging to the application being started."""
+    names = tuple(f"{prefix}.{feature}" for prefix in ("aibrain", "crash"))
+    for path in directory.iterdir():
+        if not path.is_file() or path.suffix != ".log":
+            continue
+        stem = path.name.removesuffix(path.suffix)
+        if not any(stem == name or stem.startswith(f"{name}.") for name in names):
+            continue
+        try:
+            path.unlink()
+        except PermissionError:
+            # A concurrent process may still own a prior run file. Its
+            # timestamped fallback remains isolated instead of being lost.
+            continue
 
 
 def configure_logging(feature: str | Path = "main", log_directory: Path | None = None) -> tuple[Path, Path]:
@@ -271,7 +276,7 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
         root.removeHandler(handler)
         handler.close()
 
-    _clear_previous_run_logs(directory)
+    _clear_previous_run_logs(directory, feature)
     runtime_log = _start_fresh_log(directory / f"aibrain.{feature}.log")
     crash_log = _start_fresh_log(directory / f"crash.{feature}.log")
     root.setLevel(logging.INFO)
