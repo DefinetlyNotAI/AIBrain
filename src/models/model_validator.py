@@ -38,6 +38,8 @@ def _validate_digest(
     digest = hashlib.sha256()
     size = max(1, model.blob_path.stat().st_size)
     read = 0
+    label = f"Hashing {model.name}:{model.tag}"
+    report(index, total, f"{label} (start)")
     with model.blob_path.open("rb") as handle:
         while chunk := handle.read(8 * 1024 * 1024):
             if cancelled.is_set():
@@ -45,10 +47,11 @@ def _validate_digest(
             digest.update(chunk)
             read += len(chunk)
             report(
-                index, total, f"Hashing {model.name}:{model.tag} ({read / size:.0%})"
+                index, total, f"{label} ({read / size:.0%})"
             )
     actual = digest.hexdigest()
     expected = model.digest.partition(":")[2].lower()
+    report(index, total, f"{label} (complete)")
     return (
         None
         if actual == expected

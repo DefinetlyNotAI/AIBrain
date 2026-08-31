@@ -10,6 +10,7 @@ from threading import Event
 from PySide6.QtCore import (
     QObject,
     QProcess,
+    QProcessEnvironment,
     QSettings,
     QThread,
     QTimer,
@@ -21,6 +22,8 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
+    QDialog,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
@@ -112,6 +115,7 @@ class DiagnosticsWindow(QMainWindow):
     """Expose model validation findings and user-initiated repair actions."""
 
     _DIAGNOSTIC_ROLE = Qt.ItemDataRole.UserRole
+    _TRACE_ROLE = Qt.ItemDataRole.UserRole + 1
     inspection_finished = Signal(bool)
     inspection_progress = Signal(int, int, str)
 
@@ -127,6 +131,9 @@ class DiagnosticsWindow(QMainWindow):
         self._last_refresh_succeeded = False
         self._closing = False
         self._live_output = LiveOutputBuffer()
+        self._repair_heartbeat = QTimer(self)
+        self._repair_heartbeat.setInterval(15_000)
+        self._repair_heartbeat.timeout.connect(self._report_repair_heartbeat)
         self._gpu_probe = GpuProbe(self)
         self._build()
         self._gpu_probe.completed.connect(self._opengl_ready)
@@ -189,7 +196,7 @@ class DiagnosticsWindow(QMainWindow):
         self.table.setWordWrap(True)
         self.table.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.table.itemSelectionChanged.connect(self._update_actions)
-        self.table.itemClicked.connect(self._open_manifest_item)
+        self.table.itemClicked.connect(self._open_table_item)
         header = self.table.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -305,7 +312,7 @@ class DiagnosticsWindow(QMainWindow):
                     "No local manifests found",
                     "Info",
                     "No model installed",
-                    "Install a model with ollama pull",
+                    "N/A",
                     "",
                 ]
             )
@@ -317,13 +324,27 @@ class DiagnosticsWindow(QMainWindow):
                     diagnostic.reference,
                     status,
                     diagnostic.reason,
-                    diagnostic.detail,
+                    "N/A" if diagnostic.available else "Open",
                     str(diagnostic.manifest_path),
                 ]
             )
             item.setData(0, self._DIAGNOSTIC_ROLE, diagnostic)
-            item.setToolTip(3, diagnostic.detail)
+            item.setData(
+                3,
+                self._TRACE_ROLE,
+                "" if diagnostic.available else diagnostic.detail,
+            )
+            item.setToolTip(
+                3,
+                "No error trace is available"
+                if diagnostic.available
+                else "Click Open to view and copy the error trace",
+            )
             item.setToolTip(4, "Click to reveal this manifest in Explorer")
+            if not diagnostic.available:
+                trace_font = item.font(3)
+                trace_font.setUnderline(True)
+                item.setFont(3, trace_font)
             link_font = item.font(4)
             link_font.setUnderline(True)
             item.setFont(4, link_font)
@@ -344,7 +365,13 @@ class DiagnosticsWindow(QMainWindow):
     def _diagnostics_progress(self, current: int, total: int, message: str) -> None:
         prefix = f"{current}/{total}" if total else "…"
         self.system_status.setText(f"Model compatibility check {prefix}: {message}")
-        self._log("CHECK", f"{prefix} {message}")
+        if message.startswith("Hashing "):
+            if message.endswith("(start)") or message.endswith("(complete)"):
+                self._log("CHECK", f"{prefix} {message}")
+            else:
+                self._set_live_progress("CHECK", f"{prefix} {message}")
+        else:
+            self._log("CHECK", f"{prefix} {message}")
         self.inspection_progress.emit(current, total, message)
 
     @Slot(str)
@@ -402,9 +429,11 @@ class DiagnosticsWindow(QMainWindow):
             arguments = [
                 str(PROJECT_ROOT / "cli" / "installer.py"),
                 "--repair",
+                "--repair-subsystem",
+                "backend",
                 "-y",
             ]
-            action = "Reinstalling the llama.cpp backend; Ollama model data is preserved"
+            action = "Updating llama.cpp only; Ollama model data is preserved"
         else:
             confirmation = QMessageBox.question(
                 self,
@@ -430,15 +459,28 @@ class DiagnosticsWindow(QMainWindow):
         process.setProgram(program)
         process.setArguments(arguments)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("AIBRAIN_EMBEDDED_REPAIR", "1")
+        process.setProcessEnvironment(environment)
+        process.started.connect(self._repair_started)
         process.readyReadStandardOutput.connect(self._append_repair_output)
         process.errorOccurred.connect(self._repair_error)
         process.finished.connect(self._repair_finished)
         self._repair_process = process
         LOG.info("Starting diagnostics repair: %s", action)
-        self._live_output.feed(f"Starting: {action}\n")
-        self.output.setPlainText(self._live_output.render())
+        self._log("START", action)
         process.start()
         self._update_actions()
+
+    @Slot()
+    def _repair_started(self) -> None:
+        self._repair_heartbeat.start()
+        self._log("RUN", "Repair command started; streaming package-manager output")
+
+    @Slot()
+    def _report_repair_heartbeat(self) -> None:
+        if self._repair_process is not None:
+            self._log("WAIT", "Repair command is still running; waiting for the next update")
 
     def _append_repair_output(self) -> None:
         if self._repair_process is None:
@@ -460,23 +502,35 @@ class DiagnosticsWindow(QMainWindow):
             level,
             message,
         )
+        self._live_output.current_line = ""
         line = f"[{datetime.now().strftime('%H:%M:%S')}] {level:<7} {message}"
         self._live_output.feed(line + "\n")
         self.output.setPlainText(self._live_output.render())
         self.output.moveCursor(QTextCursor.MoveOperation.End)
 
-    def _repair_error(self, _error: QProcess.ProcessError) -> None:
+    def _set_live_progress(self, level: str, message: str) -> None:
+        """Update one hashing-progress row without persisting each percentage."""
+        line = f"[{datetime.now().strftime('%H:%M:%S')}] {level:<7} {message}"
+        self._live_output.current_line = line
+        self.output.setPlainText(self._live_output.render())
+        self.output.moveCursor(QTextCursor.MoveOperation.End)
+
+    def _repair_error(self, process_error: QProcess.ProcessError) -> None:
         if self._repair_process is not None:
-            LOG.error("Diagnostics repair command error: %s", self._repair_process.errorString())
-            self._live_output.feed(
-                f"Repair command error: {self._repair_process.errorString()}\n"
-            )
-            self.output.setPlainText(self._live_output.render())
+            message = self._repair_process.errorString()
+            self._log("ERROR", f"Repair command error: {message}")
+            if process_error == QProcess.ProcessError.FailedToStart:
+                self._repair_heartbeat.stop()
+                self._repair_process = None
+                self._update_actions()
 
     def _repair_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
         self._append_repair_output()
-        self._live_output.feed(f"Repair command finished with exit code {exit_code}.\n")
-        self.output.setPlainText(self._live_output.render())
+        self._repair_heartbeat.stop()
+        self._log(
+            "DONE" if exit_code == 0 else "ERROR",
+            f"Repair command finished with exit code {exit_code}",
+        )
         self._repair_process = None
         LOG.info("Diagnostics repair command finished with exit code %s", exit_code)
         if exit_code == 0:
@@ -484,7 +538,10 @@ class DiagnosticsWindow(QMainWindow):
         self._update_actions()
         self.refresh()
 
-    def _open_manifest_item(self, item: QTreeWidgetItem, column: int) -> None:
+    def _open_table_item(self, item: QTreeWidgetItem, column: int) -> None:
+        if column == 3:
+            self._open_trace(item)
+            return
         if column != 4:
             return
         diagnostic = item.data(0, self._DIAGNOSTIC_ROLE)
@@ -497,6 +554,32 @@ class DiagnosticsWindow(QMainWindow):
             self._log("OPEN", f"Revealed manifest in Explorer: {path}")
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+
+    def _open_trace(self, item: QTreeWidgetItem) -> None:
+        trace = item.data(3, self._TRACE_ROLE)
+        if not isinstance(trace, str) or not trace:
+            return
+        dialog = QDialog(self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setWindowTitle("Raw diagnostic error trace")
+        dialog.resize(760, 440)
+        layout = QVBoxLayout(dialog)
+        viewer = QPlainTextEdit()
+        viewer.setAccessibleName("Copyable raw diagnostic error trace")
+        viewer.setPlainText(trace)
+        viewer.setReadOnly(True)
+        layout.addWidget(viewer)
+        actions = QHBoxLayout()
+        copy = QPushButton("Copy")
+        copy.setObjectName("copyTraceButton")
+        copy.clicked.connect(lambda: QApplication.clipboard().setText(trace))
+        close = QPushButton("Close")
+        close.clicked.connect(dialog.close)
+        actions.addStretch(1)
+        actions.addWidget(copy)
+        actions.addWidget(close)
+        layout.addLayout(actions)
+        dialog.open()
 
     @Slot(str, str)
     def _opengl_ready(self, vendor: str, renderer: str) -> None:
@@ -587,6 +670,7 @@ class DiagnosticsWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._repair_process is not None:
+            self._repair_heartbeat.stop()
             self._repair_process.kill()
             self._repair_process.waitForFinished(2_000)
         if self._diagnostics_worker is not None:

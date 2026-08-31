@@ -92,6 +92,8 @@ class InstallerRepairTests(unittest.TestCase):
         self.assertIn("--upgrade", backend_command)
         self.assertIn("--force-reinstall", backend_command)
         self.assertIn("--no-cache-dir", backend_command)
+        self.assertIn(installer.LLAMA_CPP_PYTHON_REQUIREMENT, backend_command)
+        self.assertNotIn("--only-binary=llama-cpp-python", backend_command)
 
     def test_unloadable_cuda_wheel_is_replaced_with_a_verified_cpu_wheel(self) -> None:
         with (
@@ -181,6 +183,24 @@ class InstallerRepairTests(unittest.TestCase):
             self.assertTrue(parsed.yes)
             self.assertEqual(parsed.install, action == "--install")
             self.assertEqual(parsed.repair, action == "--repair")
+
+    def test_scoped_backend_repair_flag_is_accepted(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            ["installer.py", "--repair", "--repair-subsystem", "backend", "-y"],
+        ):
+            parsed = installer.parse_args()
+
+        self.assertEqual(parsed.repair_subsystem, "backend")
+
+    def test_scoped_backend_repair_requires_explicit_repair_authorization(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            ["installer.py", "--repair-subsystem", "backend"],
+        ), self.assertRaises(SystemExit):
+            installer.parse_args()
 
     def test_cuda_umd_banner_is_detected(self) -> None:
         query = subprocess.CompletedProcess([], 0, "NVIDIA RTX, 610.88\n", "")

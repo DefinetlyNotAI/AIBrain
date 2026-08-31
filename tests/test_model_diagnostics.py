@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QProcess
+from PySide6.QtWidgets import QApplication, QDialog, QPlainTextEdit, QPushButton
 
 from src.app.loading_window import LoadingWindow
 from src.models.diagnostics import ModelDiagnostic, OllamaDiagnostics
@@ -44,13 +44,26 @@ class ModelDiagnosticsTests(unittest.TestCase):
             loader.finish()
             self.app.processEvents()
 
-    def test_raw_error_trace_column_wraps_without_elision(self) -> None:
+    def test_raw_error_trace_column_uses_open_or_not_available_actions(self) -> None:
         window = DiagnosticsWindow(auto_refresh=False)
         try:
-            self.assertTrue(window.table.wordWrap())
-            self.assertEqual(
-                window.table.textElideMode(),
-                Qt.TextElideMode.ElideNone,
+            broken = ModelDiagnostic(
+                "broken:latest",
+                Path("broken-manifest"),
+                None,
+                False,
+                "llama.cpp compatibility check failed\nTraceback: unsupported model",
+            )
+            healthy = ModelDiagnostic(
+                "healthy:latest", Path("healthy-manifest"), None, True, "Healthy"
+            )
+            window._diagnostics_ready([broken, healthy])
+
+            self.assertEqual(window.table.topLevelItem(0).text(3), "Open")
+            self.assertEqual(window.table.topLevelItem(1).text(3), "N/A")
+            self.assertIn(
+                "Traceback",
+                window.table.topLevelItem(0).data(3, window._TRACE_ROLE),
             )
         finally:
             window.close()
@@ -79,18 +92,86 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertNotIn(".wait(", diagnostics_close)
         self.assertIn("event.ignore()", analysis_close)
 
-    def test_manifest_column_opens_explorer_on_one_click(self) -> None:
+    def test_trace_and_manifest_columns_use_one_click_actions(self) -> None:
         source = inspect.getsource(DiagnosticsWindow._build)
 
-        self.assertIn("itemClicked.connect(self._open_manifest_item)", source)
+        self.assertIn("itemClicked.connect(self._open_table_item)", source)
         self.assertNotIn("itemDoubleClicked", source)
 
     def test_backend_repair_uses_the_current_noninteractive_installer_flags(self) -> None:
         source = inspect.getsource(DiagnosticsWindow.repair_selected)
 
         self.assertIn('"--repair",', source)
+        self.assertIn('"--repair-subsystem",', source)
+        self.assertIn('"backend",', source)
         self.assertIn('"-y",', source)
-        self.assertNotIn('"backend",', source)
+
+    def test_hashing_progress_logs_only_the_start_and_completion(self) -> None:
+        window = DiagnosticsWindow(auto_refresh=False)
+        try:
+            logged: list[tuple[str, str]] = []
+            window._log = lambda level, message: logged.append((level, message))  # type: ignore[method-assign]
+
+            window._diagnostics_progress(1, 1, "Hashing demo:latest (start)")
+            window._diagnostics_progress(1, 1, "Hashing demo:latest (50%)")
+            window._diagnostics_progress(1, 1, "Hashing demo:latest (complete)")
+
+            self.assertEqual(
+                logged,
+                [
+                    ("CHECK", "1/1 Hashing demo:latest (start)"),
+                    ("CHECK", "1/1 Hashing demo:latest (complete)"),
+                ],
+            )
+            self.assertIn("50%", window.output.toPlainText())
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_open_trace_action_shows_copyable_trace_text(self) -> None:
+        window = DiagnosticsWindow(auto_refresh=False)
+        try:
+            window._diagnostics_ready(
+                [
+                    ModelDiagnostic(
+                        "broken:latest",
+                        Path("broken-manifest"),
+                        None,
+                        False,
+                        "Traceback: unsupported architecture",
+                    )
+                ]
+            )
+            item = window.table.topLevelItem(0)
+            with patch("src.app.diagnostics_window.QDialog.open") as show_dialog:
+                window._open_table_item(item, 3)
+
+            show_dialog.assert_called_once()
+            dialog = window.findChildren(QDialog)[-1]
+            viewer = dialog.findChild(QPlainTextEdit)
+            self.assertIsNotNone(viewer)
+            self.assertTrue(viewer.isReadOnly())
+            self.assertIn("unsupported architecture", viewer.toPlainText())
+            self.assertIsNotNone(dialog.findChild(QPushButton, "copyTraceButton"))
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_failed_repair_start_releases_the_action_lock(self) -> None:
+        class FailedProcess:
+            @staticmethod
+            def errorString() -> str:
+                return "The managed Python executable could not be started"
+
+        window = DiagnosticsWindow(auto_refresh=False)
+        try:
+            window._repair_process = FailedProcess()  # type: ignore[assignment]
+            window._repair_error(QProcess.ProcessError.FailedToStart)
+
+            self.assertIsNone(window._repair_process)
+        finally:
+            window.close()
+            self.app.processEvents()
 
     def test_background_diagnostics_logs_start_and_completion(self) -> None:
         worker = DiagnosticsWorker()

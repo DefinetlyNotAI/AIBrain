@@ -67,12 +67,15 @@ class ModelValidatorTests(unittest.TestCase):
                 digest=wrong_digest,
             )
 
+            progress: list[str] = []
             validated = ModelValidator.validate(
-                [model], Event(), lambda *_: None, verify_backend=False
+                [model], Event(), lambda _current, _total, message: progress.append(message), verify_backend=False
             )
 
         self.assertFalse(validated[0].available)
         self.assertIn("Invalid HASH", validated[0].error)
+        self.assertIn("Hashing demo:latest (start)", progress)
+        self.assertIn("Hashing demo:latest (complete)", progress)
 
     def test_cache_reuses_full_validation_only_until_the_blob_changes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

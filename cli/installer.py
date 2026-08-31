@@ -8,6 +8,7 @@ and populate that virtual environment.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -43,6 +44,9 @@ from src.models.diagnostics import OllamaDiagnostics
 from src.utils.logging import configure_cli_logging, report_exception
 
 VENV_DIR = ROOT / ".venv"
+
+EMBEDDED_REPAIR_ENV = "AIBRAIN_EMBEDDED_REPAIR"
+LLAMA_CPP_PYTHON_REQUIREMENT = "llama-cpp-python>=0.3.35,<0.4"
 
 WHEEL_ROOT = "https://abetlen.github.io/llama-cpp-python/whl"
 
@@ -219,7 +223,7 @@ def repair_selected_subsystem(
         install_dependencies(python, gpu)
         return "dependencies"
     if subsystem == "backend":
-        return install_llama(python, gpu)
+        return install_llama(python, gpu, force_reinstall=True)
     if subsystem == "native":
         run([python, str(ROOT / "cli" / "build_native.py")])
         return "native"
@@ -474,19 +478,20 @@ def install_dependencies(
 
 
 def llama_install_command(python: str, wheel_tag: str, *, force_reinstall: bool) -> list[str]:
-    """Build a cache-safe prebuilt-wheel installation command."""
+    """Build a cache-safe current llama.cpp installation command."""
     command = [
         python,
         "-m",
         "pip",
         "install",
-        "--only-binary=llama-cpp-python",
+        "--upgrade",
+        "--no-cache-dir",
         "--extra-index-url",
         f"{WHEEL_ROOT}/{wheel_tag}",
-        "llama-cpp-python>=0.3.0",
+        LLAMA_CPP_PYTHON_REQUIREMENT,
     ]
     if force_reinstall:
-        command[4:4] = ["--upgrade", "--force-reinstall", "--no-cache-dir"]
+        command[4:4] = ["--force-reinstall"]
     return command
 
 
@@ -673,20 +678,49 @@ def parse_args() -> argparse.Namespace:
     action.add_argument("--install", action="store_true")
     action.add_argument("--repair", action="store_true")
     parser.add_argument("--backend", choices=("auto", "cuda", "cpu"), default="auto")
+    parser.add_argument(
+        "--repair-subsystem",
+        choices=("backend",),
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("-y", "--yes", action="store_true")
 
-    return parser.parse_args()
+    arguments = parser.parse_args()
+    if arguments.repair_subsystem and not arguments.repair:
+        parser.error("--repair-subsystem requires --repair")
+    return arguments
 
 
 def main() -> int:
     runtime_log, _ = configure_cli_logging("installer")
     args = parse_args()
 
-    clear_screen()
-    header()
+    embedded_repair = os.environ.get(EMBEDDED_REPAIR_ENV) == "1"
+    if not embedded_repair:
+        clear_screen()
+        header()
     detail("Log file", str(runtime_log))
 
     existing_runtime = venv_python().exists()
+    if args.repair_subsystem:
+        if not existing_runtime:
+            error("REASON: Backend repair requires the managed runtime.")
+            return 1
+        gpu = detect_nvidia()
+        section("Targeted backend repair", 1)
+        info("Updating llama-cpp-python only; Ollama model data is preserved")
+        try:
+            wheel_tag = repair_selected_subsystem(
+                args.repair_subsystem,
+                str(venv_python()),
+                gpu,
+            )
+        except (subprocess.CalledProcessError, LlamaRuntimeError) as exc:
+            error(str(exc))
+            return 1
+        success(f"Updated llama-cpp-python using {wheel_tag}")
+        return 0
+
     section("Choose installer action", 1)
     try:
         action = select_install_action(
