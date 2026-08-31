@@ -10,6 +10,7 @@ from unittest.mock import patch
 from src.utils.logging import (
     AlignedFormatter,
     BoundedFileHandler,
+    ConsoleFormatter,
     _uncaught_exception,
     configure_cli_logging,
     configure_logging,
@@ -37,6 +38,26 @@ class LoggingTests(unittest.TestCase):
         first, second = rendered.splitlines()
         self.assertTrue(first.endswith("first"))
         self.assertEqual(second, " " * first.index("first") + "second")
+
+    def test_console_formatter_uses_ui_style_messages_without_log_columns(self) -> None:
+        record = logging.LogRecord(
+            "aibrain.model_validator",
+            logging.WARNING,
+            "",
+            0,
+            "first\nsecond",
+            (),
+            None,
+        )
+
+        rendered = ConsoleFormatter(colour=False).format(record)
+        first, second = rendered.splitlines()
+
+        self.assertEqual(first, "  ! first")
+        self.assertEqual(second, "    second")
+        self.assertNotIn("aibrain.model_validator", rendered)
+        self.assertNotRegex(rendered, r"\d{2}:\d{2}:\d{2}")
+        self.assertNotIn("WARNING", rendered)
 
     def test_feature_logs_are_scoped_and_crash_logs_are_lazy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

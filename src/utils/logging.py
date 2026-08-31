@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 
+from .console_ui import BULLET, CROSS, Color, color
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAX_LOG_BYTES = 5 * 1024 * 1024
 MAX_CRASH_LOG_BYTES = 20 * 1024 * 1024
@@ -114,6 +116,37 @@ class AlignedFormatter(logging.Formatter):
         if self.colour:
             return f"{self._COLOURS.get(record.levelno, '')}{rendered}{self._RESET}"
         return rendered
+
+
+class ConsoleFormatter(logging.Formatter):
+    """Render runtime records as compact messages that match the CLI UI."""
+
+    _PRESENTATION = {
+        logging.DEBUG: ("·", Color.GRAY),
+        logging.INFO: (BULLET, Color.CYAN),
+        logging.WARNING: ("!", Color.YELLOW),
+        logging.ERROR: (CROSS, Color.RED),
+        logging.CRITICAL: (CROSS, Color.RED),
+    }
+
+    def __init__(self, *, colour: bool) -> None:
+        super().__init__()
+        self.colour = colour
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = record.getMessage()
+        if record.exc_info:
+            message = f"{message}\n{self.formatException(record.exc_info)}"
+        elif record.stack_info:
+            message = f"{message}\n{self.formatStack(record.stack_info)}"
+
+        marker, tone = self._PRESENTATION.get(record.levelno, (BULLET, Color.CYAN))
+        prefix = f"  {marker} "
+        lines = message.splitlines() or [""]
+        rendered = "\n".join(
+            [f"{prefix}{lines[0]}", *[(" " * len(prefix)) + line for line in lines[1:]]]
+        )
+        return color(rendered, tone, Color.BOLD) if self.colour else rendered
 
 
 class BoundedFileHandler(logging.FileHandler):
@@ -232,7 +265,7 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
     crash_log = _start_fresh_log(directory / f"crash.{feature}.log")
     root.setLevel(logging.INFO)
 
-    formatter = AlignedFormatter(colour=sys.stderr.isatty())
+    formatter = ConsoleFormatter(colour=sys.stderr.isatty())
     stream = logging.StreamHandler()
     stream.setFormatter(formatter)
     root.addHandler(stream)

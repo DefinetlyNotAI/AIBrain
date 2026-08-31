@@ -35,8 +35,9 @@ records go both to the attached console and to their feature-specific files unde
 create a lazy feature-specific crash log. Terminal progress is rendered as a live line rather than duplicated frames.
 
 AIBrain writes `logs\aibrain.log` and `logs\crash.log` below the project or packaged application root. Both files are
-reset at startup and bounded to 5 MiB while a run is active. Terminal and file records include time, level, logger, and
-message; multi-line records preserve their lines with an aligned continuation gutter rather than being truncated.
+reset at startup and bounded to 5 MiB while a run is active. The terminal renders clean UI-style messages without
+timestamp, severity, or source columns; the log files retain that context for diagnosis. Multi-line records preserve
+their lines with an aligned continuation gutter rather than being truncated.
 
 For diagnosis, launch AIBrain from an activated PowerShell terminal and retain the relevant log entries with the error
 text.
