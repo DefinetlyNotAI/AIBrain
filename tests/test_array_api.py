@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from src.utils.array_api import BACKEND_NAME, array_api, to_numpy
+from src.connectome.analysis import _normal
 
 
 class ArrayApiTests(unittest.TestCase):
@@ -33,6 +34,24 @@ class ArrayApiTests(unittest.TestCase):
         self.assertIs(backend, module._numpy)
         self.assertEqual(backend_name, "NumPy / CPU")
         self.assertEqual(fallback_reason, "No module named 'cupy'")
+
+    def test_normal_sampler_uses_the_generator_api_shared_by_cupy(self) -> None:
+        class Generator:
+            def __init__(self) -> None:
+                self.requested_size: tuple[int, ...] | None = None
+
+            def standard_normal(self, size: tuple[int, ...]) -> object:
+                self.requested_size = size
+                return array_api.ones(size, dtype=array_api.float32)
+
+            def normal(self, *_: object) -> object:
+                raise AssertionError("NumPy-only normal() must not be called")
+
+        generator = Generator()
+        sample = _normal(generator, 0.5, 0.25, (2, 3))
+
+        self.assertEqual(generator.requested_size, (2, 3))
+        self.assertEqual(to_numpy(sample).tolist(), [[0.75] * 3] * 2)
 
 
 if __name__ == "__main__":

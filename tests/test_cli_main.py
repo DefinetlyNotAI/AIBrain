@@ -21,4 +21,6 @@ class MainEntryPointTests(unittest.TestCase):
 
         self.assertIn("except Exception:", source)
         self.assertIn("self._stop_startup(exit_code=1)", source)
+        self.assertIn("self._models_finished", source)
+        self.assertIn("startup_worker.finished.connect(startup_thread.quit)", source)
         self.assertIn("startup_thread.finished.connect(startup_coordinator.startup_thread_finished)", source)

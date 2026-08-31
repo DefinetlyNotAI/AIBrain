@@ -4,6 +4,8 @@ import ctypes
 import sys
 from pathlib import Path
 
+import numpy as _numpy
+
 from ...utils.array_api import GPU_ACCELERATED, array_api as np
 
 _APP_ROOT = (
@@ -17,6 +19,11 @@ _DLL_PATH = _APP_ROOT / "dll" / "aibrain.connectome.dll"
 _FLOAT_PTR = ctypes.POINTER(ctypes.c_float)
 _INT32_PTR = ctypes.POINTER(ctypes.c_int32)
 _INT16_PTR = ctypes.POINTER(ctypes.c_int16)
+
+
+def _array_module(array: object):  # type: ignore[no-untyped-def]
+    """Use NumPy fallback operations for NumPy input under a CUDA runtime."""
+    return _numpy if isinstance(array, _numpy.ndarray) else np
 
 
 class NativeConnectome:
@@ -75,7 +82,7 @@ class NativeConnectome:
 
         if self.dll is None:
             values *= factor
-            return int(np.count_nonzero(values > threshold))
+            return int(_array_module(values).count_nonzero(values > threshold))
 
         return int(
             self.dll.decay_and_count(
@@ -111,6 +118,7 @@ class NativeConnectome:
             )
 
         if self.dll is None:
+            array_module = _array_module(values)
             source = edges[:, 0]
             destination = edges[:, 1]
 
@@ -121,14 +129,14 @@ class NativeConnectome:
                 & (destination < values.size)
             )
 
-            activity = np.zeros(edges.shape[0], dtype=np.float32)
+            activity = array_module.zeros(edges.shape[0], dtype=array_module.float32)
 
-            activity[valid] = np.maximum(
+            activity[valid] = array_module.maximum(
                 values[source[valid]],
                 values[destination[valid]],
             )
 
-            output[:required_output_size] = np.repeat(activity, 2)
+            output[:required_output_size] = array_module.repeat(activity, 2)
             return
 
         self.dll.edge_activity(
@@ -163,19 +171,20 @@ class NativeConnectome:
         if region_count < 0:
             raise ValueError("region_count must be non-negative")
 
-        sums = np.zeros(region_count, dtype=np.float32)
+        array_module = _array_module(values)
+        sums = array_module.zeros(region_count, dtype=array_module.float32)
 
         if self.dll is None:
             valid = (region_ids >= 0) & (region_ids < region_count)
 
-            if np.any(valid):
-                sums[:] = np.bincount(
+            if valid.any():
+                sums[:] = array_module.bincount(
                     region_ids[valid],
                     weights=values[valid],
                     minlength=region_count,
-                ).astype(np.float32, copy=False)
+                ).astype(array_module.float32, copy=False)
 
-            return sums, int(np.count_nonzero(values > threshold))
+            return sums, int(array_module.count_nonzero(values > threshold))
 
         active = self.dll.region_activity(
             values.ctypes.data_as(_FLOAT_PTR),

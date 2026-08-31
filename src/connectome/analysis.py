@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
+import numpy as _numpy
+
 from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome_kernels import native
@@ -19,6 +21,11 @@ MATURITY_STATES = ("Baby", "Teen", "Adult", "Elder")
 BABY_FRAME_FLOOR = 2_048
 ADULT_FRAME_FLOOR = 32_768
 CONSISTENCY_WINDOW = 128
+
+
+def _normal(rng: object, mean: float, deviation: float, size: object) -> np.ndarray:
+    """Sample normal values with the generator APIs shared by NumPy and CuPy."""
+    return mean + deviation * rng.standard_normal(size)  # type: ignore[union-attr]
 
 
 class PatternSegment(TypedDict):
@@ -62,16 +69,17 @@ class ConnectomeAnalyzer:
         self.region_count = len(graph.region_names)
         self.input_width = self.region_count + 4
         self.hidden_width = hidden_width
-        rng = np.random.default_rng(9137)
-        self.encoder_weights = rng.normal(
-            0, 0.14, (self.input_width, hidden_width)
+        self._array = _numpy if isinstance(graph.positions, _numpy.ndarray) else np
+        rng = self._array.random.default_rng(9137)
+        self.encoder_weights = _normal(
+            rng, 0, 0.14, (self.input_width, hidden_width)
         ).astype("f4")
-        self.encoder_bias = np.zeros(hidden_width, dtype="f4")
-        self.decoder_weights = rng.normal(
-            0, 0.14, (hidden_width, self.input_width)
+        self.encoder_bias = self._array.zeros(hidden_width, dtype="f4")
+        self.decoder_weights = _normal(
+            rng, 0, 0.14, (hidden_width, self.input_width)
         ).astype("f4")
-        self.decoder_bias = np.zeros(self.input_width, dtype="f4")
-        self.embedding_centroid = np.zeros(hidden_width, dtype="f4")
+        self.decoder_bias = self._array.zeros(self.input_width, dtype="f4")
+        self.embedding_centroid = self._array.zeros(hidden_width, dtype="f4")
         self.records: list[AnalysisRecord] = []
         self._learning_rate = 0.025
         self._previous_mean = 0.0
@@ -105,11 +113,12 @@ class ConnectomeAnalyzer:
         return base / "AIBrain" / "analysis_model" / "connectome_autoencoder_v1.npz"
 
     def observe(self, frame: ActivationFrame, values: np.ndarray) -> AnalysisRecord:
+        array = self._array
         regional, active_nodes = native.regions(
             values, self.graph.regions, self.region_count
         )
         counts = (
-            np.bincount(self.graph.regions, minlength=self.region_count)
+            array.bincount(self.graph.regions, minlength=self.region_count)
             .clip(1)
             .astype("f4")
         )
@@ -119,13 +128,13 @@ class ConnectomeAnalyzer:
         global_mean = max(float(values.mean()), 1e-6)
         relative_regional_density = regional_mean / global_mean
         distribution = relative_regional_density / (1.0 + relative_regional_density)
-        active_ratio = float(np.count_nonzero(values > 0.1) / len(values))
+        active_ratio = float(array.count_nonzero(values > 0.1) / len(values))
         mean_delta = abs(float(values.mean()) - self._previous_mean)
         self._previous_mean = float(values.mean())
-        features = np.concatenate(
+        features = array.concatenate(
             (
                 distribution,
-                np.array(
+                array.array(
                     (
                         active_ratio,
                         mean_delta,
@@ -137,16 +146,16 @@ class ConnectomeAnalyzer:
             )
         )
         encoded_pre = features @ self.encoder_weights + self.encoder_bias
-        embedding = np.tanh(encoded_pre)
+        embedding = array.tanh(encoded_pre)
         decoded_pre = embedding @ self.decoder_weights + self.decoder_bias
-        reconstruction = 1.0 / (1.0 + np.exp(-decoded_pre))
-        reconstruction_error = float(np.mean((reconstruction - features) ** 2))
-        distance = float(np.linalg.norm(embedding - self.embedding_centroid))
+        reconstruction = 1.0 / (1.0 + array.exp(-decoded_pre))
+        reconstruction_error = float(array.mean((reconstruction - features) ** 2))
+        distance = float(array.linalg.norm(embedding - self.embedding_centroid))
         novelty = distance + reconstruction_error * 4.0
         coherence = float(1.0 / (1.0 + reconstruction_error * 40.0))
         update_magnitude = self._train(features, embedding, reconstruction)
         self.embedding_centroid += 0.04 * (embedding - self.embedding_centroid)
-        dominant = int(np.argmax(regional))
+        dominant = int(array.argmax(regional))
         record = AnalysisRecord(
             frame.step,
             frame.token_text,
@@ -181,7 +190,7 @@ class ConnectomeAnalyzer:
 
     def _load_model(self, path: Path) -> bool:
         try:
-            with np.load(path, allow_pickle=False) as stored:
+            with _numpy.load(path, allow_pickle=False) as stored:
                 tensors = {
                     "encoder_weights": self.encoder_weights,
                     "encoder_bias": self.encoder_bias,
@@ -191,7 +200,7 @@ class ConnectomeAnalyzer:
                 }
                 loaded = {name: stored[name] for name in tensors}
                 if any(
-                    value.shape != tensors[name].shape or not np.isfinite(value).all()
+                    value.shape != tensors[name].shape or not _numpy.isfinite(value).all()
                     for name, value in loaded.items()
                 ):
                     return False
@@ -205,22 +214,22 @@ class ConnectomeAnalyzer:
                 }
                 has_metrics = all(value is not None for value in histories.values())
                 if has_metrics and any(
-                    not np.isfinite(np.asarray(value)).all()
+                    not _numpy.isfinite(_numpy.asarray(value)).all()
                     for value in histories.values()
                 ):
                     return False
                 stored_state = str(
-                    np.asarray(stored.get("maturity_state", np.array("Baby"))).reshape(
+                    _numpy.asarray(stored.get("maturity_state", _numpy.array("Baby"))).reshape(
                         -1
                     )[0]
                 )
                 transition_count = int(
-                    np.asarray(stored.get("transition_count", np.array(0))).reshape(-1)[
+                    _numpy.asarray(stored.get("transition_count", _numpy.array(0))).reshape(-1)[
                         0
                     ]
                 )
                 weights_frozen = bool(
-                    np.asarray(stored.get("weights_frozen", np.array(False))).reshape(
+                    _numpy.asarray(stored.get("weights_frozen", _numpy.array(False))).reshape(
                         -1
                     )[0]
                 )
@@ -233,19 +242,19 @@ class ConnectomeAnalyzer:
         if has_metrics:
             self.reconstruction_history = [
                 float(value)
-                for value in np.asarray(histories["reconstruction_history"])[
+                for value in _numpy.asarray(histories["reconstruction_history"])[
                     -METRIC_HISTORY_LIMIT:
                 ]
             ]
             self.novelty_history = [
                 float(value)
-                for value in np.asarray(histories["novelty_history"])[
+                for value in _numpy.asarray(histories["novelty_history"])[
                     -METRIC_HISTORY_LIMIT:
                 ]
             ]
             self.update_magnitude_history = [
                 float(value)
-                for value in np.asarray(histories["update_magnitude_history"])[
+                for value in _numpy.asarray(histories["update_magnitude_history"])[
                     -METRIC_HISTORY_LIMIT:
                 ]
             ]
@@ -275,24 +284,24 @@ class ConnectomeAnalyzer:
                 "wb", dir=self.model_path.parent, delete=False
             ) as handle:
                 temporary_path = Path(handle.name)
-                np.savez_compressed(
+                _numpy.savez_compressed(
                     handle,
                     encoder_weights=self.encoder_weights,
                     encoder_bias=self.encoder_bias,
                     decoder_weights=self.decoder_weights,
                     decoder_bias=self.decoder_bias,
                     embedding_centroid=self.embedding_centroid,
-                    frames_seen=np.array(self.frames_seen),
-                    reconstruction_history=np.asarray(
+                    frames_seen=_numpy.array(self.frames_seen),
+                    reconstruction_history=_numpy.asarray(
                         self.reconstruction_history, dtype="f4"
                     ),
-                    novelty_history=np.asarray(self.novelty_history, dtype="f4"),
-                    update_magnitude_history=np.asarray(
+                    novelty_history=_numpy.asarray(self.novelty_history, dtype="f4"),
+                    update_magnitude_history=_numpy.asarray(
                         self.update_magnitude_history, dtype="f4"
                     ),
-                    maturity_state=np.array(self.maturity_state),
-                    transition_count=np.array(self.transition_count),
-                    weights_frozen=np.array(self.weights_frozen),
+                    maturity_state=_numpy.array(self.maturity_state),
+                    transition_count=_numpy.array(self.transition_count),
+                    weights_frozen=_numpy.array(self.weights_frozen),
                 )
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -315,20 +324,21 @@ class ConnectomeAnalyzer:
             return 0.0
         gradient_output = 2.0 * (reconstruction - features) / self.input_width
         gradient_output *= reconstruction * (1.0 - reconstruction)
-        gradient_decoder_weights = np.outer(embedding, gradient_output)
+        array = self._array
+        gradient_decoder_weights = array.outer(embedding, gradient_output)
         gradient_embedding = gradient_output @ self.decoder_weights.T
         gradient_encoder_pre = gradient_embedding * (1.0 - embedding**2)
         self.decoder_weights -= self._learning_rate * gradient_decoder_weights
         self.decoder_bias -= self._learning_rate * gradient_output
-        self.encoder_weights -= self._learning_rate * np.outer(
+        self.encoder_weights -= self._learning_rate * array.outer(
             features, gradient_encoder_pre
         )
         self.encoder_bias -= self._learning_rate * gradient_encoder_pre
         return float(
-            np.sqrt(
-                np.square(self._learning_rate * gradient_output).sum()
-                + np.square(self._learning_rate * gradient_encoder_pre).sum()
-                + np.square(self._learning_rate * gradient_decoder_weights).sum()
+            array.sqrt(
+                array.square(self._learning_rate * gradient_output).sum()
+                + array.square(self._learning_rate * gradient_encoder_pre).sum()
+                + array.square(self._learning_rate * gradient_decoder_weights).sum()
             )
         )
 

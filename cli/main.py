@@ -156,6 +156,7 @@ def main() -> int:
         def __init__(self) -> None:
             super().__init__(app)
             self._models: list[object] | None = None
+            self._models_finished = False
             self._gpu_checked = False
             self._gpu_relaunch_requested = False
             self._stopping = False
@@ -165,7 +166,6 @@ def main() -> int:
         @Slot(object)
         def models_ready(self, models: object) -> None:
             self._models = models if isinstance(models, list) else []
-            self._show_main_when_ready()
 
         @Slot(str, str)
         def gpu_ready(self, vendor: str, renderer: str) -> None:
@@ -199,6 +199,7 @@ def main() -> int:
                     or self._gpu_relaunch_requested
                     or not loading.isVisible()
                     or self._models is None
+                    or not self._models_finished
                     or not self._gpu_checked
                     or self._main_window_started
             ):
@@ -215,7 +216,6 @@ def main() -> int:
             # borderless/fullscreen mode, so system controls remain available.
             window.showMaximized()
             loading.finish()
-            startup_thread.quit()
 
         def _stop_startup(self, *, exit_code: int = 0) -> None:
             """Cancel startup and leave Qt only after its worker thread stops."""
@@ -240,6 +240,9 @@ def main() -> int:
         def startup_thread_finished(self) -> None:
             if self._stopping:
                 QCoreApplication.exit(self._shutdown_exit_code)
+                return
+            self._models_finished = True
+            self._show_main_when_ready()
 
         @Slot(str)
         def show_startup_error(self, message: str) -> None:
@@ -252,7 +255,9 @@ def main() -> int:
     startup_thread.started.connect(startup_worker.run)
     startup_worker.progress.connect(loading.set_progress)
     startup_worker.finished.connect(startup_coordinator.models_ready)
+    startup_worker.finished.connect(startup_thread.quit)
     startup_worker.failed.connect(startup_coordinator.show_startup_error)
+    startup_worker.failed.connect(startup_thread.quit)
     gpu_probe.completed.connect(startup_coordinator.gpu_ready)
     gpu_probe.failed.connect(startup_coordinator.gpu_probe_failed)
     startup_thread.finished.connect(startup_worker.deleteLater)
