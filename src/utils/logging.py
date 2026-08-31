@@ -4,8 +4,10 @@ from __future__ import annotations
 import logging
 import os
 import re
+import subprocess
 import sys
 import threading
+import textwrap
 import traceback as traceback_module
 from datetime import datetime
 from pathlib import Path
@@ -14,79 +16,26 @@ from types import TracebackType
 from .console_ui import BULLET, CROSS, Color, color
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-MAX_LOG_BYTES = 5 * 1024 * 1024
-MAX_CRASH_LOG_BYTES = 20 * 1024 * 1024
-
-
-class ConsoleLogTee:
-    """Mirror Python-level console output to a plain-text runtime log."""
-
-    def __init__(self, stream: object, log_path: Path) -> None:
-        self._stream = stream
-        self._log = log_path.open("a", encoding="utf-8", errors="replace")
-        self._lock = threading.RLock()
-
-    @property
-    def encoding(self) -> str | None:
-        return getattr(self._stream, "encoding", None)
-
-    @property
-    def errors(self) -> str | None:
-        return getattr(self._stream, "errors", None)
-
-    def isatty(self) -> bool:
-        return bool(getattr(self._stream, "isatty", lambda: False)())
-
-    def fileno(self) -> int:
-        return int(getattr(self._stream, "fileno")())
-
-    def write(self, text: str) -> int:
-        with self._lock:
-            written = self._stream.write(text)  # type: ignore[union-attr]
-            self._log.write(_strip_ansi(text))
-            return len(text) if written is None else written
-
-    def writelines(self, lines: object) -> None:
-        for line in lines:  # type: ignore[union-attr]
-            self.write(line)
-
-    def flush(self) -> None:
-        with self._lock:
-            self._stream.flush()  # type: ignore[union-attr]
-            self._log.flush()
-
-    def close(self) -> None:
-        with self._lock:
-            self._log.close()
-
-    def __getattr__(self, name: str) -> object:
-        return getattr(self._stream, name)
+MAX_LOG_BYTES = 20 * 1024 * 1024
+MAX_CRASH_LOG_BYTES = MAX_LOG_BYTES
+FILE_LOG_LINE_WIDTH = 140
+_TIME_WIDTH = 19
+_SEVERITY_WIDTH = 8
+_SOURCE_WIDTH = 28
 
 
 _ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|][^\x07]*(?:\x07|\x1b\\))")
-_ORIGINAL_STDOUT = sys.stdout
-_ORIGINAL_STDERR = sys.stderr
-
-
 def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
 def restore_cli_output() -> None:
-    """Restore host streams after a CLI logger is reconfigured or tested."""
-    streams = (sys.stdout, sys.stderr)
-    if not any(isinstance(stream, ConsoleLogTee) for stream in streams):
-        return
-    for stream in streams:
-        if isinstance(stream, ConsoleLogTee):
-            stream.flush()
-            stream.close()
-    sys.stdout = _ORIGINAL_STDOUT
-    sys.stderr = _ORIGINAL_STDERR
+    """Compatibility hook for callers that previously restored console tees."""
+    return None
 
 
 class AlignedFormatter(logging.Formatter):
-    """Format complete multi-line records with an aligned continuation gutter."""
+    """Write fixed-column, word-wrapped runtime records for developer logs."""
 
     _COLOURS = {
         logging.DEBUG: "\x1b[38;5;245m",
@@ -102,17 +51,42 @@ class AlignedFormatter(logging.Formatter):
         self.colour = colour
 
     def format(self, record: logging.LogRecord) -> str:
-        timestamp = datetime.fromtimestamp(record.created).strftime("%H:%M:%S")
+        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
         source = record.name.removeprefix("src.").removeprefix("aibrain.")
-        prefix = f"  {timestamp}  {record.levelname:<8} {source}  "
+        if len(source) > _SOURCE_WIDTH:
+            source = source[: _SOURCE_WIDTH - 3] + "..."
+        prefix = (
+            f"{timestamp:<{_TIME_WIDTH}} | {record.levelname:<{_SEVERITY_WIDTH}} | "
+            f"{source:<{_SOURCE_WIDTH}} | "
+        )
+        continuation = (
+            f"{'':<{_TIME_WIDTH}} | {'':<{_SEVERITY_WIDTH}} | "
+            f"{'':<{_SOURCE_WIDTH}} | "
+        )
         message = record.getMessage()
         if record.exc_info:
             message = f"{message}\n{self.formatException(record.exc_info)}"
         elif record.stack_info:
             message = f"{message}\n{self.formatStack(record.stack_info)}"
 
+        available = max(FILE_LOG_LINE_WIDTH - len(prefix), 1)
         lines = message.splitlines() or [""]
-        rendered = "\n".join([f"{prefix}{lines[0]}", *[(" " * len(prefix)) + line for line in lines[1:]]])
+        wrapped = [
+            segment
+            for line in lines
+            for segment in (
+                textwrap.wrap(
+                    line,
+                    width=available,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                )
+                or [""]
+            )
+        ]
+        rendered = "\n".join(
+            [f"{prefix}{wrapped[0]}", *[f"{continuation}{line}" for line in wrapped[1:]]]
+        )
         if self.colour:
             return f"{self._COLOURS.get(record.levelno, '')}{rendered}{self._RESET}"
         return rendered
@@ -204,6 +178,23 @@ def format_exception(exception: BaseException) -> str:
     ).rstrip()
 
 
+def log_completed_command(
+    command_line: list[str],
+    output: str,
+    *,
+    return_code: int | None,
+    interrupted: bool = False,
+) -> None:
+    """Persist command output once its process has completed or been stopped."""
+    state = "interrupted" if interrupted else "completed"
+    exit_detail = "" if return_code is None else f" with exit code {return_code}"
+    message = f"Command {state}{exit_detail}: {subprocess.list2cmdline(command_line)}"
+    clean_output = _strip_ansi(output).strip()
+    if clean_output:
+        message = f"{message}\n{clean_output}"
+    logging.getLogger("aibrain.command").info("%s", message)
+
+
 def report_exception(
         context: str,
         exception: BaseException,
@@ -244,6 +235,18 @@ def _start_fresh_log(path: Path) -> Path:
         return fallback
 
 
+def _clear_previous_run_logs(directory: Path) -> None:
+    """Remove stale normal and crash logs before any new application run."""
+    for prefix in ("aibrain", "crash"):
+        for path in directory.glob(f"{prefix}.*.log"):
+            try:
+                path.unlink()
+            except PermissionError:
+                # A concurrent process may still own a prior run file. Its
+                # timestamped fallback remains isolated instead of being lost.
+                continue
+
+
 def configure_logging(feature: str | Path = "main", log_directory: Path | None = None) -> tuple[Path, Path]:
     """Start fresh normal and crash logs for this application run.
 
@@ -261,6 +264,7 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
         root.removeHandler(handler)
         handler.close()
 
+    _clear_previous_run_logs(directory)
     runtime_log = _start_fresh_log(directory / f"aibrain.{feature}.log")
     crash_log = _start_fresh_log(directory / f"crash.{feature}.log")
     root.setLevel(logging.INFO)
@@ -285,9 +289,6 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
 
 
 def configure_cli_logging(feature: str, log_directory: Path | None = None) -> tuple[Path, Path]:
-    """Configure logging and capture all Python CLI output in its runtime log."""
+    """Configure file logging without copying decorative console presentation."""
     restore_cli_output()
-    runtime_log, crash_log = configure_logging(feature, log_directory)
-    sys.stdout = ConsoleLogTee(_ORIGINAL_STDOUT, runtime_log)  # type: ignore[assignment]
-    sys.stderr = ConsoleLogTee(_ORIGINAL_STDERR, runtime_log)  # type: ignore[assignment]
-    return runtime_log, crash_log
+    return configure_logging(feature, log_directory)

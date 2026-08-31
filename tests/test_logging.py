@@ -11,9 +11,12 @@ from src.utils.logging import (
     AlignedFormatter,
     BoundedFileHandler,
     ConsoleFormatter,
+    FILE_LOG_LINE_WIDTH,
+    MAX_LOG_BYTES,
     _uncaught_exception,
     configure_cli_logging,
     configure_logging,
+    log_completed_command,
     report_exception,
     _start_fresh_log,
     restore_cli_output,
@@ -32,12 +35,27 @@ class LoggingTests(unittest.TestCase):
         restore_cli_output()
         self._close_root_handlers()
 
-    def test_formatter_preserves_multiline_message_with_aligned_gutter(self) -> None:
-        record = logging.LogRecord("aibrain.test", logging.WARNING, "", 0, "first\nsecond", (), None)
+    def test_formatter_uses_fixed_columns_and_word_aware_continuations(self) -> None:
+        record = logging.LogRecord(
+            "aibrain.test",
+            logging.WARNING,
+            "",
+            0,
+            "first line with enough words to require a continuation " * 4,
+            (),
+            None,
+        )
         rendered = AlignedFormatter(colour=False).format(record)
-        first, second = rendered.splitlines()
-        self.assertTrue(first.endswith("first"))
-        self.assertEqual(second, " " * first.index("first") + "second")
+        first, *continuations = rendered.splitlines()
+        timestamp, severity, source, message = first.split(" | ", maxsplit=3)
+
+        self.assertEqual(len(timestamp), 19)
+        self.assertEqual(severity, "WARNING ")
+        self.assertEqual(len(source), 28)
+        self.assertTrue(message.startswith("first line"))
+        self.assertTrue(continuations)
+        self.assertTrue(all(len(line) <= FILE_LOG_LINE_WIDTH for line in rendered.splitlines()))
+        self.assertTrue(all(line.startswith(" " * 19 + " | " + " " * 8 + " | ") for line in continuations))
 
     def test_console_formatter_uses_ui_style_messages_without_log_columns(self) -> None:
         record = logging.LogRecord(
@@ -122,22 +140,22 @@ class LoggingTests(unittest.TestCase):
             self.assertNotIn("oldest", text)
             self.assertIn("newest", text)
 
-    def test_cli_logging_captures_stdout_and_stderr_without_ansi(self) -> None:
+    def test_runtime_logs_are_limited_to_twenty_megabytes(self) -> None:
+        self.assertEqual(MAX_LOG_BYTES, 20 * 1024 * 1024)
+
+    def test_cli_logging_excludes_decorative_stdout_and_stderr(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runtime_log, _ = configure_cli_logging("test", Path(directory))
             try:
                 print("standard CLI output")
                 print("\x1b[31mCLI error output\x1b[0m", file=sys.stderr)
-                sys.stdout.flush()
-                sys.stderr.flush()
                 captured = runtime_log.read_text(encoding="utf-8")
             finally:
                 restore_cli_output()
                 self._close_root_handlers()
 
-        self.assertIn("standard CLI output", captured)
-        self.assertIn("CLI error output", captured)
-        self.assertNotIn("\x1b[31m", captured)
+        self.assertNotIn("standard CLI output", captured)
+        self.assertNotIn("CLI error output", captured)
 
     def test_cli_logging_records_application_logger_events(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -154,6 +172,35 @@ class LoggingTests(unittest.TestCase):
                 self._close_root_handlers()
 
         self.assertIn("inspection complete: Healthy", captured)
+        first_line = captured.splitlines()[0]
+        self.assertRegex(first_line, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| INFO")
+
+    def test_completed_command_output_is_logged_once_without_console_decoration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_log, _ = configure_logging("test", Path(directory))
+            log_completed_command(["python", "-m", "unittest"], "ok\nfinished", return_code=0)
+            for handler in logging.getLogger().handlers:
+                handler.flush()
+            captured = runtime_log.read_text(encoding="utf-8")
+            self._close_root_handlers()
+
+        self.assertIn("Command completed with exit code 0", captured)
+        self.assertIn("ok", captured)
+        self.assertNotIn("+---", captured)
+
+    def test_new_run_removes_all_stale_application_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            log_directory = Path(directory)
+            stale = log_directory / "aibrain.main.earlier-run.log"
+            other_feature = log_directory / "crash.build_dist.log"
+            stale.write_text("old", encoding="utf-8")
+            other_feature.write_text("old crash", encoding="utf-8")
+            runtime_log, _ = configure_logging("main", log_directory)
+            self.assertFalse(stale.exists())
+            self.assertFalse(other_feature.exists())
+            self._close_root_handlers()
+
+        self.assertEqual(runtime_log.name, "aibrain.main.log")
 
     def test_locked_feature_log_uses_an_isolated_timestamped_run_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

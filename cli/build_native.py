@@ -36,7 +36,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.runtime import require_managed_runtime
-from src.utils.logging import configure_cli_logging, report_exception
+from src.utils.logging import configure_cli_logging, log_completed_command, report_exception
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
@@ -72,17 +72,22 @@ def run_command(
     """Run an external command and render its output consistently."""
     command_preview(command_line)
 
-    result = subprocess.run(
-        command_line,
-        cwd=ROOT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
+    try:
+        result = subprocess.run(
+            command_line,
+            cwd=ROOT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+    except KeyboardInterrupt:
+        log_completed_command(command_line, "", return_code=None, interrupted=True)
+        raise
 
     output = result.stdout.rstrip()
+    log_completed_command(command_line, output, return_code=result.returncode)
 
     if show_output:
         command_output_box(

@@ -26,7 +26,7 @@ from src.utils.console_ui import (
 )
 from src.utils.runtime import require_managed_runtime
 from src.utils.runtime import in_managed_virtual_environment
-from src.utils.logging import configure_cli_logging, report_exception
+from src.utils.logging import configure_cli_logging, log_completed_command, report_exception
 
 SUITES: dict[str, tuple[str, list[str]]] = {
     "1": (
@@ -94,17 +94,22 @@ def run_command(command_line: list[str]) -> subprocess.CompletedProcess[str]:
     """Run a unittest command and display its captured output."""
     command_preview(command_line)
 
-    result = subprocess.run(
-        command_line,
-        cwd=ROOT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
+    try:
+        result = subprocess.run(
+            command_line,
+            cwd=ROOT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+    except KeyboardInterrupt:
+        log_completed_command(command_line, "", return_code=None, interrupted=True)
+        raise
 
     output = result.stdout.rstrip()
+    log_completed_command(command_line, output, return_code=result.returncode)
 
     if output:
         command_output_box(output)

@@ -35,7 +35,7 @@ from src.utils.console_ui import (
 )
 from src.utils.gpu import set_windows_executable_gpu_preference
 from src.utils.runtime import require_managed_runtime
-from src.utils.logging import configure_cli_logging, report_exception
+from src.utils.logging import configure_cli_logging, log_completed_command, report_exception
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
@@ -614,6 +614,7 @@ def _run_with_conpty(
     )
 
     pending = ""
+    captured_chunks: list[str] = []
     reader_finished = False
     last_child_output = time.monotonic()
 
@@ -636,6 +637,7 @@ def _run_with_conpty(
                     )
 
                     if text:
+                        captured_chunks.append(text)
                         pending = _render_output_text(
                             text,
                             pending,
@@ -662,6 +664,7 @@ def _run_with_conpty(
             )
 
             if remaining:
+                captured_chunks.append(remaining)
                 pending = _render_output_text(
                     remaining,
                     pending,
@@ -681,6 +684,12 @@ def _run_with_conpty(
         reader.join()
 
         process.wait()
+        log_completed_command(
+            command_line,
+            "".join(captured_chunks),
+            return_code=None,
+            interrupted=True,
+        )
         raise
 
     finally:
@@ -691,10 +700,13 @@ def _run_with_conpty(
 
         process.close()
 
+    captured_output = "".join(captured_chunks).rstrip()
+    log_completed_command(command_line, captured_output, return_code=return_code)
     if return_code:
         raise subprocess.CalledProcessError(
             return_code,
             command_line,
+            captured_output,
         )
 
 
@@ -771,6 +783,13 @@ def _run_with_file_tailer(
 
             except KeyboardInterrupt:
                 _stop_interrupted_build(process)
+                output_file.flush()
+                log_completed_command(
+                    command_line,
+                    output_path.read_text(encoding="utf-8", errors="replace"),
+                    return_code=None,
+                    interrupted=True,
+                )
                 raise
 
         captured_output = output_path.read_text(
@@ -778,6 +797,7 @@ def _run_with_file_tailer(
             errors="replace",
         ).rstrip()
 
+    log_completed_command(command_line, captured_output, return_code=return_code)
     if return_code:
         raise subprocess.CalledProcessError(
             return_code,
