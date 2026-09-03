@@ -36,6 +36,7 @@ SUITES: dict[str, tuple[str, list[str]]] = {
             "tests.test_model_validator",
             "tests.test_model_diagnostics",
             "tests.test_llama_backend",
+            "tests.test_llama_runtime",
             "tests.test_native_wrapper",
             "tests.test_array_api",
         ],
