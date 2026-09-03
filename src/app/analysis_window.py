@@ -287,27 +287,28 @@ def inspect_npz_contents(path: Path) -> str:
     path = Path(path)
     sections = [f"NPZ archive: {path}"]
     with np.load(path, allow_pickle=False) as stored:
-        sections.append(f"Entries: {len(stored.files)}")
-        for name in stored.files:
-            value = np.asarray(stored[name])
-            rendered = np.array2string(
-                value,
-                separator=", ",
-                threshold=max(1, value.size),
-                max_line_width=132,
-                precision=9,
-                floatmode="unique",
+        names = tuple(stored.files)
+        entries = [(name, np.array(stored[name], copy=True)) for name in names]
+    sections.append(f"Entries: {len(entries)}")
+    for name, value in entries:
+        rendered = np.array2string(
+            value,
+            separator=", ",
+            threshold=max(1, value.size),
+            max_line_width=132,
+            precision=9,
+            floatmode="unique",
+        )
+        sections.extend(
+            (
+                "",
+                f"[{name}]",
+                f"dtype: {value.dtype}",
+                f"shape: {value.shape}",
+                f"values ({value.size}):",
+                rendered,
             )
-            sections.extend(
-                (
-                    "",
-                    f"[{name}]",
-                    f"dtype: {value.dtype}",
-                    f"shape: {value.shape}",
-                    f"values ({value.size}):",
-                    rendered,
-                )
-            )
+        )
     return "\n".join(sections)
 
 

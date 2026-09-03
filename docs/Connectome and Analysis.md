@@ -67,6 +67,9 @@ The standalone `analysis.py` tool reads this NPZ without loading a GGUF or rende
 architecture, tensor statistics, and transparent learning-maturity estimate. Its **NPZ contents** tab lists every stored
 entry with its data type, shape, and complete values beside the JSON metadata view. Region-density normalization removes static cluster-size and global
 renderer-amplitude bias; findings remain analysis of procedural visual signals, not measured transformer activations.
+NPZ readers close the archive after copying its contents. Saves remain atomic and briefly retry Windows sharing
+violations, allowing the inspector, antivirus, or another process to release a transient read handle without losing the
+new in-memory learning state.
 The export contains the complete session conversation, network architecture and fit metrics, regional profile, pattern
 segments, and a bounded set of high-novelty events. It intentionally excludes massive per-neuron frame dumps.
 

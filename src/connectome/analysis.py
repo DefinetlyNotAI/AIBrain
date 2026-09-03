@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import threading
+import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +24,8 @@ MATURITY_STATES = ("Baby", "Teen", "Adult", "Elder")
 BABY_FRAME_FLOOR = 2_048
 ADULT_FRAME_FLOOR = 32_768
 CONSISTENCY_WINDOW = 128
+MODEL_SAVE_RETRY_DELAYS = (0.025, 0.05, 0.1, 0.2, 0.4, 0.8)
+_MODEL_SAVE_LOCK = threading.RLock()
 
 
 def _normal(rng: object, mean: float, deviation: float, size: object) -> np.ndarray:
@@ -293,6 +297,10 @@ class ConnectomeAnalyzer:
 
     def save_model(self) -> bool:
         """Atomically persist learned weights for future analysis sessions."""
+        with _MODEL_SAVE_LOCK:
+            return self._save_model_locked()
+
+    def _save_model_locked(self) -> bool:
         temporary_path: Path | None = None
         try:
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -321,7 +329,7 @@ class ConnectomeAnalyzer:
                 )
                 handle.flush()
                 os.fsync(handle.fileno())
-            temporary_path.replace(self.model_path)
+            self._replace_model_file(temporary_path)
             return True
         except (OSError, ValueError) as exc:
             LOG.warning(
@@ -331,6 +339,20 @@ class ConnectomeAnalyzer:
         finally:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink(missing_ok=True)
+
+    def _replace_model_file(self, temporary_path: Path) -> None:
+        """Wait out short Windows reader locks while retaining atomic replacement."""
+        for delay in (*MODEL_SAVE_RETRY_DELAYS, None):
+            try:
+                os.replace(temporary_path, self.model_path)
+                return
+            except OSError as exc:
+                sharing_violation = isinstance(exc, PermissionError) or getattr(
+                    exc, "winerror", None
+                ) in {5, 32}
+                if not sharing_violation or delay is None:
+                    raise
+                time.sleep(delay)
 
     def _train(
         self, features: np.ndarray, embedding: np.ndarray, reconstruction: np.ndarray

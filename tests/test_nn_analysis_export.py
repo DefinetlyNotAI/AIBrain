@@ -120,6 +120,29 @@ class NNAnalysisExportTests(unittest.TestCase):
         self.assertEqual(second.frames_seen, 1)
         self.assertTrue(np.array_equal(second.encoder_weights, first.encoder_weights))
 
+    def test_model_save_retries_a_transient_windows_reader_lock(self) -> None:
+        locked = PermissionError(13, "The destination is in use")
+        locked.winerror = 5
+
+        with patch("src.connectome.analysis.os.replace", side_effect=[locked, None]) as replace, patch(
+            "src.connectome.analysis.time.sleep"
+        ) as sleep:
+            saved = self.analyzer.save_model()
+
+        self.assertTrue(saved)
+        self.assertEqual(replace.call_count, 2)
+        sleep.assert_called_once_with(0.025)
+
+    def test_model_save_stops_retrying_after_a_non_locking_io_error(self) -> None:
+        with patch(
+            "src.connectome.analysis.os.replace", side_effect=OSError("disk full")
+        ) as replace, patch("src.connectome.analysis.time.sleep") as sleep:
+            saved = self.analyzer.save_model()
+
+        self.assertFalse(saved)
+        replace.assert_called_once()
+        sleep.assert_not_called()
+
     def test_host_npz_restores_into_the_active_array_backend(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "learned.npz"

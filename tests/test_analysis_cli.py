@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -120,6 +121,35 @@ class AnalysisCliTests(unittest.TestCase):
         self.assertIn("17", contents)
         self.assertIn("[maturity_state]", contents)
         self.assertIn("Teen", contents)
+
+    def test_npz_contents_closes_archive_before_formatting_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contents.npz"
+            replacement = Path(directory) / "replacement.npz"
+            np.savez(path, value=np.array([1.0]))
+            np.savez(replacement, value=np.array([2.0]))
+            original_formatter = np.array2string
+            replaced = False
+
+            def replace_while_formatting(value, **kwargs):  # type: ignore[no-untyped-def]
+                nonlocal replaced
+                if not replaced:
+                    replacement.replace(path)
+                    replaced = True
+                return original_formatter(value, **kwargs)
+
+            with patch(
+                "src.app.analysis_window.np.array2string",
+                side_effect=replace_while_formatting,
+            ):
+                contents = inspect_npz_contents(path)
+
+            with np.load(path, allow_pickle=False) as stored:
+                current = float(stored["value"][0])
+
+        self.assertTrue(replaced)
+        self.assertIn("1.", contents)
+        self.assertEqual(current, 2.0)
 
     def test_completed_inspection_populates_npz_contents_tab(self) -> None:
         window = AnalysisWindow(auto_refresh=False)
