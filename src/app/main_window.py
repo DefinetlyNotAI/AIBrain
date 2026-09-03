@@ -182,6 +182,7 @@ class MainWindow(QMainWindow):
         )
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
+        self.chat.set_rewind_available(False)
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
@@ -209,6 +210,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_mode(infinite)
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
+        self.chat.set_rewind_available(False)
         self.chat.stats.setText(
             "Infinite Mode ready." if infinite else "Normal Chat ready."
         )
@@ -281,6 +283,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_mode(False)
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
+        self.chat.set_rewind_available(False)
         save_generation_settings(self.config)
         self.history.append({"role": "user", "content": prompt})
         self.visualizer.set_conversation(self.history)
@@ -323,6 +326,7 @@ class MainWindow(QMainWindow):
             self.visualizer.begin_recording()
             self.chat.set_analysis_memory_exceeded(False)
             self.chat.set_regenerate_available(False)
+            self.chat.set_rewind_available(False)
             self.simulation_transcript = [{"role": "world", "content": seed, "turn": 0}]
             self.visualizer.set_conversation(self.simulation_transcript)
             self.chat.clear_messages()
@@ -378,13 +382,16 @@ class MainWindow(QMainWindow):
         self.chat.stats.setText(
             f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}"
         )
-        self.chat.generating(False)
         self.chat.set_analysis_available(bool(self.visualizer.analyzer.records))
+        self.chat.set_rewind_available(self.visualizer.has_recorded_frames)
         self.chat.set_analysis_memory_exceeded(self.visualizer.analysis_memory_exceeded)
+        self.chat.generating(False)
 
     def _simulation_failed(self, error: str) -> None:
         LOG.error("%s", error)
         self.chat.stats.setText(error)
+        self.chat.set_analysis_available(bool(self.visualizer.analyzer.records))
+        self.chat.set_rewind_available(self.visualizer.has_recorded_frames)
         self.chat.generating(False)
         self._show_repairable_error("Infinite simulation error", error)
 
@@ -405,6 +412,7 @@ class MainWindow(QMainWindow):
         self.chat.clear_latest_playback()
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
+        self.chat.set_rewind_available(False)
         self.chat.stats.setText("Conversation cleared.")
 
     def _on_token(self, text: str, frame: object) -> None:
@@ -438,21 +446,27 @@ class MainWindow(QMainWindow):
             f"{rate:.1f} tokens/s{suffix}"
         )
 
+        exportable = bool(text) and text != "Thinking…"
+        self.chat.set_analysis_available(exportable)
+        self.chat.set_regenerate_available(exportable)
+        self.chat.set_rewind_available(self.visualizer.has_recorded_frames)
         self.chat.generating(False)
-        self.chat.set_analysis_available(
-            bool(text) and text != "Thinking…" and not stats["cancelled"]
-        )
-        self.chat.set_regenerate_available(
-            bool(text) and text != "Thinking…" and not stats["cancelled"]
-        )
         self._assistant_bubble = None
         self._awaiting_first_token = False
 
     def _failed(self, error: str) -> None:
         LOG.error("%s", error)
         self.chat.stats.setText(error)
+        partial = (
+            self._assistant_bubble.text()
+            if self._assistant_bubble is not None
+            else ""
+        )
+        exportable = bool(partial) and partial != "Thinking…"
+        self.chat.set_analysis_available(exportable)
+        self.chat.set_regenerate_available(exportable)
+        self.chat.set_rewind_available(self.visualizer.has_recorded_frames)
         self.chat.generating(False)
-        self.chat.set_analysis_available(False)
         self._assistant_bubble = None
         self._awaiting_first_token = False
         self._show_repairable_error("Generation error", error)

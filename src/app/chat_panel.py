@@ -50,17 +50,29 @@ class MarkdownLabel(QLabel):
     def __init__(self, text: str = "") -> None:
         self._markdown = ""
         super().__init__()
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.setInterval(32)
+        self._render_timer.timeout.connect(self._flush_markdown)
         self.setText(text)
 
     def setText(self, text: str) -> None:  # type: ignore[override]
         self._markdown = text
-        super().setText(markdown_to_html(text))
+        if hasattr(self, "_render_timer"):
+            self._render_timer.stop()
+        self._flush_markdown()
 
     def text(self) -> str:  # type: ignore[override]
         return self._markdown
 
     def append_markdown(self, text: str) -> None:
-        self.setText(self._markdown + text)
+        self._markdown += text
+        if not self._render_timer.isActive():
+            self._render_timer.start()
+
+    def _flush_markdown(self) -> None:
+        """Coalesce streamed chunks into one rich-text layout per frame."""
+        super().setText(markdown_to_html(self._markdown))
 
 
 class ChatPanel(QWidget):
@@ -89,6 +101,11 @@ class ChatPanel(QWidget):
         self._rewind_active = False
         self._replay_active = False
         self._regenerate_available = False
+        self._rewind_available = False
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setSingleShot(True)
+        self._scroll_timer.setInterval(32)
+        self._scroll_timer.timeout.connect(self._scroll_to_bottom_if_following)
         self._build(config)
         self._playback_controls: QWidget | None = None
 
@@ -360,6 +377,11 @@ class ChatPanel(QWidget):
         self._regenerate_available = available
         self._refresh_actions()
 
+    def set_rewind_available(self, available: bool) -> None:
+        """Enable rewind only after the visualizer has recorded token frames."""
+        self._rewind_available = available
+        self._refresh_actions()
+
     def set_validating_models(self, text: str) -> None:
         self.models.blockSignals(True)
         self.models.clear()
@@ -399,7 +421,8 @@ class ChatPanel(QWidget):
     def _schedule_scroll_to_bottom(self, follow_output: bool) -> None:
         if not follow_output:
             return
-        QTimer.singleShot(0, self._scroll_to_bottom_if_following)
+        if not self._scroll_timer.isActive():
+            self._scroll_timer.start()
 
     def _scroll_to_bottom_if_following(self) -> None:
         if self._follow_output:
@@ -494,8 +517,10 @@ class ChatPanel(QWidget):
         self.send.setEnabled(self._running or (ready and has_compose_text and not self._rewind_active))
         self.regenerate.setEnabled(
             ready and self._regenerate_available and not self._running and not self._infinite_mode)
-        self.rewind.setEnabled((self._rewind_active or (ready and not self._running and not self._infinite_mode))
-                               and not self._replay_active)
+        self.rewind.setEnabled(
+            (self._rewind_active or (ready and self._rewind_available and not self._running))
+            and not self._replay_active
+        )
         self.infinite.setEnabled(ready and not self._running and self._infinite_mode)
         self.clear.setEnabled(not self._running)
         self.models.setEnabled(not self._running and self.models.count() > 1)

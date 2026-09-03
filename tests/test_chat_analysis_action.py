@@ -5,9 +5,9 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QScrollArea
+from PySide6.QtWidgets import QApplication, QLabel, QScrollArea
 
-from src.app.chat_panel import ChatPanel
+from src.app.chat_panel import ChatPanel, MarkdownLabel
 from src.models.llama_backend import GenerationConfig
 
 
@@ -78,6 +78,48 @@ class ChatAnalysisActionTests(unittest.TestCase):
         panel.set_regenerate_available(False)
         self.assertFalse(panel.regenerate.isEnabled())
         panel.deleteLater()
+
+    def test_stopped_generation_restores_all_recorded_session_actions(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        panel.set_model_available(True)
+        panel.set_analysis_available(True)
+        panel.set_regenerate_available(True)
+        panel.set_rewind_available(True)
+
+        panel.generating(True)
+        self.assertFalse(panel.regenerate.isEnabled())
+        self.assertFalse(panel.rewind.isEnabled())
+        self.assertFalse(panel.open_analysis.isEnabled())
+
+        panel.generating(False)
+        self.assertTrue(panel.regenerate.isEnabled())
+        self.assertTrue(panel.rewind.isEnabled())
+        self.assertTrue(panel.open_analysis.isEnabled())
+        panel.deleteLater()
+
+    def test_infinite_mode_allows_recorded_rewind_and_analysis_after_stop(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        panel.set_model_available(True)
+        panel.infinite_mode.click()
+        panel.set_analysis_available(True)
+        panel.set_rewind_available(True)
+
+        self.assertTrue(panel.rewind.isEnabled())
+        self.assertTrue(panel.open_analysis.isEnabled())
+        self.assertFalse(panel.regenerate.isEnabled())
+        panel.deleteLater()
+
+    def test_streamed_markdown_is_batched_before_relayout(self) -> None:
+        label = MarkdownLabel("Start")
+
+        label.append_markdown(" one")
+        label.append_markdown(" two")
+
+        self.assertTrue(label._render_timer.isActive())
+        self.assertEqual(label.text(), "Start one two")
+        label._flush_markdown()
+        self.assertIn("Start one two", QLabel.text(label))
+        label.deleteLater()
 
     def test_rewind_mode_locks_chat_actions_until_the_graph_exits(self) -> None:
         panel = ChatPanel(GenerationConfig())

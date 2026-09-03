@@ -418,6 +418,10 @@ class VisualizerPanel(QWidget):
     def analysis_memory_exceeded(self) -> bool:
         return self._analysis_memory_exceeded
 
+    @property
+    def has_recorded_frames(self) -> bool:
+        return bool(self._playback)
+
     @staticmethod
     def _signal_bytes(signal: PlaybackStep) -> int:
         return (
