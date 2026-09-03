@@ -334,9 +334,39 @@ def _is_build_noise(line: str) -> bool:
 def _write_completed_build_line(output_box: CommandOutputBox, line: str) -> None:
     """Keep the full log and show meaningful build work at a readable rate."""
     _record_build_output(line)
+    pip_progress = _format_pip_progress(line)
+    if pip_progress is not None:
+        output_box.write_progress(pip_progress)
+        return
     if _is_build_noise(line):
         return
     output_box.write(line)
+
+
+def _format_pip_progress(line: str) -> str | None:
+    """Turn pip's machine-readable byte updates into a stable progress bar."""
+    match = re.fullmatch(r"\s*Progress\s+(\d+)\s+of\s+(\d+)\s*", line)
+    if match is None:
+        return None
+    current, total = (int(value) for value in match.groups())
+
+    def size(value: int) -> str:
+        amount = float(value)
+        unit = "B"
+        for candidate in ("KB", "MB", "GB"):
+            if amount < 1024:
+                break
+            amount /= 1024
+            unit = candidate
+        return f"{amount:.0f} {unit}" if unit == "B" else f"{amount:.1f} {unit}"
+
+    if total <= 0:
+        return f"pip download [{size(current)} received]"
+    ratio = min(max(current / total, 0.0), 1.0)
+    bar_width = 24
+    filled = round(bar_width * ratio)
+    bar = "=" * filled + "-" * (bar_width - filled)
+    return f"pip download [{bar}] {ratio:.0%} · {size(current)} / {size(total)}"
 
 
 def _render_output_text(
@@ -879,8 +909,16 @@ def _run_with_conpty(
 
 
 def _build_process_environment(command_line: list[str]) -> dict[str, str] | None:
-    """Let Nuitka's native Rich bars render through our incremental capture."""
-    if _command_activity(command_line) != "Nuitka":
+    """Enable machine-readable progress for captured Nuitka and pip commands."""
+    activity = _command_activity(command_line)
+    if activity.startswith("pip "):
+        environment = os.environ.copy()
+        environment.update({
+            "PIP_PROGRESS_BAR": "raw",
+            "PYTHONUNBUFFERED": "1",
+        })
+        return environment
+    if activity != "Nuitka":
         return None
     environment = os.environ.copy()
     environment.update({

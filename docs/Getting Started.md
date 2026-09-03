@@ -52,6 +52,8 @@ The installer previews commands with PowerShell-safe quoting and streams their o
 by the distribution builder. In an interactive terminal, the bottom border remains visible while the command runs:
 new lines replace the old border and move it down, while progress updates replace their previous rows in place.
 Each update writes the output and its border together. Redirected output uses a single closing border when the command ends.
+Pip uses its raw byte-progress stream while captured; the installer converts those updates into a moving download bar
+with percentage and transferred/total sizes instead of hiding them because its output is redirected.
 During silent periods, heartbeat and extended-wait messages name the active command, such as `pip install`, `ensurepip`,
 or a Python script. Nuitka compilation explanations appear only when Nuitka itself is running.
 

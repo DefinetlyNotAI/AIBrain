@@ -207,9 +207,58 @@ class BuildDistributionTests(unittest.TestCase):
             self.assertEqual(environment["PYTHONIOENCODING"], "utf-8")
             self.assertEqual(os.environ["TTY_COMPATIBLE"], "0")
             self.assertEqual(os.environ["COLUMNS"], "140")
-            self.assertIsNone(build_dist._build_process_environment(
+            pip_environment = build_dist._build_process_environment(
                 [sys.executable, "-m", "pip", "install", "nuitka"]
-            ))
+            )
+            self.assertEqual(pip_environment["PIP_PROGRESS_BAR"], "raw")
+            self.assertEqual(pip_environment["PYTHONUNBUFFERED"], "1")
+            self.assertNotIn("PIP_PROGRESS_BAR", os.environ)
+
+    def test_pip_raw_updates_render_as_a_moving_byte_progress_bar(self) -> None:
+        class OutputBox:
+            def __init__(self) -> None:
+                self.completed: list[str] = []
+                self.progress: list[str] = []
+
+            def write(self, text: str) -> None:
+                self.completed.append(text)
+
+            def write_progress(self, text: str) -> None:
+                self.progress.append(text)
+
+            def write_partial(self, _text: str) -> None:
+                return None
+
+        box = OutputBox()
+        with patch.object(build_dist, "_record_build_output") as record:
+            pending = build_dist._render_output_text(
+                "Collecting demo\nProgress 0 of 1048576\n"
+                "Progress 524288 of 1048576\nProgress 1048576 of 1048576\n"
+                "Downloaded demo\n",
+                "",
+                box,  # type: ignore[arg-type]
+            )
+        self.assertEqual(pending, "")
+        self.assertEqual(box.completed, ["Collecting demo", "Downloaded demo"])
+        self.assertEqual(len(box.progress), 3)
+        self.assertIn("0%", box.progress[0])
+        self.assertIn("50%", box.progress[1])
+        self.assertIn("100%", box.progress[2])
+        self.assertIn("512.0 KB / 1.0 MB", box.progress[1])
+        self.assertEqual(
+            [call.args[0] for call in record.call_args_list],
+            [
+                "Collecting demo", "Progress 0 of 1048576",
+                "Progress 524288 of 1048576", "Progress 1048576 of 1048576",
+                "Downloaded demo",
+            ],
+        )
+
+    def test_pip_unknown_total_still_reports_received_bytes(self) -> None:
+        self.assertEqual(
+            build_dist._format_pip_progress("Progress 2048 of 0"),
+            "pip download [2.0 KB received]",
+        )
 
     def test_captured_native_bars_are_visible_without_printing_every_redraw(self) -> None:
         with redirect_stdout(StringIO()) as output, build_dist.CommandOutputBox(live=False) as box:
