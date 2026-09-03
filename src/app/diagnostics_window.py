@@ -87,6 +87,7 @@ class DiagnosticsWorker(QObject):
     completed = Signal(object)
     failed = Signal(str)
     progress = Signal(int, int, str)
+    compute_completed = Signal(str, str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -98,6 +99,10 @@ class DiagnosticsWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
+            if self._cancelled.is_set():
+                self.completed.emit([])
+                return
+            self.compute_completed.emit(*OllamaDiagnostics.compute_health())
             LOG.info("Starting background Ollama model diagnostics")
             diagnostics = OllamaDiagnostics().inspect(
                 verify_backend=True,
@@ -286,11 +291,12 @@ class DiagnosticsWindow(QMainWindow):
             + "\nChecking local GGUF compatibility in the background…"
         )
         self._set_refreshing(True)
-        self._refresh_subsystem_cards(adapters)
+        self._refresh_subsystem_cards()
         self._gpu_probe.run()
         thread = QThread(self)
         worker = DiagnosticsWorker()
         worker.moveToThread(thread)
+        worker.compute_completed.connect(self._compute_ready)
         thread.started.connect(worker.run)
         worker.completed.connect(self._diagnostics_ready)
         worker.failed.connect(self._diagnostics_failed)
@@ -619,11 +625,18 @@ class DiagnosticsWindow(QMainWindow):
         dialog.open()
 
     @Slot(str, str)
+    def _compute_ready(self, state: str, detail: str) -> None:
+        labels = self.subsystem_cards["GPU / CUDA"]
+        labels[0].setText(state)
+        labels[1].setText(detail)
+        self._log("CUDA", f"{state}: {detail}")
+
+    @Slot(str, str)
     def _opengl_ready(self, vendor: str, renderer: str) -> None:
         labels = self.subsystem_cards["OpenGL rendering"]
         labels[0].setText("Ready")
         labels[1].setText(f"{vendor} · {renderer}")
-        self._log("OPENGL", f"Ready: {vendor} · {renderer}")
+        self._log("OPENGL", f"Rendering: {vendor} · {renderer}")
 
     @Slot(str)
     def _opengl_failed(self, message: str) -> None:
@@ -687,11 +700,11 @@ class DiagnosticsWindow(QMainWindow):
         logs.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(logs)))
 
-    def _refresh_subsystem_cards(self, adapters: list[object]) -> None:
+    def _refresh_subsystem_cards(self) -> None:
         checks = OllamaDiagnostics().subsystem_health()
         checks["GPU / CUDA"] = (
-            "Ready" if adapters else "Info",
-            "Adapter discovery is a preference signal; actual OpenGL is verified at launch.",
+            "Checking",
+            "Testing CUDA compute and llama.cpp separately from OpenGL rendering.",
         )
         mismatch = str(QSettings().value("opengl_gpu_mismatch_reason", ""))
         checks["OpenGL rendering"] = (

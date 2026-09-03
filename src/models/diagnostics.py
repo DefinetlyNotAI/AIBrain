@@ -150,6 +150,47 @@ class OllamaDiagnostics:
         }
 
     @staticmethod
+    def compute_health() -> tuple[str, str]:
+        """Probe compute independently of display adapters and installed models.
+
+        Call from a worker: CUDA initialization and DLL loading can take time.
+        Keep optional imports here so the installer still starts in a fresh venv.
+        """
+        state = "Ready"
+        try:
+            import cupy
+
+            if cupy.cuda.runtime.getDeviceCount() < 1:
+                raise RuntimeError("No CUDA devices found")
+            # Reading the result synchronizes, catching deferred device errors.
+            if cupy.ones(1, dtype=cupy.float32).sum().item() != 1:
+                raise RuntimeError("CUDA device operation returned an incorrect result")
+            properties = cupy.cuda.runtime.getDeviceProperties(
+                cupy.cuda.runtime.getDevice()
+            )
+            name = properties["name"]
+            if isinstance(name, bytes):
+                name = name.decode("utf-8", errors="replace")
+            array_detail = f"CuPy / CUDA: {name}; device operation passed."
+        except Exception as exc:
+            state = "CPU fallback"
+            array_detail = f"CuPy / CUDA unavailable: {type(exc).__name__}: {exc}."
+
+        try:
+            from .llama_runtime import load_llama_cpp
+
+            backend = load_llama_cpp()
+            if backend.llama_supports_gpu_offload():
+                backend_detail = "llama.cpp GPU offload supported; model inference not tested."
+            else:
+                state = "CPU fallback"
+                backend_detail = "llama.cpp uses a CPU-only backend."
+        except Exception as exc:
+            state = "Needs repair"
+            backend_detail = f"llama.cpp failed to load: {type(exc).__name__}: {exc}."
+        return state, f"{array_detail} {backend_detail}"
+
+    @staticmethod
     def remove_stale_manifest(diagnostic: ModelDiagnostic) -> None:
         """Remove only the selected broken manifest, never its shared blob data."""
         if not diagnostic.can_remove_manifest:

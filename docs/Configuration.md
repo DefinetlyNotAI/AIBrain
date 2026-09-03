@@ -10,6 +10,16 @@ high-performance rendering is selected (the default), it writes the Windows pref
 Python hosts and relaunches once before Qt creates an OpenGL context. The renderer overlay then verifies the actual
 OpenGL adapter.
 
+OpenGL draws the interface and connectome; CUDA runs compute workloads. On a hybrid-GPU laptop,
+OpenGL may report Intel while CUDA uses NVIDIA. The standalone diagnostics window probes its own
+OpenGL context using Windows' current adapter selection; it does not use the main launcher's GPU
+relaunch supervisor. Its `OPENGL` log describes rendering only.
+
+Diagnostics checks CUDA separately in a background worker, even when no models are installed.
+The `CUDA` log and GPU / CUDA card report a synchronized CuPy device operation and whether
+llama.cpp loads with GPU offload support. CPU fallbacks and library-load failures include their
+reason. Offload support alone does not prove that a particular model can run on the GPU.
+
 ## Persisted settings
 
 Windows `QSettings` persists the following values when generation starts:

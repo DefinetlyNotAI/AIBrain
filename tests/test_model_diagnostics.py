@@ -4,10 +4,11 @@ import inspect
 import json
 import os
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -224,7 +225,13 @@ class ModelDiagnosticsTests(unittest.TestCase):
 
     def test_background_diagnostics_logs_start_and_completion(self) -> None:
         worker = DiagnosticsWorker()
+        compute_results = []
+        worker.compute_completed.connect(lambda *result: compute_results.append(result))
         with (
+            patch(
+                "src.app.diagnostics_window.OllamaDiagnostics.compute_health",
+                return_value=("Ready", "CUDA device operation passed"),
+            ),
             patch("src.app.diagnostics_window.OllamaDiagnostics.inspect", return_value=[]),
             self.assertLogs("src.app.diagnostics_window", level="INFO") as captured,
         ):
@@ -232,6 +239,69 @@ class ModelDiagnosticsTests(unittest.TestCase):
 
         self.assertIn("Starting background Ollama model diagnostics", captured.output[0])
         self.assertIn("completed (0 models)", captured.output[1])
+        self.assertEqual(compute_results, [("Ready", "CUDA device operation passed")])
+
+    def test_compute_card_waits_for_runtime_probe_and_is_independent_of_opengl(self) -> None:
+        window = DiagnosticsWindow(auto_refresh=False)
+        try:
+            with patch.object(OllamaDiagnostics, "subsystem_health", return_value={}):
+                window._refresh_subsystem_cards()
+            cuda_card = window.subsystem_cards["GPU / CUDA"]
+            self.assertEqual(cuda_card[0].text(), "Checking")
+            window._opengl_ready("Intel", "Iris Xe")
+            self.assertEqual(cuda_card[0].text(), "Checking")
+            window._compute_ready("Ready", "CUDA: NVIDIA RTX; device operation passed")
+            self.assertEqual(cuda_card[0].text(), "Ready")
+            self.assertIn("NVIDIA RTX", cuda_card[1].text())
+            self.assertIn("Intel", window.subsystem_cards["OpenGL rendering"][1].text())
+            self.assertRegex(window.output.toPlainText(), r"CUDA\s+Ready: CUDA: NVIDIA RTX")
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_compute_health_reports_cuda_and_backend_failures_separately(self) -> None:
+        cases = (
+            (1, None, True, None, "Ready", "device operation passed"),
+            (0, None, False, None, "CPU fallback", "No CUDA devices found"),
+            (1, RuntimeError("device failed"), True, None, "CPU fallback", "device failed"),
+            (1, None, False, None, "CPU fallback", "CPU-only backend"),
+            (1, None, True, OSError("missing DLL"), "Needs repair", "missing DLL"),
+        )
+        for count, device_error, offload, load_error, expected_state, expected_detail in cases:
+            with self.subTest(state=expected_state, detail=expected_detail):
+                cupy = Mock()
+                cupy.cuda.runtime.getDeviceCount.return_value = count
+                cupy.cuda.runtime.getDeviceProperties.return_value = {"name": b"NVIDIA RTX"}
+                cupy.ones.return_value.sum.return_value.item.return_value = 1
+                cupy.ones.side_effect = device_error
+                backend = Mock()
+                backend.llama_supports_gpu_offload.return_value = offload
+                with (
+                    patch.dict(sys.modules, {"cupy": cupy}),
+                    patch(
+                        "src.models.llama_runtime.load_llama_cpp",
+                        return_value=backend,
+                        side_effect=load_error,
+                    ),
+                ):
+                    state, detail = OllamaDiagnostics.compute_health()
+                self.assertEqual(state, expected_state)
+                self.assertIn(expected_detail, detail)
+                if state == "Ready":
+                    self.assertIn("NVIDIA RTX", detail)
+                    self.assertIn("model inference not tested", detail)
+
+    def test_missing_cupy_does_not_prevent_backend_diagnostics(self) -> None:
+        backend = Mock()
+        backend.llama_supports_gpu_offload.return_value = True
+        with (
+            patch.dict(sys.modules, {"cupy": None}),
+            patch("src.models.llama_runtime.load_llama_cpp", return_value=backend),
+        ):
+            state, detail = OllamaDiagnostics.compute_health()
+        self.assertEqual(state, "CPU fallback")
+        self.assertIn("ModuleNotFoundError", detail)
+        self.assertIn("GPU offload supported", detail)
 
     def _write_manifest(self, root: Path, *, blob_data: bytes) -> Path:
         manifest = (
