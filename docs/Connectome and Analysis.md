@@ -65,7 +65,9 @@ survive an unexpected close as well as a normal exit. The model is stored at
 `%LOCALAPPDATA%\AIBrain\analysis_model\connectome_autoencoder_v1.npz` location is imported once when present.
 The standalone `analysis.py` tool reads this NPZ without loading a GGUF or renderer and reports its integrity, age,
 architecture, tensor statistics, and transparent learning-maturity estimate. Its **NPZ contents** tab lists every stored
-entry with its data type, shape, and complete values beside the JSON metadata view. Region-density normalization removes static cluster-size and global
+entry with its data type, shape, and complete values. **Inspect exported analysis JSON** opens the selected JSON or
+JSON.GZ file in the **JSON export** tab, displays both a compact summary and the complete parsed contents, and reports
+invalid files in that same visible tab. Region-density normalization removes static cluster-size and global
 renderer-amplitude bias; findings remain analysis of procedural visual signals, not measured transformer activations.
 NPZ readers close the archive after copying its contents. Saves remain atomic and briefly retry Windows sharing
 violations, allowing the inspector, antivirus, or another process to release a transient read handle without losing the
@@ -75,7 +77,7 @@ segments, and a bounded set of high-novelty events. It intentionally excludes ma
 
 Infinite mode keeps only a bounded rewind tail in RAM. Older compact Analysis+ records are written as compressed pages
 under `.cache/temp` and streamed into the JSON export without loading the whole cache into memory. The cache defaults to
-1 GB, can be changed in Advanced Options, and is disabled at `0`. If it fills, the oldest pages are removed and the
+1 GB, can be changed in **Advanced settings**, and is disabled at `0`. If it fills, the oldest pages are removed and the
 Analysis+ button shows a warning. A successful export consumes the temporary pages. Normal close and Python shutdown
 remove the active cache; a later launch also removes stale page folders left by an interrupted process.
 

@@ -365,6 +365,7 @@ class AnalysisWindow(QMainWindow):
         self._inspection_worker: AnalysisInspectionWorker | None = None
         self._closing = False
         self._last_healthy = False
+        self._selected_export: Path | None = None
         page = QWidget()
         layout = QVBoxLayout(page)
         title = QLabel("Analysis+ learned model inspector")
@@ -458,9 +459,9 @@ class AnalysisWindow(QMainWindow):
         overview_layout.addStretch(1)
         self.raw = QPlainTextEdit()
         self.raw.setReadOnly(True)
-        self.raw.setPlaceholderText("Raw JSON is available only when needed.")
+        self.raw.setPlaceholderText("Select an exported Analysis JSON file to inspect it.")
         self.raw.setToolTip(
-            "Read-only model metadata and summaries from explicitly selected exports"
+            "Complete contents of an explicitly selected JSON or JSON.GZ analysis export"
         )
         self.npz = QPlainTextEdit()
         self.npz.setReadOnly(True)
@@ -471,10 +472,10 @@ class AnalysisWindow(QMainWindow):
         )
         self.tabs.addTab(overview, "Dashboard")
         self.tabs.addTab(self.npz, "NPZ contents")
-        self.tabs.addTab(self.raw, "Raw JSON / details")
+        self.tabs.addTab(self.raw, "JSON export")
         self.tabs.setTabToolTip(0, "Model-health dashboard")
         self.tabs.setTabToolTip(1, "Complete values persisted in the Analysis+ NPZ archive")
-        self.tabs.setTabToolTip(2, "Optional raw model metadata and export summaries")
+        self.tabs.setTabToolTip(2, "Complete contents of a selected JSON analysis export")
         layout.addWidget(self.tabs, 1)
         self.setCentralWidget(page)
         if auto_refresh:
@@ -495,7 +496,8 @@ class AnalysisWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self.inspection_finished.emit(False))
             return
         LOG.info("Starting Analysis+ model inspection for %s", path)
-        self.raw.setPlainText("Reading persisted Analysis+ model in the background…")
+        if self._selected_export is None:
+            self.raw.setPlainText("Reading persisted Analysis+ model in the background…")
         self.npz.setPlainText("Reading persisted NPZ contents in the background…")
         thread = QThread(self)
         worker = AnalysisInspectionWorker(path)
@@ -541,7 +543,8 @@ class AnalysisWindow(QMainWindow):
                 "Analysis+ model inspection returned an unexpected result: %r", result
             )
             return
-        self.raw.setPlainText(json.dumps(metadata, indent=2))
+        if self._selected_export is None:
+            self.raw.setPlainText(json.dumps(metadata, indent=2))
 
     @Slot(str)
     def _inspection_failed(self, message: str) -> None:
@@ -549,7 +552,8 @@ class AnalysisWindow(QMainWindow):
         self._last_healthy = False
         self.health_value.setText("Needs repair")
         self.health_detail.setText(message)
-        self.raw.setPlainText(f"Status: Invalid Analysis+ model\n\n{message}")
+        if self._selected_export is None:
+            self.raw.setPlainText(f"Status: Invalid Analysis+ model\n\n{message}")
         self.npz.setPlainText(f"Status: NPZ contents unavailable\n\n{message}")
 
     @Slot()
@@ -592,12 +596,18 @@ class AnalysisWindow(QMainWindow):
                     payload = json.load(handle)
             else:
                 payload = json.loads(selected.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Analysis export root must be a JSON object")
+            conversation = payload.get("conversation", [])
             summary = {
                 "path": str(selected),
                 "schema": payload.get("schema"),
                 "created_at": payload.get("created_at"),
-                "conversation_turns": len(payload.get("conversation", [])),
-                "has_nn_findings": "analysis_plus" in payload
+                "conversation_turns": (
+                    len(conversation) if isinstance(conversation, list) else 0
+                ),
+                "has_nn_findings": isinstance(payload.get("smart_analysis"), dict)
+                or "analysis_plus" in payload
                 or "neural_network" in payload,
                 "recorded_frame_summary": payload.get("recorded_frame_summary", {}),
             }
@@ -607,12 +617,29 @@ class AnalysisWindow(QMainWindow):
                 summary["conversation_turns"],
                 summary["has_nn_findings"],
             )
-            self.raw.appendPlainText(
-                "\n\nExport summary:\n" + json.dumps(summary, indent=2)
+            rendered = (
+                "Export summary\n"
+                "==============\n"
+                f"{json.dumps(summary, indent=2, ensure_ascii=False, allow_nan=False)}\n\n"
+                "Complete JSON contents\n"
+                "======================\n"
+                f"{json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False)}"
             )
+            self._selected_export = selected
+            self.raw.setPlainText(rendered)
+            self.raw.verticalScrollBar().setValue(self.raw.verticalScrollBar().minimum())
+            self.tabs.setCurrentWidget(self.raw)
+            self.statusBar().showMessage(f"Loaded analysis export: {selected.name}")
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             LOG.warning("Could not read selected Analysis export: %s", exc)
-            self.raw.appendPlainText(f"\n\nCould not read export: {exc}")
+            self._selected_export = Path(filename)
+            self.raw.setPlainText(
+                f"Could not read analysis export\n"
+                f"==============================\n"
+                f"Path: {filename}\n\n{exc}"
+            )
+            self.tabs.setCurrentWidget(self.raw)
+            self.statusBar().showMessage("Analysis export could not be loaded")
 
     def _show_empty(self, path: Path) -> None:
         self._last_healthy = False
@@ -642,9 +669,10 @@ class AnalysisWindow(QMainWindow):
         )
         self.storage_value.setText("Not created")
         self.storage_detail.setText(str(path))
-        self.raw.setPlainText(
-            f"Status: No Analysis+ model has been learned yet.\n\nExpected location:\n{path}"
-        )
+        if self._selected_export is None:
+            self.raw.setPlainText(
+                f"Status: No Analysis+ model has been learned yet.\n\nExpected location:\n{path}"
+            )
         self.npz.setPlainText(
             f"Status: No NPZ contents are available yet.\n\nExpected location:\n{path}"
         )

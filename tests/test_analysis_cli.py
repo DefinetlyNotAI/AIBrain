@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import numpy as np
 import os
 import tempfile
@@ -40,7 +41,7 @@ class AnalysisCliTests(unittest.TestCase):
             )
             self.assertEqual(
                 window.tabs.tabToolTip(2),
-                "Optional raw model metadata and export summaries",
+                "Complete contents of a selected JSON analysis export",
             )
             self.assertEqual(
                 buttons["Refresh model health"].toolTip(),
@@ -57,7 +58,7 @@ class AnalysisCliTests(unittest.TestCase):
             ]
             self.assertEqual(len(metric_cards), 10)
             self.assertTrue(all(card.toolTip() for card in metric_cards))
-            self.assertIn("Read-only model metadata", window.raw.toolTip())
+            self.assertIn("Complete contents", window.raw.toolTip())
             self.assertIn("complete values", window.npz.toolTip())
         finally:
             window.close()
@@ -167,6 +168,76 @@ class AnalysisCliTests(unittest.TestCase):
         finally:
             window.close()
             self.app.processEvents()
+
+    def test_json_import_displays_complete_export_and_selects_its_tab(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "analysis.json"
+            payload = {
+                "schema": "aibrain.infinite-analysis-plus.v1",
+                "created_at": "2026-09-04T00:00:00+00:00",
+                "conversation": [{"role": "world", "content": "Rain begins."}],
+                "recorded_frame_summary": {"frames": 12},
+                "smart_analysis": {
+                    "frames_processed": 12,
+                    "session_findings": {"novelty": .4},
+                },
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            window = AnalysisWindow(auto_refresh=False)
+            try:
+                with patch(
+                    "src.app.analysis_window.QFileDialog.getOpenFileName",
+                    return_value=(str(path), "Analysis data (*.json *.json.gz)"),
+                ):
+                    window.inspect_export()
+
+                rendered = window.raw.toPlainText()
+                self.assertIs(window.tabs.currentWidget(), window.raw)
+                self.assertIn("Complete JSON contents", rendered)
+                self.assertIn('"smart_analysis"', rendered)
+                self.assertIn('"novelty": 0.4', rendered)
+                self.assertIn('"has_nn_findings": true', rendered)
+                self.assertIn(path.name, window.statusBar().currentMessage())
+            finally:
+                window.close()
+                self.app.processEvents()
+
+    def test_model_refresh_does_not_overwrite_an_imported_json_export(self) -> None:
+        window = AnalysisWindow(auto_refresh=False)
+        try:
+            window._selected_export = Path("selected-analysis.json")
+            window.raw.setPlainText("imported JSON remains visible")
+            result = AnalysisInspectionResult(
+                metadata={"status": "Healthy"},
+                npz_contents="[frames_seen]\nvalues (1):\n17",
+            )
+
+            window._inspection_ready(result)
+
+            self.assertEqual(window.raw.toPlainText(), "imported JSON remains visible")
+            self.assertEqual(window.npz.toPlainText(), result.npz_contents)
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_invalid_json_import_shows_the_error_in_the_json_tab(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.json"
+            path.write_text("not JSON", encoding="utf-8")
+            window = AnalysisWindow(auto_refresh=False)
+            try:
+                with patch(
+                    "src.app.analysis_window.QFileDialog.getOpenFileName",
+                    return_value=(str(path), "Analysis data (*.json *.json.gz)"),
+                ):
+                    window.inspect_export()
+
+                self.assertIs(window.tabs.currentWidget(), window.raw)
+                self.assertIn("Could not read analysis export", window.raw.toPlainText())
+                self.assertIn("could not be loaded", window.statusBar().currentMessage())
+            finally:
+                window.close()
+                self.app.processEvents()
 
     def test_npz_health_score_detects_poisoned_non_finite_values(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
