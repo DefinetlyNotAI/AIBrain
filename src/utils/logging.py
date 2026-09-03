@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
 import sys
@@ -229,14 +228,10 @@ def _thread_exception(args: threading.ExceptHookArgs) -> None:
 
 
 def _start_fresh_log(path: Path) -> Path:
-    """Clear a run log or select an isolated run path when Windows holds it open."""
-    try:
-        path.unlink(missing_ok=True)
-        return path
-    except PermissionError:
-        timestamp = datetime.now().strftime("%Y%m%dT%H%M%S%f")
-        fallback = path.with_name(f"{path.stem}.{timestamp}-{os.getpid()}{path.suffix}")
-        return fallback
+    """Truncate the stable feature log so every run replaces the previous one."""
+    if path.exists():
+        path.write_text("", encoding="utf-8")
+    return path
 
 
 def _clear_previous_run_logs(directory: Path, feature: str) -> None:
@@ -251,8 +246,8 @@ def _clear_previous_run_logs(directory: Path, feature: str) -> None:
         try:
             path.unlink()
         except PermissionError:
-            # A concurrent process may still own a prior run file. Its
-            # timestamped fallback remains isolated instead of being lost.
+            # The stable path is truncated separately. This branch primarily
+            # covers legacy timestamped files still held by an older process.
             continue
 
 

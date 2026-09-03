@@ -143,7 +143,8 @@ Consoles without cursor support and redirected output receive a status line ever
 
 Every script in `cli\` records its terminal output in `logs\aibrain.<command>.log` while it runs. GUI launchers also
 keep their terminal status visible and record it there, so startup, model-validation, and OpenGL failures can be reviewed
-after their window closes. Crash traces are recorded separately as `logs\crash.<command>.log`.
+after their window closes. Each launch replaces the previous log for that command; filenames never gain timestamps.
+Crash traces are recorded separately as `logs\crash.<command>.log`.
 
 ## First run
 

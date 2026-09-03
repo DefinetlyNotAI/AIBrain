@@ -233,15 +233,23 @@ class LoggingTests(unittest.TestCase):
 
         self.assertEqual(runtime_log.name, "aibrain.main.log")
 
-    def test_locked_feature_log_uses_an_isolated_timestamped_run_path(self) -> None:
+    def test_feature_log_is_truncated_without_changing_its_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "aibrain.main.log"
-            with patch.object(Path, "unlink", side_effect=PermissionError("locked")):
-                selected = _start_fresh_log(path)
+            path.write_text("previous run", encoding="utf-8")
 
-        self.assertNotEqual(selected, path)
-        self.assertTrue(selected.name.startswith("aibrain.main."))
-        self.assertEqual(selected.suffix, ".log")
+            selected = _start_fresh_log(path)
+
+            self.assertEqual(selected, path)
+            self.assertEqual(path.read_text(encoding="utf-8"), "")
+
+    def test_log_setup_never_generates_timestamped_fallback_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_log, crash_log = configure_logging("main", Path(directory))
+            self._close_root_handlers()
+
+        self.assertEqual(runtime_log.name, "aibrain.main.log")
+        self.assertEqual(crash_log.name, "crash.main.log")
 
     def test_reconfiguring_logging_closes_existing_handlers_before_log_rotation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

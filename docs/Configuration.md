@@ -47,8 +47,9 @@ create a lazy feature-specific crash log. Terminal progress is rendered as a liv
 Optional CUDA probing silently selects the NumPy CPU fallback when CuPy, a compatible device, or its runtime is not
 available; it does not interrupt startup or print an import traceback.
 
-AIBrain writes `logs\aibrain.log` and `logs\crash.log` below the project or packaged application root. Both files are
-reset at startup and bounded to 5 MiB while a run is active. The terminal renders clean UI-style messages without
+AIBrain writes feature-specific `logs\aibrain.<feature>.log` and `logs\crash.<feature>.log` files below the project or
+packaged application root. Each stable filename replaces its previous run at startup and is bounded to 20 MiB while a
+run is active. The terminal renders clean UI-style messages without
 timestamp, severity, or source columns; the log files retain that context for diagnosis. Multi-line records preserve
 their lines with an aligned continuation gutter rather than being truncated.
 
