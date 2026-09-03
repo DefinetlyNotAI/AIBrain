@@ -4,9 +4,13 @@ import tempfile
 import unittest
 import subprocess
 import sys
-from contextlib import redirect_stdout
+import json
+import struct
+import venv
+from contextlib import ExitStack, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from cli import installer
@@ -23,7 +27,9 @@ class InstallerRepairTests(unittest.TestCase):
             python.parent.mkdir(parents=True)
             python.touch()
             (root / ".cache").mkdir()
-            (root / "native.dll").touch()
+            native_dll = root / "dll" / "aibrain.connectome.dll"
+            native_dll.parent.mkdir()
+            native_dll.touch()
             diagnostics.return_value.inspect.return_value = []
 
             checks = installer.collect_final_health(str(python), None, root)
@@ -33,7 +39,8 @@ class InstallerRepairTests(unittest.TestCase):
         self.assertIn("REASON:", by_name["Hardware"].reason)
         self.assertEqual(by_name["Python"].status, "Ready")
         self.assertEqual(by_name["Model manifests / blobs"].status, "Ready")
-        self.assertEqual(by_name["Native DLLs"].status, "Ready")
+        self.assertEqual(by_name["Native DLLs"].status, "Present")
+        self.assertEqual(by_name["pip / libraries"].status, "Not checked")
 
     def test_cache_repair_only_rebuilds_the_disposable_validation_directory(
         self,
@@ -63,7 +70,9 @@ class InstallerRepairTests(unittest.TestCase):
             )
 
         self.assertEqual(repaired, "dependencies")
-        install_dependencies.assert_called_once_with("managed-python", None)
+        install_dependencies.assert_called_once_with(
+            "managed-python", None, force_reinstall=True
+        )
 
     def test_installer_uses_the_build_runner_for_live_command_output(self) -> None:
         command = ["managed-python", "-m", "pip", "install", "PySide6>=6.7,<7"]
@@ -74,7 +83,10 @@ class InstallerRepairTests(unittest.TestCase):
         run_live.assert_called_once_with(command)
 
     def test_repair_reinstalls_dependencies_and_backend(self) -> None:
-        with patch("cli.installer.run") as run_command:
+        with (
+            patch("cli.installer.run") as run_command,
+            patch("cli.installer.ensure_pip"),
+        ):
             installer.install_dependencies("managed-python", None, force_reinstall=True)
 
         dependency_command = run_command.call_args_list[-1].args[0]
@@ -86,14 +98,14 @@ class InstallerRepairTests(unittest.TestCase):
             patch("cli.installer.run") as run_command,
             patch("cli.installer.probe_llama_runtime", return_value=(True, "")),
         ):
-            installer.install_llama("managed-python", None, force_reinstall=True)
+            installer.install_llama("managed-python", None)
 
         backend_command = run_command.call_args.args[0]
         self.assertIn("--upgrade", backend_command)
         self.assertIn("--force-reinstall", backend_command)
         self.assertIn("--no-cache-dir", backend_command)
         self.assertIn(installer.LLAMA_CPP_PYTHON_REQUIREMENT, backend_command)
-        self.assertNotIn("--only-binary=llama-cpp-python", backend_command)
+        self.assertIn("--only-binary=llama-cpp-python", backend_command)
 
     def test_unloadable_cuda_wheel_is_replaced_with_a_verified_cpu_wheel(self) -> None:
         with (
@@ -223,6 +235,217 @@ class InstallerRepairTests(unittest.TestCase):
 
     def test_cpu_array_package_is_used_without_cuda(self) -> None:
         self.assertEqual(installer.numerical_package(None), "numpy>=1.26,<3")
+
+
+class InstallerBootstrapTests(unittest.TestCase):
+    def test_help_needs_no_site_packages_and_does_not_initialize_logs(self) -> None:
+        script = (
+            "from unittest.mock import patch; from cli import installer; "
+            "import sys; sys.argv = ['installer.py', '--help']; "
+            "patch('cli.installer.configure_cli_logging', "
+            "side_effect=AssertionError('help must not modify logs')).start(); "
+            "installer.main()"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            # Exercise direct invocation from a different working directory too.
+            for command, cwd in (
+                ([sys.executable, "-S", "-c", script], installer.ROOT),
+                ([sys.executable, "-S", str(installer.ROOT / "cli" / "installer.py"),
+                  "--help"], Path(directory)),
+            ):
+                with self.subTest(command=command):
+                    result = subprocess.run(
+                        command, cwd=cwd, capture_output=True, text=True, timeout=30
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("AIBrain Installer", result.stdout)
+
+    def test_structural_model_health_needs_no_qt_even_with_installed_models(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model_root = root / "models"
+            manifest = model_root / "manifests" / "registry.ollama.ai" / "library" / "demo" / "latest"
+            manifest.parent.mkdir(parents=True)
+            blob = model_root / "blobs" / "sha256-demo"
+            blob.parent.mkdir()
+            data = b"GGUF" + struct.pack("<IQQ", 3, 1, 1)
+            blob.write_bytes(data)
+            manifest.write_text(json.dumps({"layers": [{
+                "digest": "sha256:demo", "mediaType": "application/vnd.ollama.image.model",
+                "size": len(data),
+            }]}), encoding="utf-8")
+            broken = manifest.parent.parent / "broken" / "latest"
+            broken.parent.mkdir()
+            broken.write_text("not JSON", encoding="utf-8")
+            script = (
+                "import sys; from pathlib import Path; from unittest.mock import patch; "
+                "from cli import installer; from src.models.diagnostics import OllamaDiagnostics; "
+                "diagnostics = OllamaDiagnostics(Path(sys.argv[1])); "
+                "patch('cli.installer.OllamaDiagnostics', return_value=diagnostics).start(); "
+                "checks = installer.collect_final_health(sys.executable, None, Path(sys.argv[2])); "
+                "models = next(c for c in checks if c.subsystem == 'Model manifests / blobs'); "
+                "assert models.status == 'Needs repair', models; "
+                "assert 'Invalid manifest' in models.reason; "
+                "assert 'src.models.model_validator' not in sys.modules; "
+                "assert not any(m.startswith('PySide6') for m in sys.modules)"
+            )
+            result = subprocess.run(
+                [sys.executable, "-S", "-c", script, str(model_root), str(root)],
+                cwd=installer.ROOT, capture_output=True, text=True, timeout=30,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_empty_venv_starts_installer_and_recovers_pip_offline(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="aibrain-bootstrap-") as directory:
+            runtime = Path(directory) / ".venv"
+            venv.EnvBuilder(with_pip=False).create(runtime)
+            python = runtime / "Scripts" / "python.exe"
+            result = subprocess.run(
+                [str(python), str(installer.ROOT / "cli" / "installer.py"), "--help"],
+                cwd=installer.ROOT, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            with patch.object(installer, "VENV_DIR", runtime):
+                installer.verify_managed_python(str(python))
+            installer.ensure_pip(str(python))
+            result = subprocess.run(
+                [str(python), "-m", "pip", "--version"],
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(str(runtime).lower(), result.stdout.lower())
+            # Adding pip must not install any application packages as a side effect.
+            result = subprocess.run(
+                [str(python), "-c",
+                 "import importlib.util; assert importlib.util.find_spec('PySide6') is None"],
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_pip_is_not_rebootstrapped_when_already_available(self) -> None:
+        with (
+            patch("cli.installer.subprocess.run") as probe,
+            patch("cli.installer.run") as command,
+        ):
+            installer.ensure_pip("managed-python")
+        self.assertEqual(probe.call_args.args[0][0], "managed-python")
+        command.assert_not_called()
+
+    def test_managed_interpreter_check_rejects_a_different_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            installer, "VENV_DIR", Path(directory) / ".venv"
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                installer.verify_managed_python(sys.executable)
+
+    def test_cuda_probe_rejects_a_cpu_wheel_that_imports_successfully(self) -> None:
+        def probe(command, **_kwargs):
+            result = subprocess.CompletedProcess(command, 0, "", "")
+            output = StringIO()
+            fake_backend = SimpleNamespace(llama_supports_gpu_offload=lambda: False)
+            with (
+                redirect_stdout(output),
+                patch.dict(sys.modules, {"llama_cpp": fake_backend}),
+            ):
+                try:
+                    exec(command[2], {})
+                except SystemExit as exc:
+                    result.returncode = exc.code
+            result.stdout = output.getvalue()
+            return result
+
+        with patch("cli.installer.subprocess.run", side_effect=probe):
+            ready, reason = installer.probe_llama_runtime("managed-python", require_cuda=True)
+            cpu_ready, _ = installer.probe_llama_runtime("managed-python")
+        self.assertFalse(ready)
+        self.assertIn("does not support GPU offload", reason)
+        self.assertTrue(cpu_ready)
+
+    def test_verification_checks_native_backend_and_dependency_consistency(self) -> None:
+        with patch("cli.installer.run") as command:
+            installer.verify_installation("managed-python")
+        commands = [call.args[0] for call in command.call_args_list]
+        self.assertIn("llama_cpp", commands[0][2])
+        self.assertEqual(commands[-1], ["managed-python", "-m", "pip", "check"])
+
+    def test_health_does_not_treat_an_unrelated_dll_as_connectome_acceleration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "cli.installer.OllamaDiagnostics"
+        ) as diagnostics:
+            root = Path(directory)
+            (root / "unrelated.dll").touch()
+            diagnostics.return_value.inspect.return_value = []
+            checks = installer.collect_final_health("missing-python", None, root)
+        by_name = {check.subsystem: check for check in checks}
+        self.assertEqual(by_name["Native DLLs"].status, "Info")
+        self.assertEqual(by_name["pip / libraries"].status, "Not checked")
+
+    def test_cuda_11_array_cpu_fallback_is_expected_not_a_repair_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "cli.installer.OllamaDiagnostics"
+        ) as diagnostics:
+            diagnostics.return_value.inspect.return_value = []
+            checks = installer.collect_final_health(
+                sys.executable, installer.GpuCapability("NVIDIA", "driver", (11, 8)),
+                Path(directory),
+            )
+        cuda = next(check for check in checks if check.subsystem == "CUDA")
+        self.assertEqual(cuda.status, "CPU fallback")
+
+    def test_targeted_repair_honors_backend_and_clears_cache_only_after_success(self) -> None:
+        for failure in (False, True):
+            with (
+                self.subTest(failure=failure),
+                patch("cli.installer.ensure_pip"),
+                patch("cli.installer.install_llama", return_value="cpu") as install,
+                patch("cli.installer.repair_validation_cache") as cache,
+            ):
+                if failure:
+                    install.side_effect = installer.LlamaRuntimeError("broken backend")
+                    with self.assertRaises(installer.LlamaRuntimeError):
+                        installer.repair_selected_subsystem(
+                            "backend", "managed-python", None, preference="cpu"
+                        )
+                    cache.assert_not_called()
+                else:
+                    self.assertEqual(installer.repair_selected_subsystem(
+                        "backend", "managed-python", None, preference="cpu"
+                    ), "cpu")
+                    install.assert_called_once_with("managed-python", None, preference="cpu")
+                    cache.assert_called_once_with()
+
+    def test_install_and_repair_refresh_cache_only_after_verification(self) -> None:
+        cases = (("install", False), ("install", True), ("repair", False), ("repair", True))
+        for action, failure in cases:
+            with self.subTest(action=action, failure=failure), ExitStack() as stack:
+                stack.enter_context(patch.object(sys, "argv", ["installer.py", f"--{action}", "-y"]))
+                stack.enter_context(patch("cli.installer.configure_cli_logging", return_value=(Path("log"), None)))
+                stack.enter_context(patch("cli.installer.venv_python", return_value=Path(sys.executable)))
+                for name in (
+                    "clear_screen", "header", "create_environment",
+                    "verify_managed_python", "install_dependencies",
+                ):
+                    stack.enter_context(patch(f"cli.installer.{name}"))
+                stack.enter_context(patch("cli.installer.verify_python", return_value=True))
+                stack.enter_context(patch("cli.installer.detect_nvidia", return_value=None))
+                stack.enter_context(patch("cli.installer.install_llama", return_value="cpu"))
+                verification = stack.enter_context(patch("cli.installer.verify_installation"))
+                if failure:
+                    verification.side_effect = subprocess.CalledProcessError(1, ["verify"])
+                cache = stack.enter_context(patch("cli.installer.repair_validation_cache"))
+                health = stack.enter_context(patch("cli.installer.print_final_health"))
+                complete = stack.enter_context(patch("cli.installer.completion_screen"))
+
+                self.assertEqual(installer.main(), 1 if failure else 0)
+                if failure:
+                    cache.assert_not_called()
+                    health.assert_not_called()
+                    complete.assert_not_called()
+                else:
+                    cache.assert_called_once_with()
+                    self.assertTrue(health.call_args.kwargs["libraries_verified"])
+                    complete.assert_called_once()
 
 
 if __name__ == "__main__":

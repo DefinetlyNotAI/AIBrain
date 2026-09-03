@@ -1,5 +1,14 @@
 # Troubleshooting
 
+## The installer reports a missing PySide6 module
+
+The installer must work before application dependencies are installed. Use the current `cli/installer.py` and
+`src/models/diagnostics.py`; structural model diagnostics defer their Qt-dependent validator until backend validation
+is requested. Run `python cli\installer.py` again. Installing PySide6 globally is unnecessary.
+
+An existing empty `.venv` is supported. The installer populates it, and restores pip with Python's bundled
+`ensurepip` if that environment was created without pip.
+
 ## AIBrain says it must run inside a virtual environment
 
 Activate the managed environment before launching:

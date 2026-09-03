@@ -28,8 +28,11 @@ From the project root, run:
 py cli\installer.py
 ```
 
-`cli/installer.py` is the sole allowed system-Python entry point. It creates `.venv`, updates pip inside it, installs
-PySide6, NumPy, ModernGL, and Nuitka, then chooses a prebuilt `llama-cpp-python` wheel. The installer checks
+`cli/installer.py` is the sole allowed system-Python entry point. It starts with only the Python standard library:
+neither the launching interpreter nor a fresh `.venv` needs PySide6 or other application packages preinstalled.
+It creates `.venv`, checks that its interpreter is a working Python 3.11+ virtual environment, restores pip with
+`ensurepip` if needed, and updates pip inside it. It installs PySide6, ModernGL, Nuitka, and NumPy (with CuPy for
+supported CUDA drivers), then chooses a prebuilt `llama-cpp-python` wheel. The installer checks
 `nvidia-smi` first: when a compatible published NVIDIA CUDA wheel is available it uses that; otherwise it installs the
 official CPU wheel. It does not fall back to a local C/C++ source build.
 
@@ -41,10 +44,16 @@ py cli\installer.py -y --repair
 ```
 
 The installer previews commands with PowerShell-safe quoting and streams their output live in the same framed view used
-by the distribution builder. It confirms that the selected `llama-cpp-python` wheel can load its native runtime. If a
+by the distribution builder. It requires a binary wheel for `llama-cpp-python` and reinstalls it even when switching
+between CPU and CUDA builds with the same version. It confirms that the selected wheel can load its native runtime,
+and that a CUDA selection supports GPU offload. If a
 CUDA wheel installs but a required DLL cannot load, it automatically retries a fresh official CPU wheel without using the
-pip cache. Repair mode also forces a fresh dependency and backend reinstall, then clears the disposable validation cache
-so an earlier backend result cannot mask the repaired runtime. It preserves Ollama model blobs.
+pip cache. Repair mode also forces a fresh dependency reinstall. Successful installation and repair clear the disposable
+validation cache so an earlier backend result cannot mask the updated runtime. Both preserve Ollama model blobs.
+
+Final verification runs imports and `pip check` in the managed interpreter. Basic model checks inspect local manifests
+and GGUF headers without importing Qt or loading models. The optional native connectome DLL is reported as present,
+not as successfully loaded. `--help` exits without creating or clearing installer logs.
 
 If PowerShell blocks activation, make the current user policy permit local scripts, then open a new terminal:
 
@@ -54,7 +63,13 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ## Launch
 
-Activate the environment every time you open a new terminal:
+You can launch directly without activating the environment:
+
+```powershell
+.\.venv\Scripts\python.exe cli\main.py
+```
+
+Alternatively, activate the environment in each new terminal:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1

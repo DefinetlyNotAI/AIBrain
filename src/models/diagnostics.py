@@ -12,7 +12,6 @@ from pathlib import Path
 from threading import Event
 
 from .model_info import ModelInfo
-from .model_validator import ModelValidator
 from .ollama_discovery import OllamaDiscovery
 
 
@@ -105,6 +104,10 @@ class OllamaDiagnostics:
                 )
         models = [model for _reference, _manifest, model in parsed]
         if verify_backend and models:
+            # Structural diagnostics also run in the stdlib-only installer.
+            # The Qt worker and inference dependencies are only needed here.
+            from .model_validator import ModelValidator
+
             checked = ModelValidator.validate(
                 models,
                 cancelled or Event(),

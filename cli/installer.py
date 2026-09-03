@@ -87,12 +87,19 @@ class LlamaRuntimeError(RuntimeError):
 
 
 def collect_final_health(
-    python: str, gpu: GpuCapability | None, root: Path = ROOT
+    python: str,
+    gpu: GpuCapability | None,
+    root: Path = ROOT,
+    *,
+    libraries_verified: bool = False,
 ) -> list[InstallerHealth]:
     """Collect a read-only final health report for the installed runtime."""
     cuda_status = "Unavailable"
     cuda_reason = "REASON: No CUDA-capable NVIDIA driver runtime was detected."
-    if gpu and gpu.cuda_version:
+    if gpu and gpu.cuda_version and gpu.cuda_version[0] < 12:
+        cuda_status = "CPU fallback"
+        cuda_reason = "The array runtime requires CUDA 12 or newer; NumPy is selected."
+    elif gpu and gpu.cuda_version:
         cuda_status = "Detected"
         cuda_reason = (
             f"Driver supports CUDA {gpu.cuda_version[0]}.{gpu.cuda_version[1]}."
@@ -113,21 +120,24 @@ def collect_final_health(
                 if probe.returncode == 0 and "CuPy / CUDA" in probe.stdout:
                     cuda_status = "Ready"
                     cuda_reason += " CuPy executed a device operation successfully."
-                elif probe.returncode != 0 or "NumPy / CPU" in probe.stdout:
+                else:
                     cuda_status = "Needs repair"
                     cuda_reason += (
-                        " REASON: The managed array runtime fell back to CPU."
+                        " REASON: The managed array probe did not confirm usable CUDA."
                     )
             except (OSError, subprocess.SubprocessError):
                 cuda_status = "Needs repair"
                 cuda_reason += " REASON: The managed CUDA runtime could not be probed."
+        else:
+            cuda_status = "Needs repair"
+            cuda_reason += " REASON: The managed interpreter is missing."
     checks = [
         InstallerHealth(
             "Hardware",
-            "Ready" if gpu else "CPU fallback",
+            "Ready" if gpu and gpu.cuda_version else "CPU fallback",
             (
                 "NVIDIA CUDA capability detected."
-                if gpu
+                if gpu and gpu.cuda_version
                 else "REASON: CUDA was not detected; CPU inference is supported."
             ),
         ),
@@ -146,7 +156,13 @@ def collect_final_health(
             ),
         ),
         InstallerHealth(
-            "pip / libraries", "Ready", "Imports were checked by the verification step."
+            "pip / libraries",
+            "Ready" if libraries_verified else "Not checked",
+            (
+                "Imports and pip dependency consistency passed verification."
+                if libraries_verified
+                else "Run installation verification to check libraries."
+            ),
         ),
     ]
     try:
@@ -179,14 +195,14 @@ def collect_final_health(
             "Cache exists." if cache.exists() else "No cache has been created yet.",
         )
     )
-    dlls = tuple(root.rglob("*.dll"))
+    native_dll = root / "dll" / "aibrain.connectome.dll"
     checks.append(
         InstallerHealth(
             "Native DLLs",
-            "Ready" if dlls else "Info",
+            "Present" if native_dll.is_file() else "Info",
             (
-                "Native acceleration assets found."
-                if dlls
+                "Optional connectome DLL found; loading it was not checked."
+                if native_dll.is_file()
                 else "No native DLL found; supported Python fallback remains available."
             ),
         )
@@ -194,8 +210,10 @@ def collect_final_health(
     return checks
 
 
-def print_final_health(python: str, gpu: GpuCapability | None) -> list[InstallerHealth]:
-    checks = collect_final_health(python, gpu)
+def print_final_health(
+    python: str, gpu: GpuCapability | None, *, libraries_verified: bool = False
+) -> list[InstallerHealth]:
+    checks = collect_final_health(python, gpu, libraries_verified=libraries_verified)
     panel(
         "FINAL HEALTH CHECK",
         [(check.subsystem, f"{check.status} — {check.reason}") for check in checks],
@@ -216,14 +234,22 @@ def repair_validation_cache(root: Path = ROOT) -> None:
 
 
 def repair_selected_subsystem(
-    subsystem: str, python: str, gpu: GpuCapability | None, *, model: str | None = None
+    subsystem: str,
+    python: str,
+    gpu: GpuCapability | None,
+    *,
+    model: str | None = None,
+    preference: str = "auto",
 ) -> str:
     """Run exactly one selected repair; destructive work is explicit and narrow."""
     if subsystem == "dependencies":
-        install_dependencies(python, gpu)
+        install_dependencies(python, gpu, force_reinstall=True)
         return "dependencies"
     if subsystem == "backend":
-        return install_llama(python, gpu, force_reinstall=True)
+        ensure_pip(python)
+        wheel_tag = install_llama(python, gpu, preference=preference)
+        repair_validation_cache()
+        return wheel_tag
     if subsystem == "native":
         run([python, str(ROOT / "cli" / "build_native.py")])
         return "native"
@@ -440,12 +466,43 @@ def create_environment() -> None:
     success("Virtual environment created")
 
 
+def verify_managed_python(python: str) -> None:
+    """Reject broken or misplaced interpreters before invoking their pip."""
+    verification = (
+        "import sys; from pathlib import Path; "
+        "valid = (sys.version_info >= (3, 11) "
+        "and sys.prefix != sys.base_prefix "
+        "and Path(sys.prefix).resolve() == Path(sys.argv[1]).resolve()); "
+        "print('Managed Python is ready' if valid else "
+        "'The managed environment requires its own Python 3.11+ interpreter.'); "
+        "raise SystemExit(0 if valid else 1)"
+    )
+    run([python, "-c", verification, str(VENV_DIR)])
+
+
+def ensure_pip(python: str) -> None:
+    """Bootstrap pip even when an existing venv was created without it."""
+    try:
+        subprocess.run(
+            [python, "-m", "pip", "--version"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+    except subprocess.CalledProcessError:
+        info("Restoring pip in the managed environment")
+        run([python, "-m", "ensurepip", "--upgrade"])
+
+
 def install_dependencies(
     python: str,
     gpu: GpuCapability | None = None,
     *,
     force_reinstall: bool = False,
 ) -> None:
+    ensure_pip(python)
     info("Updating Python package manager")
 
     run(
@@ -477,29 +534,36 @@ def install_dependencies(
     success("Core dependencies installed")
 
 
-def llama_install_command(python: str, wheel_tag: str, *, force_reinstall: bool) -> list[str]:
+def llama_install_command(python: str, wheel_tag: str) -> list[str]:
     """Build a cache-safe current llama.cpp installation command."""
     command = [
         python,
         "-m",
         "pip",
         "install",
+        "--force-reinstall",
         "--upgrade",
         "--no-cache-dir",
+        "--only-binary=llama-cpp-python",
         "--extra-index-url",
         f"{WHEEL_ROOT}/{wheel_tag}",
         LLAMA_CPP_PYTHON_REQUIREMENT,
     ]
-    if force_reinstall:
-        command[4:4] = ["--force-reinstall"]
     return command
 
 
-def probe_llama_runtime(python: str) -> tuple[bool, str]:
+def probe_llama_runtime(python: str, *, require_cuda: bool = False) -> tuple[bool, str]:
     """Check the installed native backend without printing an import traceback."""
+    cuda_check = (
+        "    if not llama_cpp.llama_supports_gpu_offload():\n"
+        "        raise RuntimeError('The installed wheel does not support GPU offload')\n"
+        if require_cuda
+        else ""
+    )
     verification = (
         "try:\n"
         "    import llama_cpp\n"
+        f"{cuda_check}"
         "except Exception as exc:\n"
         "    print(f'{type(exc).__name__}: {exc}')\n"
         "    raise SystemExit(1)\n"
@@ -528,7 +592,7 @@ def install_cpu_fallback(python: str, *, reason: str) -> str:
     """Replace an unavailable CUDA backend with a freshly downloaded CPU wheel."""
     warning(f"Selected CUDA backend is unavailable: {reason}")
     warning("Retrying with the official CPU wheel.")
-    run(llama_install_command(python, "cpu", force_reinstall=True))
+    run(llama_install_command(python, "cpu"))
     ready, cpu_reason = probe_llama_runtime(python)
     if not ready:
         raise LlamaRuntimeError(
@@ -544,7 +608,6 @@ def install_llama(
     *,
     preference: str = "auto",
     interactive: bool = False,
-    force_reinstall: bool = False,
 ) -> str:
     wheel_tag, description = select_wheel(
         gpu, preference=preference, interactive=interactive
@@ -564,7 +627,9 @@ def install_llama(
     detail("Wheel", wheel_tag)
 
     try:
-        run(llama_install_command(python, wheel_tag, force_reinstall=force_reinstall))
+        # CPU and CUDA wheels share a version. Even Install mode must replace
+        # an existing wheel, otherwise pip can silently keep the old backend.
+        run(llama_install_command(python, wheel_tag))
 
     except subprocess.CalledProcessError:
         if wheel_tag == "cpu":
@@ -576,7 +641,7 @@ def install_llama(
         warning(f"{wheel_tag} installation failed.")
         return install_cpu_fallback(python, reason="the CUDA wheel could not be installed")
 
-    ready, reason = probe_llama_runtime(python)
+    ready, reason = probe_llama_runtime(python, require_cuda=wheel_tag != "cpu")
     if ready:
         success(f"llama-cpp-python installed and loaded using {wheel_tag}")
         return wheel_tag
@@ -594,7 +659,7 @@ def verify_installation(
     info("Running import and runtime verification")
 
     verification = (
-        "import moderngl, nuitka; "
+        "import moderngl, nuitka, llama_cpp; "
         "from PySide6 import QtCore; "
         "from src.utils.array_api import BACKEND_NAME, array_api; "
         "print('AIBrain dependency verification passed:', BACKEND_NAME)"
@@ -608,6 +673,7 @@ def verify_installation(
         ]
     )
 
+    run([python, "-m", "pip", "check"])
     success("Core dependencies and the selected backend are ready")
 
 
@@ -629,7 +695,7 @@ def completion_screen(
             ("Backend", backend),
             ("GPU", gpu.name if gpu else "Not detected"),
         ],
-        footer="Launch AIBrain with:  python cli\\main.py",
+        footer=r"Launch AIBrain with:  .\.venv\Scripts\python.exe cli\main.py",
         tone=Color.GREEN,
     )
 
@@ -657,7 +723,7 @@ def print_help_banner() -> None:
             ),
         ],
         subtitle="Available Runtime Flags",
-        footer=f"Usage: python {Path(__file__).name} [options]",
+        footer=r"Usage: python cli\installer.py [options]",
     )
 
 
@@ -692,8 +758,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    runtime_log, _ = configure_cli_logging("installer")
     args = parse_args()
+    runtime_log, _ = configure_cli_logging("installer")
 
     embedded_repair = os.environ.get(EMBEDDED_REPAIR_ENV) == "1"
     if not embedded_repair:
@@ -710,10 +776,12 @@ def main() -> int:
         section("Targeted backend repair", 1)
         info("Updating llama-cpp-python only; Ollama model data is preserved")
         try:
+            verify_managed_python(str(venv_python()))
             wheel_tag = repair_selected_subsystem(
                 args.repair_subsystem,
                 str(venv_python()),
                 gpu,
+                preference=args.backend,
             )
         except (subprocess.CalledProcessError, LlamaRuntimeError) as exc:
             error(str(exc))
@@ -757,6 +825,7 @@ def main() -> int:
 
     section("Core dependencies", 4)
     try:
+        verify_managed_python(python)
         install_dependencies(python, gpu, force_reinstall=action == "repair")
     except subprocess.CalledProcessError as exc:
         error("Dependency installation failed with " f"exit code {exc.returncode}.")
@@ -769,7 +838,6 @@ def main() -> int:
             gpu,
             preference=args.backend,
             interactive=False,
-            force_reinstall=action == "repair",
         )
     except subprocess.CalledProcessError as exc:
         error(
@@ -789,7 +857,12 @@ def main() -> int:
         error("Dependency verification failed.")
         return 1
 
-    print_final_health(python, gpu)
+    # Install can also replace an existing backend with a different CPU/CUDA
+    # wheel, so either successful action invalidates prior validation results.
+    repair_validation_cache()
+    success("Disposable model validation cache refreshed")
+
+    print_final_health(python, gpu, libraries_verified=True)
     completion_screen(
         gpu,
         wheel_tag,

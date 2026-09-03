@@ -304,7 +304,7 @@ class ModelDiagnosticsTests(unittest.TestCase):
             sibling.write_text("keep", encoding="utf-8")
 
             rebuilt = OllamaDiagnostics.invalidate_validation_cache(root)
-            self.assertEqual(rebuilt, validation)
+            self.assertEqual(rebuilt, validation.resolve())
             self.assertTrue(sibling.exists())
             self.assertFalse((validation / "old.json").exists())
 
@@ -339,7 +339,7 @@ class ModelDiagnosticsTests(unittest.TestCase):
             self.assertFalse(blob.exists())
             self.assertEqual(quarantined.read_bytes(), b"broken")
 
-    @patch("src.models.diagnostics.ModelValidator.validate")
+    @patch("src.models.model_validator.ModelValidator.validate")
     def test_backend_diagnostics_report_a_model_that_cannot_load(
         self, validate
     ) -> None:  # type: ignore[no-untyped-def]
