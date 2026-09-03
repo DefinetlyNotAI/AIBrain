@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -11,6 +12,45 @@ from unittest.mock import Mock, patch
 
 from src.utils import console_ui
 from src.utils.console_ui import Color, panel
+
+
+class TerminalOutput(StringIO):
+    """Apply the box's VT cursor commands instead of counting raw redraws."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows = [""]
+        self.row = 0
+        self.column = 0
+        self.frames: list[list[str]] = []
+
+    def isatty(self) -> bool:
+        return True
+
+    def write(self, text: str) -> int:
+        for token in re.findall(r"\x1b\[[0-9;]*[A-Za-z]|[^\x1b]", text):
+            if token == "\x1b[1A":
+                self.row = max(0, self.row - 1)
+            elif token == "\x1b[2K":
+                self.rows[self.row] = ""
+            elif token.startswith("\x1b[") and token.endswith("m"):
+                continue
+            elif token == "\r":
+                self.column = 0
+            elif token == "\n":
+                self.row += 1
+                self.column = 0
+                if self.row == len(self.rows):
+                    self.rows.append("")
+            else:
+                line = self.rows[self.row].ljust(self.column)
+                self.rows[self.row] = line[:self.column] + token + line[self.column + 1:]
+                self.column += 1
+        return super().write(text)
+
+    def flush(self) -> None:
+        self.frames.append([line.rstrip() for line in self.rows if line.strip()])
+        super().flush()
 
 
 class ConsoleUiTests(unittest.TestCase):
@@ -331,34 +371,55 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("'PySide6>=6.7,<7'", rendered)
         self.assertIn("'cupy-cuda13x[ctk]>=14,<15'", rendered)
 
-    def test_live_command_box_draws_its_footer_once_when_output_closes(self) -> None:
-        class InteractiveText(StringIO):
-            def isatty(self) -> bool:
-                return True
-
-        output = InteractiveText()
+    def test_live_command_footer_moves_with_output_and_stays_visible_between_frames(self) -> None:
+        output = TerminalOutput()
         with (
-            patch.object(console_ui.os, "name", "posix"),
+            patch.object(console_ui, "terminal_width", return_value=42),
             redirect_stdout(output),
         ):
             box = console_ui.CommandOutputBox(live=True)
             box.open()
-            self.assertFalse(box._bottom_visible)
-            box.write_partial("Downloading model: 25%")
+            self.assertEqual(len(output.frames[-1]), 2)
+            box.write("First completed line\nSecond completed line")
+            stable = output.frames[-1][:-1]
+            box.write_partial("Downloading a very long model filename at 25 percent")
+            self.assertGreater(len(output.frames[-1]), len(stable) + 2)
             box.write_partial("Downloading model: 50%")
+            self.assertEqual(len(output.frames[-1]), len(stable) + 2)
+            self.assertNotIn("filename", "\n".join(output.frames[-1]))
             box.write("Download complete")
-            border = (
-                console_ui.BOX_TOP_LEFT
-                + console_ui.BOX_HORIZONTAL * box.inner
-                + console_ui.BOX_TOP_RIGHT
-            )
-            self.assertEqual(console_ui.strip_ansi(output.getvalue()).count(border), 1)
-            box.close()
+            box.write("Next completed line")
+            self.assertEqual(output.frames[-1][:len(stable)], stable)
+            self.assertIn("Download complete", output.frames[-1][-3])
+            self.assertIn("Next completed line", output.frames[-1][-2])
+            self.assertNotIn("50%", "\n".join(output.frames[-1]))
 
-        rendered = output.getvalue()
-        self.assertIn("\x1b[1A\x1b[2K", rendered)
-        self.assertEqual(console_ui.strip_ansi(rendered).count(border), 2)
-        self.assertIn("Download complete", console_ui.strip_ansi(rendered))
+            footer = (
+                box.prefix + console_ui.BOX_BOTTOM_LEFT
+                + console_ui.BOX_HORIZONTAL * box.inner
+                + console_ui.BOX_BOTTOM_RIGHT
+            )
+            for frame in output.frames:
+                self.assertEqual(frame[-1], footer)
+                # ASCII terminals use the same characters for both borders.
+                self.assertFalse(any(line == footer for line in frame[1:-1]))
+            before_close = output.getvalue()
+            box.close()
+            box.close()
+            self.assertEqual(output.getvalue(), before_close)
+
+    def test_redirected_command_output_has_no_cursor_redraws_or_duplicate_progress(self) -> None:
+        output = StringIO()
+        with redirect_stdout(output):
+            with console_ui.CommandOutputBox() as box:
+                box.write_partial("Downloading: 25%")
+                box.write_partial("Downloading: 50%")
+                box.write("Download complete")
+        rendered = console_ui.strip_ansi(output.getvalue())
+        self.assertEqual(len(rendered.splitlines()), 3)
+        self.assertIn("Download complete", rendered)
+        self.assertNotIn("Downloading:", rendered)
+        self.assertNotIn("\x1b[1A", output.getvalue())
 
     def test_executable_path_shortening_requires_an_exact_path_match(
         self,

@@ -644,25 +644,17 @@ class CommandOutputBox:
     def open(self) -> None:
         if self._is_open:
             return
-        print(self.prefix + color(BOX_TOP_LEFT + BOX_HORIZONTAL * self.inner + BOX_TOP_RIGHT, Color.GRAY), flush=True)
+        frame = self._border_line(BOX_TOP_LEFT, BOX_TOP_RIGHT)
+        if self._live:
+            frame += self._border_line(BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT)
+        sys.stdout.write(frame)
+        sys.stdout.flush()
         self._is_open = True
-        self._bottom_visible = False
+        self._bottom_visible = self._live
         self._partial_rows = 0
 
-    def _print_bottom(self) -> None:
-        print(self.prefix + color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * self.inner + BOX_BOTTOM_RIGHT, Color.GRAY),
-              flush=True)
-        self._bottom_visible = True
-
-    def _erase_live_rows(self, rows: int) -> None:
-        """Remove transient rows without repainting stable completed output."""
-        if not self._live:
-            return
-        visible_rows = rows + (1 if self._bottom_visible else 0)
-        for _ in range(visible_rows):
-            sys.stdout.write("\x1b[1A\x1b[2K\r")
-        sys.stdout.flush()
-        self._bottom_visible = False
+    def _border_line(self, left: str, right: str) -> str:
+        return self.prefix + color(left + BOX_HORIZONTAL * self.inner + right, Color.GRAY) + "\n"
 
     def _rendered_lines(self, output: str) -> list[str]:
         rendered = shorten_output_paths(strip_ansi(output)).rstrip("\r\n")
@@ -674,18 +666,30 @@ class CommandOutputBox:
             for line in wrap_console_line(raw_line, self.content_width)
         ]
 
-    def _print_lines(self, lines: list[str]) -> None:
-        for line in lines:
-            print(
-                self.prefix
-                + color(BOX_VERTICAL, Color.GRAY)
-                + " "
-                + color(line, Color.GRAY)
-                + " " * (self.content_width - len(line))
-                + " "
-                + color(BOX_VERTICAL, Color.GRAY),
-                flush=True,
-            )
+    def _replace_output(self, lines: list[str], *, partial: bool) -> None:
+        """Replace transient rows and move the footer in one flushed frame."""
+        frame = ""
+        if self._live:
+            rows = self._partial_rows + int(self._bottom_visible)
+            frame = "\x1b[1A\x1b[2K\r" * rows
+        frame += "".join(
+            self.prefix
+            + color(BOX_VERTICAL, Color.GRAY)
+            + " "
+            + color(line, Color.GRAY)
+            + " " * (self.content_width - len(line))
+            + " "
+            + color(BOX_VERTICAL, Color.GRAY)
+            + "\n"
+            for line in lines
+        )
+        if self._live:
+            frame += self._border_line(BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT)
+        # Do not flush between erasing the old footer and drawing its replacement.
+        sys.stdout.write(frame)
+        sys.stdout.flush()
+        self._bottom_visible = self._live
+        self._partial_rows = len(lines) if partial else 0
 
     def write(self, output: str) -> None:
         """Append output immediately, preserving the framed presentation."""
@@ -694,9 +698,7 @@ class CommandOutputBox:
         lines = self._rendered_lines(output)
         if not lines:
             return
-        self._erase_live_rows(self._partial_rows)
-        self._partial_rows = 0
-        self._print_lines(lines)
+        self._replace_output(lines, partial=False)
 
     def write_partial(self, output: str) -> None:
         """Redraw an unterminated subprocess line, including progress bars."""
@@ -709,15 +711,15 @@ class CommandOutputBox:
         lines = self._rendered_lines(output)
         if not lines:
             return
-        self._erase_live_rows(self._partial_rows)
-        self._partial_rows = len(lines)
-        self._print_lines(lines)
+        self._replace_output(lines, partial=True)
 
     def close(self) -> None:
         if not self._is_open:
             return
         if not self._bottom_visible:
-            self._print_bottom()
+            sys.stdout.write(self._border_line(BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT))
+            sys.stdout.flush()
+            self._bottom_visible = True
         self._is_open = False
 
 
