@@ -88,6 +88,7 @@ class ChatPanel(QWidget):
     infiniteContinueRequested = Signal()
     diagnosticsRequested = Signal()
     analysisRequested = Signal()
+    chatExportRequested = Signal()
     modeChanged = Signal(bool)
     rewindRequested = Signal()
     rewindExitRequested = Signal()
@@ -102,6 +103,7 @@ class ChatPanel(QWidget):
         self._replay_active = False
         self._regenerate_available = False
         self._rewind_available = False
+        self._chat_export_available = False
         self._scroll_timer = QTimer(self)
         self._scroll_timer.setSingleShot(True)
         self._scroll_timer.setInterval(32)
@@ -207,12 +209,26 @@ class ChatPanel(QWidget):
         self.open_analysis = QPushButton("Analysis")
         self.open_analysis.setToolTip("Export NN Analysis+ for recorded frames from the selected model")
         self.open_analysis.setEnabled(False)
+        self.export_chat = QPushButton("Export chat")
+        self.export_chat.setToolTip(
+            "Save the complete conversation as JSON or readable text"
+        )
         self.regenerate.clicked.connect(self.regenerateRequested)
         self.rewind.clicked.connect(self._toggle_rewind)
         self.infinite.clicked.connect(self._continue_infinite)
         self.clear.clicked.connect(self.clearRequested)
         self.open_analysis.clicked.connect(self.analysisRequested)
-        for index, button in enumerate((self.regenerate, self.rewind, self.open_analysis, self.clear, self.infinite)):
+        self.export_chat.clicked.connect(self.chatExportRequested)
+        for index, button in enumerate(
+            (
+                self.regenerate,
+                self.rewind,
+                self.open_analysis,
+                self.export_chat,
+                self.clear,
+                self.infinite,
+            )
+        ):
             buttons.addWidget(button, index // 3, index % 3)
         mode_actions_layout.addLayout(buttons)
         self.mode_actions_content = _fixed_scroll_content(mode_actions_body, 124)
@@ -382,6 +398,10 @@ class ChatPanel(QWidget):
         self._rewind_available = available
         self._refresh_actions()
 
+    def set_chat_export_available(self, available: bool) -> None:
+        self._chat_export_available = available
+        self._refresh_actions()
+
     def set_validating_models(self, text: str) -> None:
         self.models.blockSignals(True)
         self.models.clear()
@@ -489,7 +509,7 @@ class ChatPanel(QWidget):
         self.rewind.setText("Exit rewind" if active else "Rewind")
         self.rewind.setToolTip("Return to normal chat actions" if active else "Enter token-by-token connectome replay")
         if active:
-            for control in (self.send, self.regenerate, self.open_analysis, self.clear, self.infinite, self.models,
+            for control in (self.send, self.regenerate, self.open_analysis, self.export_chat, self.clear, self.infinite, self.models,
                             self.infinite_mode):
                 control.setEnabled(False)
             self.rewind.setEnabled(not self._replay_active)
@@ -525,4 +545,7 @@ class ChatPanel(QWidget):
         self.clear.setEnabled(not self._running)
         self.models.setEnabled(not self._running and self.models.count() > 1)
         self.open_analysis.setEnabled(ready and not self._running and self._analysis_available)
+        self.export_chat.setEnabled(
+            not self._running and self._chat_export_available
+        )
         self.infinite_mode.setEnabled(not self._running and not self._rewind_active)

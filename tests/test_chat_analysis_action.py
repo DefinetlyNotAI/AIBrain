@@ -121,6 +121,18 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertIn("Start one two", QLabel.text(label))
         label.deleteLater()
 
+    def test_chat_export_tracks_transcript_availability(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+
+        self.assertFalse(panel.export_chat.isEnabled())
+        panel.set_chat_export_available(True)
+        self.assertTrue(panel.export_chat.isEnabled())
+        panel.generating(True)
+        self.assertFalse(panel.export_chat.isEnabled())
+        panel.generating(False)
+        self.assertTrue(panel.export_chat.isEnabled())
+        panel.deleteLater()
+
     def test_rewind_mode_locks_chat_actions_until_the_graph_exits(self) -> None:
         panel = ChatPanel(GenerationConfig())
         panel.set_model_available(True)

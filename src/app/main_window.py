@@ -16,9 +16,17 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
-from PySide6.QtWidgets import QLabel, QMainWindow, QMessageBox, QSizePolicy, QSplitter
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QSizePolicy,
+    QSplitter,
+)
 
 from .chat_panel import ChatPanel
+from .chat_export import write_chat_export
 from .settings import load_generation_settings, save_generation_settings
 from .theme import load_colours, stylesheet
 from .visualizer_panel import VisualizerPanel
@@ -105,6 +113,7 @@ class MainWindow(QMainWindow):
         self.chat.infiniteContinueRequested.connect(self.continue_infinite_simulation)
         self.chat.diagnosticsRequested.connect(self.open_diagnostics)
         self.chat.analysisRequested.connect(self.open_analysis)
+        self.chat.chatExportRequested.connect(self.export_chat)
         self.chat.modeChanged.connect(self._change_mode)
         self.chat.rewindRequested.connect(self.visualizer.enter_rewind_mode)
         self.chat.rewindExitRequested.connect(self.visualizer.exit_rewind_mode)
@@ -189,6 +198,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
         self.chat.set_rewind_available(False)
+        self.chat.set_chat_export_available(False)
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
@@ -217,6 +227,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
         self.chat.set_rewind_available(False)
+        self.chat.set_chat_export_available(False)
         self.chat.stats.setText(
             "Infinite Mode ready." if infinite else "Normal Chat ready."
         )
@@ -245,6 +256,42 @@ class MainWindow(QMainWindow):
             self.visualizer.run_nn_analysis_plus()
         else:
             self.visualizer.run_session_analysis()
+
+    def export_chat(self) -> None:
+        conversation = (
+            self.simulation_transcript if self._analysis_is_infinite else self.history
+        )
+        if not conversation:
+            QMessageBox.information(
+                self, "Export chat", "Start a conversation before exporting it."
+            )
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export chat",
+            "aibrain-chat.json",
+            "JSON data (*.json);;Text transcript (*.txt)",
+        )
+        if not filename:
+            return
+        mode = "infinite" if self._analysis_is_infinite else "normal"
+        model = (
+            f"{self.current_model.name}:{self.current_model.tag}"
+            if self.current_model is not None
+            else "unknown"
+        )
+        try:
+            write_chat_export(
+                Path(filename), conversation, mode=mode, model=model
+            )
+        except OSError as exc:
+            QMessageBox.critical(self, "Chat export failed", str(exc))
+            return
+        QMessageBox.information(
+            self,
+            "Chat exported",
+            f"Saved {len(conversation)} conversation turn(s) to {Path(filename).name}.",
+        )
 
     def _restart_for_gpu_mismatch(self, message: str) -> None:
         """Close the main UI cleanly so the supervisor returns to the loader."""
@@ -290,6 +337,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
         self.chat.set_rewind_available(False)
+        self.chat.set_chat_export_available(True)
         save_generation_settings(self.config)
         self.history.append({"role": "user", "content": prompt})
         self.visualizer.set_conversation(self.history)
@@ -334,6 +382,7 @@ class MainWindow(QMainWindow):
             self.chat.set_regenerate_available(False)
             self.chat.set_rewind_available(False)
             self.simulation_transcript = [{"role": "world", "content": seed, "turn": 0}]
+            self.chat.set_chat_export_available(True)
             self.visualizer.set_conversation(self.simulation_transcript)
             self.chat.clear_messages()
             self.chat.clear_latest_playback()
@@ -419,6 +468,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_available(False)
         self.chat.set_regenerate_available(False)
         self.chat.set_rewind_available(False)
+        self.chat.set_chat_export_available(False)
         self.chat.stats.setText("Conversation cleared.")
 
     def _on_token(self, text: str, frame: object) -> None:
@@ -456,6 +506,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_available(exportable)
         self.chat.set_regenerate_available(exportable)
         self.chat.set_rewind_available(self.visualizer.has_recorded_frames)
+        self.chat.set_chat_export_available(bool(self.history))
         self.chat.generating(False)
         self._assistant_bubble = None
         self._awaiting_first_token = False
