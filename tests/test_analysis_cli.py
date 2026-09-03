@@ -95,6 +95,7 @@ class AnalysisCliTests(unittest.TestCase):
         self.assertEqual(metadata["learning"]["maturity"]["state"], "Teen")
         self.assertFalse(metadata["learning"]["maturity"]["metrics_persisted"])
         self.assertEqual(metadata["architecture"]["shape"], "2 -> 3 -> 2")
+        self.assertEqual(metadata["architecture"]["learned_parameters"], 17)
         self.assertEqual(metadata["tensors"]["encoder_weights"]["shape"], [2, 3])
         self.assertEqual(metadata["health"]["score_percent"], 90)
         self.assertIn("No NaN", metadata["health_checks"]["finite_tensor_values"])

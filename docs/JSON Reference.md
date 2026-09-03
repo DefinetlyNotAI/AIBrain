@@ -20,8 +20,8 @@ compact: no raw renderer frames, model weights, source prompts, or transformer a
 | `regional_profile` | Per-region mean and peak visual activity. | unitless | simulated/derived |
 | `key_events` | Up to 24 notable visual-frame events. | object array | derived |
 
-`maturity.state` is `Baby`, `Teen`, `Adult`, or `Elder`. Baby requires at least 250 persisted frames and sustained
-recent consistency before Teen. Adult additionally requires at least 4,096 frames and sustained consistency/learning
+`maturity.state` is `Baby`, `Teen`, `Adult`, or `Elder`. Baby requires at least 2,048 persisted frames and sustained
+recent consistency before Teen. Adult additionally requires at least 32,768 frames and sustained consistency/learning
 slowdown. Elder requires a sustained post-Adult overfitting signal and freezes training weights. This is not an accuracy
 claim. Baby and Teen exports carry `readiness: "caution"`; Adult and Elder carry `readiness: "ready"`.
 

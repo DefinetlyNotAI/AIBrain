@@ -246,7 +246,15 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
         if health_score >= 90
         else "Degraded" if health_score >= 70 else "Critical"
     )
-    parameter_count = sum(int(value.size) for value in tensors.values() if value.ndim)
+    parameter_count = sum(
+        int(tensors[name].size)
+        for name in (
+            "encoder_weights",
+            "encoder_bias",
+            "decoder_weights",
+            "decoder_bias",
+        )
+    )
     return {
         "status": status,
         "health": {
