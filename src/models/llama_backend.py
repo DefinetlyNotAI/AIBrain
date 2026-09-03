@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .llama_runtime import load_llama_cpp
+
 if TYPE_CHECKING:
     from llama_cpp import Llama
     from llama_cpp.llama_types import ChatCompletionRequestMessage
@@ -71,10 +73,13 @@ class LlamaBackend:
         self.unload()
 
         try:
-            from llama_cpp import Llama, llama_log_callback, llama_log_set
+            llama_cpp = load_llama_cpp()
+            Llama = llama_cpp.Llama
+            llama_log_callback = llama_cpp.llama_log_callback
+            llama_log_set = llama_cpp.llama_log_set
         except ImportError as exc:
             raise RuntimeError(
-                "llama-cpp-python is not installed. Run: python install.py"
+                r"llama-cpp-python is not installed. Run: python cli\installer.py"
             ) from exc
 
         LOG.info(

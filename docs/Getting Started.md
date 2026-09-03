@@ -57,10 +57,21 @@ or a Python script. Nuitka compilation explanations appear only when Nuitka itse
 
 It requires a binary wheel for `llama-cpp-python` and reinstalls it even when switching
 between CPU and CUDA builds with the same version. It confirms that the selected wheel can load its native runtime,
-and that a CUDA selection supports GPU offload. If a
-CUDA wheel installs but a required DLL cannot load, it automatically retries a fresh official CPU wheel without using the
+and that a CUDA selection supports GPU offload. In auto mode, if a
+CUDA wheel installs but a required DLL cannot load, it retries a fresh official CPU wheel without using the
 pip cache. Repair mode also forces a fresh dependency reinstall. Successful installation and repair clear the disposable
 validation cache so an earlier backend result cannot mask the updated runtime. Both preserve Ollama model blobs.
+
+CUDA installation includes NVIDIA's cuBLAS and CUDA runtime wheels for the selected CUDA major version. Both the
+installer probe and application loader register their DLL directories and add them to the current process's `PATH`.
+This includes NVIDIA's `nvidia\cu13\bin` layout; no global `PATH` or `CUDA_PATH` changes are required.
+
+Use `--backend cuda` to require CUDA. This explicit choice fails with a diagnostic if CUDA cannot be installed or
+loaded; CPU fallback applies to `--backend auto`. To repair only the inference backend:
+
+```powershell
+python cli\installer.py --repair --repair-subsystem backend --backend cuda -y
+```
 
 Final verification runs imports and `pip check` in the managed interpreter. Basic model checks inspect local manifests
 and GGUF headers without importing Qt or loading models. The optional native connectome DLL is reported as present,

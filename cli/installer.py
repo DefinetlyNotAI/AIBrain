@@ -393,8 +393,14 @@ def select_wheel(
                         return "cpu", "CPU inference (selected by user)"
                 return tag, f"NVIDIA CUDA acceleration ({tag})"
 
-        warning("No compatible published CUDA wheel was found.")
-        warning("Falling back to CPU inference.")
+        if preference != "cuda":
+            warning("No compatible published CUDA wheel was found.")
+            warning("Falling back to CPU inference.")
+
+    if preference == "cuda":
+        raise LlamaRuntimeError(
+            "CUDA was requested but no compatible driver and published wheel were found."
+        )
 
     return "cpu", "CPU inference"
 
@@ -586,6 +592,21 @@ def llama_install_command(python: str, wheel_tag: str) -> list[str]:
     return command
 
 
+def cuda_runtime_packages(wheel_tag: str) -> tuple[str, ...]:
+    """Match cuBLAS and the CUDA runtime to the selected wheel's major version."""
+    if wheel_tag == "cpu":
+        return ()
+    match = re.fullmatch(r"cu(11|12|13)\d+", wheel_tag)
+    if match is None:
+        raise ValueError(f"Unsupported CUDA wheel tag: {wheel_tag}")
+    major = int(match.group(1))
+    suffix = "" if major >= 13 else f"-cu{major}"
+    return (
+        f"nvidia-cublas{suffix}>={major},<{major + 1}",
+        f"nvidia-cuda-runtime{suffix}>={major},<{major + 1}",
+    )
+
+
 def probe_llama_runtime(python: str, *, require_cuda: bool = False) -> tuple[bool, str]:
     """Check the installed native backend without printing an import traceback."""
     cuda_check = (
@@ -596,7 +617,8 @@ def probe_llama_runtime(python: str, *, require_cuda: bool = False) -> tuple[boo
     )
     verification = (
         "try:\n"
-        "    import llama_cpp\n"
+        "    from src.models.llama_runtime import load_llama_cpp\n"
+        "    llama_cpp = load_llama_cpp()\n"
         f"{cuda_check}"
         "except Exception as exc:\n"
         "    print(f'{type(exc).__name__}: {exc}')\n"
@@ -661,16 +683,27 @@ def install_llama(
     detail("Wheel", wheel_tag)
 
     try:
+        runtime_packages = cuda_runtime_packages(wheel_tag)
+        if runtime_packages:
+            info("Ensuring the selected CUDA wheel's runtime DLLs are installed")
+            run([
+                python, "-m", "pip", "install", "--upgrade", "--only-binary=:all:",
+                *runtime_packages,
+            ])
         # CPU and CUDA wheels share a version. Even Install mode must replace
         # an existing wheel, otherwise pip can silently keep the old backend.
         run(llama_install_command(python, wheel_tag))
 
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as exc:
         if wheel_tag == "cpu":
             error("The prebuilt CPU wheel could not be installed.")
             error("A source compilation was not attempted.")
             raise
 
+        if preference == "cuda":
+            raise LlamaRuntimeError(
+                f"{wheel_tag} installation failed; explicit CUDA selection was preserved."
+            ) from exc
         print()
         warning(f"{wheel_tag} installation failed.")
         return install_cpu_fallback(python, reason="the CUDA wheel could not be installed")
@@ -684,6 +717,10 @@ def install_llama(
         raise LlamaRuntimeError(
             "The official CPU backend installed but could not load: " f"{reason}"
         )
+    if preference == "cuda":
+        raise LlamaRuntimeError(
+            f"{wheel_tag} could not load after installing its runtime DLLs: {reason}"
+        )
     return install_cpu_fallback(python, reason=reason)
 
 
@@ -693,7 +730,8 @@ def verify_installation(
     info("Running import and runtime verification")
 
     verification = (
-        "import moderngl, nuitka, llama_cpp; "
+        "from src.models.llama_runtime import load_llama_cpp; load_llama_cpp(); "
+        "import moderngl, nuitka; "
         "from PySide6 import QtCore; "
         "from src.utils.array_api import BACKEND_NAME, array_api; "
         "print('AIBrain dependency verification passed:', BACKEND_NAME)"

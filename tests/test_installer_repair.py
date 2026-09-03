@@ -120,11 +120,12 @@ class InstallerRepairTests(unittest.TestCase):
 
         self.assertEqual(installed, "cpu")
         commands = [call.args[0] for call in run_command.call_args_list]
-        self.assertEqual(len(commands), 2)
-        self.assertIn("/cu124", commands[0][commands[0].index("--extra-index-url") + 1])
-        self.assertIn("/cpu", commands[1][commands[1].index("--extra-index-url") + 1])
-        self.assertIn("--force-reinstall", commands[1])
-        self.assertIn("--no-cache-dir", commands[1])
+        self.assertEqual(len(commands), 3)
+        self.assertIn("nvidia-cublas-cu12>=12,<13", commands[0])
+        self.assertIn("/cu124", commands[1][commands[1].index("--extra-index-url") + 1])
+        self.assertIn("/cpu", commands[2][commands[2].index("--extra-index-url") + 1])
+        self.assertIn("--force-reinstall", commands[2])
+        self.assertIn("--no-cache-dir", commands[2])
 
     def test_unloadable_cpu_wheel_reports_a_short_backend_error(self) -> None:
         with (
@@ -235,6 +236,36 @@ class InstallerRepairTests(unittest.TestCase):
 
     def test_cpu_array_package_is_used_without_cuda(self) -> None:
         self.assertEqual(installer.numerical_package(None), "numpy>=1.26,<3")
+
+    def test_cuda_runtime_dependencies_match_the_selected_wheel(self) -> None:
+        self.assertEqual(installer.cuda_runtime_packages("cpu"), ())
+        for tag, expected in (
+            ("cu132", "nvidia-cublas>=13,<14"),
+            ("cu124", "nvidia-cublas-cu12>=12,<13"),
+            ("cu118", "nvidia-cublas-cu11>=11,<12"),
+        ):
+            with self.subTest(tag=tag):
+                packages = installer.cuda_runtime_packages(tag)
+                self.assertEqual(packages[0], expected)
+                self.assertIn("cuda-runtime", packages[1])
+
+    def test_explicit_cuda_selection_does_not_silently_choose_cpu(self) -> None:
+        with self.assertRaisesRegex(installer.LlamaRuntimeError, "CUDA was requested"):
+            installer.select_wheel(None, preference="cuda")
+
+        for failure in ("installation", "load"):
+            with (
+                self.subTest(failure=failure),
+                patch("cli.installer.select_wheel", return_value=("cu132", "CUDA")),
+                patch("cli.installer.run") as run_command,
+                patch("cli.installer.probe_llama_runtime", return_value=(False, "missing DLL")),
+                patch("cli.installer.install_cpu_fallback") as fallback,
+            ):
+                if failure == "installation":
+                    run_command.side_effect = subprocess.CalledProcessError(1, ["pip"])
+                with self.assertRaises(installer.LlamaRuntimeError):
+                    installer.install_llama("managed-python", None, preference="cuda")
+                fallback.assert_not_called()
 
 
 class InstallerBootstrapTests(unittest.TestCase):

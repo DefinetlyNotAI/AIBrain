@@ -38,6 +38,11 @@ backend-incompatible blobs by design.
 
 ## A selected model fails to load or generate
 
+If a CUDA wheel reports that `llama.dll` or one of its dependencies cannot be found, update the installer and runtime
+loader together, then run `python cli\installer.py --repair --repair-subsystem backend --backend cuda -y`.
+The installer ensures the matching NVIDIA runtime packages exist. AIBrain's loader makes their DLLs visible to both
+Windows DLL loading mechanisms before importing llama.cpp; a full system CUDA Toolkit installation is not required.
+
 Run the installer in Repair mode to reinstall the managed dependencies and selected llama.cpp backend, then review its
 final health report: `py cli\installer.py -y --repair`. Repair is available only after the managed runtime has been
 installed. It clears the disposable validation cache so a stale backend failure is not reused. Each failure includes a
