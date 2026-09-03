@@ -89,19 +89,32 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertEqual(panel.mode_actions_toggle.text(), "Show Mode Actions")
         panel.deleteLater()
 
-    def test_advanced_controls_expand_inside_a_fixed_scroll_area(self) -> None:
+    def test_advanced_settings_button_opens_a_scrollable_dialog(self) -> None:
         panel = ChatPanel(GenerationConfig())
 
-        panel.advanced_toggle.click()
+        with patch.object(panel.advanced_dialog, "exec", return_value=0) as execute:
+            panel.advanced_settings.click()
 
-        self.assertIsInstance(panel.advanced_content, QScrollArea)
-        self.assertFalse(panel.advanced_content.isHidden())
-        self.assertEqual(panel.advanced_content.minimumHeight(), 188)
-        self.assertEqual(panel.advanced_content.maximumHeight(), 188)
-        self.assertIsNotNone(panel.advanced_content.widget())
+        execute.assert_called_once_with()
+        self.assertIsInstance(panel.advanced_dialog.settings_scroll, QScrollArea)
+        self.assertIsNotNone(panel.advanced_dialog.settings_scroll.widget())
         self.assertEqual(panel.analysis_cache_mb.minimum(), 0)
         self.assertEqual(panel.analysis_cache_mb.value(), 1024)
         self.assertEqual(panel.analysis_cache_mb.specialValueText(), "Disabled")
+        panel.temperature.setValue(1.1)
+        self.assertEqual(panel.config().temperature, 1.1)
+        panel.deleteLater()
+
+    def test_reopened_mode_actions_return_to_the_first_control(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        scrollbar = panel.mode_actions_content.verticalScrollBar()
+        scrollbar.setRange(0, 100)
+        scrollbar.setValue(100)
+
+        panel.mode_actions_toggle.click()
+        panel.mode_actions_toggle.click()
+
+        self.assertEqual(scrollbar.value(), scrollbar.minimum())
         panel.deleteLater()
 
     def test_regenerate_requires_a_completed_normal_response(self) -> None:

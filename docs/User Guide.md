@@ -14,6 +14,10 @@ an internal high-randomness configuration (temperature at least 1.25 and top-p a
 regardless of the Normal Chat controls. Switching between Normal Chat and Infinite Mode clears both the conversation and
 the replay. The compose action becomes Stop while either mode is running; Continue is available only for a stopped Infinite scenario.
 
+Use **Advanced settings** to open generation, context, GPU offload, replay-speed, and Analysis+ memory controls in a
+separate scrollable window. Reopened Mode Actions and View Settings panels return to their first control so previously
+scrolled content cannot remain out of view.
+
 Open **Mode Actions**, enable **Infinite Mode**, then use the compose arrow to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the
 **World** produces only external events; the **Participant** produces only first-person responses. Every stream update
 is tied to both its role and turn number, so World tokens cannot append to a Participant bubble. **Continue** reconstructs

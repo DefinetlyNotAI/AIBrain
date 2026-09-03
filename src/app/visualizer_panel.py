@@ -340,6 +340,9 @@ class VisualizerPanel(QWidget):
 
     def _set_settings_visible(self, visible: bool) -> None:
         self.settings_panel.setVisible(visible)
+        if visible:
+            scrollbar = self.settings_panel.verticalScrollBar()
+            scrollbar.setValue(scrollbar.minimum())
         self.settings_toggle.setText(
             "Hide view settings" if visible else "View settings"
         )

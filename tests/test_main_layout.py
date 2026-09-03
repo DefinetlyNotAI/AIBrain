@@ -48,6 +48,23 @@ class MainLayoutTests(unittest.TestCase):
             window.close()
             self.app.processEvents()
 
+    def test_reopened_visualizer_settings_return_to_the_first_control(self) -> None:
+        window = MainWindow([])
+        try:
+            panel = window.visualizer
+            panel.settings_toggle.click()
+            scrollbar = panel.settings_panel.verticalScrollBar()
+            scrollbar.setRange(0, 100)
+            scrollbar.setValue(100)
+
+            panel.settings_toggle.click()
+            panel.settings_toggle.click()
+
+            self.assertEqual(scrollbar.value(), scrollbar.minimum())
+        finally:
+            window.close()
+            self.app.processEvents()
+
     def test_window_close_defers_without_blocking_on_worker_threads(self) -> None:
         source = inspect.getsource(MainWindow.closeEvent)
 

@@ -4,10 +4,10 @@ import html
 import re
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QGroupBox,
-                               QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit,
+                               QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget)
 
+from .advanced_settings import AdvancedSettingsDialog
 from ..models.infinite_simulation import random_world_opening
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
@@ -236,84 +236,23 @@ class ChatPanel(QWidget):
         action_layout.addWidget(self.mode_actions_content)
         layout.addWidget(action_card)
 
-        advanced_group = QGroupBox("Advanced generation controls")
-        advanced_layout = QVBoxLayout(advanced_group)
-        advanced_layout.setContentsMargins(8, 7, 8, 7)
-        self.advanced_toggle = QToolButton()
-        self.advanced_toggle.setText("Show advanced generation controls")
-        self.advanced_toggle.setCheckable(True)
-        self.advanced_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.advanced_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self.advanced_toggle.setToolTip("Show or hide optional generation settings")
-        self.advanced_toggle.toggled.connect(self._set_advanced_visible)
-        advanced_layout.addWidget(self.advanced_toggle)
-        advanced_body = QWidget()
-        advanced = QFormLayout(advanced_body)
-        self.temperature = QDoubleSpinBox()
-        self.temperature.setRange(0, 2)
-        self.temperature.setSingleStep(.05)
-        self.temperature.setValue(config.temperature)
-        self.top_p = QDoubleSpinBox()
-        self.top_p.setRange(.05, 1)
-        self.top_p.setSingleStep(.05)
-        self.top_p.setValue(config.top_p)
-        self.max_tokens = QSpinBox()
-        self.max_tokens.setRange(1, 8192)
-        self.max_tokens.setValue(config.max_tokens)
-        self.context = QSpinBox()
-        self.context.setRange(512, 32768)
-        self.context.setSingleStep(512)
-        self.context.setValue(config.context_length)
-        self.gpu_layers = QSpinBox()
-        self.gpu_layers.setRange(-1, 200)
-        self.gpu_layers.setValue(config.gpu_layers)
-        self.analysis_memory_mb = QSpinBox()
-        self.analysis_memory_mb.setRange(16, 4096)
-        self.analysis_memory_mb.setSingleStep(16)
-        self.analysis_memory_mb.setValue(100)
-        self.analysis_memory_mb.setToolTip(
-            "Maximum RAM retained for Infinite-mode rewind frames; older Analysis+ records move to the temporary cache")
-        self.analysis_cache_mb = QSpinBox()
-        self.analysis_cache_mb.setRange(0, 8192)
-        self.analysis_cache_mb.setSingleStep(128)
-        self.analysis_cache_mb.setValue(1024)
-        self.analysis_cache_mb.setSpecialValueText("Disabled")
-        self.analysis_cache_mb.setToolTip(
-            "Maximum temporary Analysis+ cache in .cache/temp; 0 disables paging"
-        )
-        self.speed = QSlider()
-        self.speed.setOrientation(Qt.Orientation.Horizontal)
-        self.speed.setRange(1, 10)
-        self.speed.setValue(round(config.speed * 10))
-        self.speed_value = QLabel()
-        self.speed.valueChanged.connect(self._update_speed_label)
-        self._update_speed_label(self.speed.value())
-        speed_row = QWidget()
-        speed_layout = QHBoxLayout(speed_row)
-        speed_layout.setContentsMargins(0, 0, 0, 0)
-        speed_layout.addWidget(self.speed)
-        speed_layout.addWidget(self.speed_value)
-        advanced.addRow("Temperature", self.temperature)
-        advanced.addRow("Top-p", self.top_p)
-        advanced.addRow("Max tokens", self.max_tokens)
-        advanced.addRow("Context", self.context)
-        advanced.addRow("GPU layers (-1 auto)", self.gpu_layers)
-        advanced.addRow("Analysis+ RAM (MB)", self.analysis_memory_mb)
-        advanced.addRow("Analysis+ cache (MB)", self.analysis_cache_mb)
-        advanced.addRow("Generation speed", speed_row)
+        self.advanced_dialog = AdvancedSettingsDialog(config, self)
+        self.temperature = self.advanced_dialog.temperature
+        self.top_p = self.advanced_dialog.top_p
+        self.max_tokens = self.advanced_dialog.max_tokens
+        self.context = self.advanced_dialog.context
+        self.gpu_layers = self.advanced_dialog.gpu_layers
+        self.analysis_memory_mb = self.advanced_dialog.analysis_memory_mb
+        self.analysis_cache_mb = self.advanced_dialog.analysis_cache_mb
+        self.speed = self.advanced_dialog.speed
+        self.speed_value = self.advanced_dialog.speed_value
+        self.advanced_settings = QPushButton("Advanced settings")
+        self.advanced_settings.setToolTip("Open generation, context, GPU, replay, and Analysis+ settings")
+        self.advanced_settings.clicked.connect(self._open_advanced_settings)
         self.regenerate.setToolTip("Generate a new answer for the most recent normal-chat prompt")
         self.clear.setToolTip("Clear the current conversation and recorded replay")
         self.models.setToolTip("Select an available local GGUF model")
-        self.temperature.setToolTip("Sampling randomness for Normal Chat")
-        self.top_p.setToolTip("Nucleus sampling limit for Normal Chat")
-        self.max_tokens.setToolTip("Maximum generated tokens per Normal Chat response")
-        self.context.setToolTip("Local model context window size")
-        self.gpu_layers.setToolTip("Number of layers requested on the GPU; -1 is automatic")
-        self.speed.setToolTip("Replay presentation speed")
-        self.advanced_content = _fixed_scroll_content(advanced_body, 188)
-        self.advanced_content.hide()
-        advanced_layout.addWidget(self.advanced_content)
-        layout.addWidget(advanced_group)
+        layout.addWidget(self.advanced_settings)
         self._refresh_actions()
 
     def _send(self) -> None:
@@ -345,13 +284,14 @@ class ChatPanel(QWidget):
         else:
             self.rewindRequested.emit()
 
-    def _set_advanced_visible(self, visible: bool) -> None:
-        self.advanced_content.setVisible(visible)
-        self.advanced_toggle.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
-        self.advanced_toggle.setText("Hide advanced generation controls" if visible else "Show advanced generation controls")
+    def _open_advanced_settings(self) -> None:
+        self.advanced_dialog.exec()
 
     def _set_mode_actions_visible(self, visible: bool) -> None:
         self.mode_actions_content.setVisible(visible)
+        if visible:
+            scrollbar = self.mode_actions_content.verticalScrollBar()
+            scrollbar.setValue(scrollbar.minimum())
         self.mode_actions_toggle.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
         self.mode_actions_toggle.setText("Hide Mode Actions" if visible else "Show Mode Actions")
 
@@ -375,11 +315,7 @@ class ChatPanel(QWidget):
         self._refresh_actions()
 
     def config(self) -> GenerationConfig:
-        return GenerationConfig(self.temperature.value(), self.top_p.value(), self.max_tokens.value(),
-                                self.context.value(), self.gpu_layers.value(), self.speed.value() / 10)
-
-    def _update_speed_label(self, value: int) -> None:
-        self.speed_value.setText(f"{value / 10:.1f}×")
+        return self.advanced_dialog.config()
 
     def set_models(self, models: list[ModelInfo]) -> None:
         self.models.blockSignals(True)
@@ -518,8 +454,8 @@ class ChatPanel(QWidget):
         self.rewind.setText("Exit rewind" if active else "Rewind")
         self.rewind.setToolTip("Return to normal chat actions" if active else "Enter token-by-token connectome replay")
         if active:
-            for control in (self.send, self.regenerate, self.open_analysis, self.export_chat, self.clear, self.infinite, self.models,
-                            self.infinite_mode):
+            for control in (self.send, self.regenerate, self.open_analysis, self.export_chat, self.clear, self.infinite,
+                            self.models, self.infinite_mode, self.advanced_settings):
                 control.setEnabled(False)
             self.rewind.setEnabled(not self._replay_active)
             return
@@ -574,3 +510,4 @@ class ChatPanel(QWidget):
             not self._running and self._chat_export_available
         )
         self.infinite_mode.setEnabled(not self._running and not self._rewind_active)
+        self.advanced_settings.setEnabled(not self._running and not self._rewind_active)
