@@ -67,14 +67,29 @@ class LlamaRuntimeTests(unittest.TestCase):
             llama_runtime.load_llama_cpp()
             module.llama_log_callback.assert_called_once()
 
-    def test_cuda_discovery_and_warnings_use_python_logging(self) -> None:
+    def test_native_levels_use_current_ggml_severities(self) -> None:
         with self.assertLogs(llama_runtime._LOG, level="DEBUG") as logs:
-            llama_runtime._handle_native_log(1, b"ggml_cuda_init: found 1 CUDA devices\n", None)
-            llama_runtime._handle_native_log(1, b"  Device 0: NVIDIA RTX\n", None)
-            llama_runtime._handle_native_log(2, b"low memory\n", None)
-            llama_runtime._handle_native_log(1, b"model metadata\n", None)
-        self.assertEqual([record.levelname for record in logs.records], ["INFO", "INFO", "WARNING", "DEBUG"])
+            llama_runtime._handle_native_log(2, b"ggml_cuda_init: found 1 CUDA devices\n", None)
+            llama_runtime._handle_native_log(2, b"  Device 0: NVIDIA RTX\n", None)
+            llama_runtime._handle_native_log(3, b"low memory\n", None)
+            llama_runtime._handle_native_log(4, b"model load failed\n", None)
+            llama_runtime._handle_native_log(1, b"debug details\n", None)
+        self.assertEqual(
+            [record.levelname for record in logs.records],
+            ["INFO", "INFO", "WARNING", "ERROR", "DEBUG"],
+        )
         self.assertTrue(all(record.getMessage().startswith("llama.cpp: ") for record in logs.records))
+
+    def test_routine_native_info_is_debug_and_continuations_keep_severity(self) -> None:
+        with self.assertLogs(llama_runtime._LOG, level="DEBUG") as logs:
+            llama_runtime._handle_native_log(2, b"print_info: model metadata\n", None)
+            llama_runtime._handle_native_log(3, b"control token warning\n", None)
+            llama_runtime._handle_native_log(5, b"warning continuation\n", None)
+
+        self.assertEqual(
+            [record.levelname for record in logs.records],
+            ["DEBUG", "WARNING", "WARNING"],
+        )
 
     def test_existing_path_entry_is_not_duplicated(self) -> None:
         directory = Path("managed-nvidia-bin").resolve()

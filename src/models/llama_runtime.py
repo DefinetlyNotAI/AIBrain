@@ -16,23 +16,35 @@ _DLL_LOCK = Lock()
 _LOG_CALLBACK: Any = None
 _LOG_LOCK = Lock()
 _LOG = logging.getLogger(__name__)
+_LAST_NATIVE_SEVERITY = logging.DEBUG
 
 
 def _handle_native_log(level: int, text: bytes | None, _user_data: object) -> None:
     """Send native runtime messages through the same formatter as Python logs."""
+    global _LAST_NATIVE_SEVERITY
     if not text:
         return
     try:
         message = text.decode("utf-8", errors="replace").strip()
         if not message or not message.strip("."):
             return
-        # Keep device discovery and warnings visible; detailed model metadata is
-        # DEBUG only. Native callbacks must not print directly to stderr.
-        severity = {2: logging.WARNING, 3: logging.ERROR}.get(level, logging.DEBUG)
+        # Current ggml uses DEBUG=1, INFO=2, WARN=3, ERROR=4, CONT=5. Keep
+        # routine native metadata at DEBUG because Python already logs the
+        # meaningful model lifecycle; native callbacks must not print stderr.
+        if level == 5:
+            severity = _LAST_NATIVE_SEVERITY
+        else:
+            severity = {
+                1: logging.DEBUG,
+                2: logging.INFO,
+                3: logging.WARNING,
+                4: logging.ERROR,
+            }.get(level, logging.DEBUG)
+            _LAST_NATIVE_SEVERITY = severity
+        if severity == logging.INFO:
+            severity = logging.DEBUG
         if "ggml_cuda_init:" in message or message.startswith("Device "):
             severity = logging.INFO
-        elif any(word in message.lower() for word in ("error", "failed", "unknown model architecture")):
-            severity = logging.ERROR
         _LOG.log(severity, "llama.cpp: %s", message)
     except Exception:
         # A ctypes callback must never propagate across the C boundary.
