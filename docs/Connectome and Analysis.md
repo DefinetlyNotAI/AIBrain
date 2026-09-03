@@ -63,7 +63,8 @@ survive an unexpected close as well as a normal exit. The model is stored at
 `models\aibrain.analyser.npz` and is intentionally gitignored. The older
 `%LOCALAPPDATA%\AIBrain\analysis_model\connectome_autoencoder_v1.npz` location is imported once when present.
 The standalone `analysis.py` tool reads this NPZ without loading a GGUF or renderer and reports its integrity, age,
-architecture, tensor statistics, and transparent learning-maturity estimate. Region-density normalization removes static cluster-size and global
+architecture, tensor statistics, and transparent learning-maturity estimate. Its **NPZ contents** tab lists every stored
+entry with its data type, shape, and complete values beside the JSON metadata view. Region-density normalization removes static cluster-size and global
 renderer-amplitude bias; findings remain analysis of procedural visual signals, not measured transformer activations.
 The export contains the complete session conversation, network architecture and fit metrics, regional profile, pattern
 segments, and a bounded set of high-novelty events. It intentionally excludes massive per-neuron frame dumps.

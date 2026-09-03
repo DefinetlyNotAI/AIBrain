@@ -11,8 +11,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication, QFrame, QPushButton
 
 from src.app.analysis_window import (
+    AnalysisInspectionResult,
     AnalysisInspectionWorker,
     AnalysisWindow,
+    inspect_npz_contents,
     inspect_npz_model,
 )
 
@@ -33,6 +35,10 @@ class AnalysisCliTests(unittest.TestCase):
             self.assertEqual(window.tabs.tabToolTip(0), "Model-health dashboard")
             self.assertEqual(
                 window.tabs.tabToolTip(1),
+                "Complete values persisted in the Analysis+ NPZ archive",
+            )
+            self.assertEqual(
+                window.tabs.tabToolTip(2),
                 "Optional raw model metadata and export summaries",
             )
             self.assertEqual(
@@ -51,6 +57,7 @@ class AnalysisCliTests(unittest.TestCase):
             self.assertEqual(len(metric_cards), 10)
             self.assertTrue(all(card.toolTip() for card in metric_cards))
             self.assertIn("Read-only model metadata", window.raw.toolTip())
+            self.assertIn("complete values", window.npz.toolTip())
         finally:
             window.close()
             self.app.processEvents()
@@ -90,6 +97,45 @@ class AnalysisCliTests(unittest.TestCase):
         self.assertEqual(metadata["tensors"]["encoder_weights"]["shape"], [2, 3])
         self.assertEqual(metadata["health"]["score_percent"], 90)
         self.assertIn("No NaN", metadata["health_checks"]["finite_tensor_values"])
+
+    def test_npz_contents_formatter_includes_every_stored_value(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contents.npz"
+            np.savez(
+                path,
+                matrix=np.array([[1.25, -2.5], [3.75, 4.0]], dtype="f4"),
+                frames_seen=np.array(17, dtype="i8"),
+                maturity_state=np.array("Teen"),
+            )
+
+            contents = inspect_npz_contents(path)
+
+        self.assertIn("Entries: 3", contents)
+        self.assertIn("[matrix]", contents)
+        self.assertIn("dtype: float32", contents)
+        self.assertIn("shape: (2, 2)", contents)
+        self.assertIn("1.25", contents)
+        self.assertIn("-2.5", contents)
+        self.assertIn("[frames_seen]", contents)
+        self.assertIn("17", contents)
+        self.assertIn("[maturity_state]", contents)
+        self.assertIn("Teen", contents)
+
+    def test_completed_inspection_populates_npz_contents_tab(self) -> None:
+        window = AnalysisWindow(auto_refresh=False)
+        try:
+            result = AnalysisInspectionResult(
+                metadata={"status": "Healthy"},
+                npz_contents="[frames_seen]\nvalues (1):\n17",
+            )
+
+            window._inspection_ready(result)
+
+            self.assertEqual(window.npz.toPlainText(), result.npz_contents)
+            self.assertIn('"status": "Healthy"', window.raw.toPlainText())
+        finally:
+            window.close()
+            self.app.processEvents()
 
     def test_npz_health_score_detects_poisoned_non_finite_values(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

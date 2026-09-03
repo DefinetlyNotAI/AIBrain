@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -41,6 +42,12 @@ _TENSOR_NAMES = (
     "embedding_centroid",
 )
 _REQUIRED_NAMES = (*_TENSOR_NAMES, "frames_seen")
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisInspectionResult:
+    metadata: dict[str, object]
+    npz_contents: str
 
 
 def _age_text(seconds: float) -> str:
@@ -275,6 +282,35 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
     }
 
 
+def inspect_npz_contents(path: Path) -> str:
+    """Render every persisted NPZ entry and value for read-only inspection."""
+    path = Path(path)
+    sections = [f"NPZ archive: {path}"]
+    with np.load(path, allow_pickle=False) as stored:
+        sections.append(f"Entries: {len(stored.files)}")
+        for name in stored.files:
+            value = np.asarray(stored[name])
+            rendered = np.array2string(
+                value,
+                separator=", ",
+                threshold=max(1, value.size),
+                max_line_width=132,
+                precision=9,
+                floatmode="unique",
+            )
+            sections.extend(
+                (
+                    "",
+                    f"[{name}]",
+                    f"dtype: {value.dtype}",
+                    f"shape: {value.shape}",
+                    f"values ({value.size}):",
+                    rendered,
+                )
+            )
+    return "\n".join(sections)
+
+
 class AnalysisInspectionWorker(QObject):
     """Read the NPZ away from the Qt event loop."""
 
@@ -288,7 +324,12 @@ class AnalysisInspectionWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            self.completed.emit(inspect_npz_model(self._path))
+            self.completed.emit(
+                AnalysisInspectionResult(
+                    metadata=inspect_npz_model(self._path),
+                    npz_contents=inspect_npz_contents(self._path),
+                )
+            )
         except (OSError, ValueError) as exc:
             LOG.warning("Analysis model inspection failed for %s: %s", self._path, exc)
             self.failed.emit(str(exc))
@@ -412,10 +453,19 @@ class AnalysisWindow(QMainWindow):
         self.raw.setToolTip(
             "Read-only model metadata and summaries from explicitly selected exports"
         )
+        self.npz = QPlainTextEdit()
+        self.npz.setReadOnly(True)
+        self.npz.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.npz.setPlaceholderText("Persisted NPZ values appear after model inspection.")
+        self.npz.setToolTip(
+            "Read-only names, shapes, data types, and complete values stored in the Analysis+ NPZ"
+        )
         self.tabs.addTab(overview, "Dashboard")
+        self.tabs.addTab(self.npz, "NPZ contents")
         self.tabs.addTab(self.raw, "Raw JSON / details")
         self.tabs.setTabToolTip(0, "Model-health dashboard")
-        self.tabs.setTabToolTip(1, "Optional raw model metadata and export summaries")
+        self.tabs.setTabToolTip(1, "Complete values persisted in the Analysis+ NPZ archive")
+        self.tabs.setTabToolTip(2, "Optional raw model metadata and export summaries")
         layout.addWidget(self.tabs, 1)
         self.setCentralWidget(page)
         if auto_refresh:
@@ -437,6 +487,7 @@ class AnalysisWindow(QMainWindow):
             return
         LOG.info("Starting Analysis+ model inspection for %s", path)
         self.raw.setPlainText("Reading persisted Analysis+ model in the background…")
+        self.npz.setPlainText("Reading persisted NPZ contents in the background…")
         thread = QThread(self)
         worker = AnalysisInspectionWorker(path)
         worker.moveToThread(thread)
@@ -453,8 +504,9 @@ class AnalysisWindow(QMainWindow):
         thread.start()
 
     @Slot(object)
-    def _inspection_ready(self, metadata: object) -> None:
-        if isinstance(metadata, dict):
+    def _inspection_ready(self, result: object) -> None:
+        if isinstance(result, AnalysisInspectionResult):
+            metadata = result.metadata
             health = metadata.get("health", {})
             learning = metadata.get("learning", {})
             score = (
@@ -474,10 +526,12 @@ class AnalysisWindow(QMainWindow):
                 frames,
             )
             self._show_metadata(metadata)
+            self.npz.setPlainText(result.npz_contents)
         else:
             LOG.error(
-                "Analysis+ model inspection returned unexpected metadata: %r", metadata
+                "Analysis+ model inspection returned an unexpected result: %r", result
             )
+            return
         self.raw.setPlainText(json.dumps(metadata, indent=2))
 
     @Slot(str)
@@ -487,6 +541,7 @@ class AnalysisWindow(QMainWindow):
         self.health_value.setText("Needs repair")
         self.health_detail.setText(message)
         self.raw.setPlainText(f"Status: Invalid Analysis+ model\n\n{message}")
+        self.npz.setPlainText(f"Status: NPZ contents unavailable\n\n{message}")
 
     @Slot()
     def _inspection_finished(self) -> None:
@@ -580,6 +635,9 @@ class AnalysisWindow(QMainWindow):
         self.storage_detail.setText(str(path))
         self.raw.setPlainText(
             f"Status: No Analysis+ model has been learned yet.\n\nExpected location:\n{path}"
+        )
+        self.npz.setPlainText(
+            f"Status: No NPZ contents are available yet.\n\nExpected location:\n{path}"
         )
 
     def _show_metadata(self, metadata: dict[str, object]) -> None:
