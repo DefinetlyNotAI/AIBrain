@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import logging
-import os
 import signal
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,16 +20,11 @@ from src.utils.console_ui import (
     section,
     status,
 )
-from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE
+from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE, configure_opengl_surface, prepare_gpu_launch
 from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
-
-_GPU_SUPERVISOR_ENV = "AIBRAIN_GPU_SUPERVISOR"
-_GPU_RELAUNCH_ATTEMPT_ENV = "AIBRAIN_GPU_RELAUNCH_ATTEMPT"
-_MAX_GPU_RELAUNCH_ATTEMPTS = 1
-
 
 def require_virtual_environment() -> None:
     """Prevent accidental system-wide package use or installation."""
@@ -55,84 +48,32 @@ def require_virtual_environment() -> None:
         raise SystemExit(1)
 
 
-def _child_command() -> list[str]:
-    """Build the exact command for a supervised Python or Nuitka child."""
-    if "__compiled__" in globals():
-        return [sys.executable, *sys.argv[1:]]
-    return [sys.executable, *sys.argv]
-
-
-def _supervise_gpu_launch() -> int:
-    """Keep this console process alive while a GPU-configured child runs."""
-    environment = os.environ.copy()
-    environment[_GPU_SUPERVISOR_ENV] = "1"
-
-    for attempt in range(_MAX_GPU_RELAUNCH_ATTEMPTS + 1):
-        child_environment = environment.copy()
-        child_environment[_GPU_RELAUNCH_ATTEMPT_ENV] = str(attempt)
-        child = subprocess.Popen(
-            _child_command(),
-            env=child_environment,
-            close_fds=False,
-        )
-        try:
-            exit_code = child.wait()
-        except KeyboardInterrupt:
-            try:
-                child.terminate()
-            except OSError:
-                pass
-            else:
-                try:
-                    child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    child.kill()
-                    child.wait()
-            report_keyboard_interrupt("AIBrain")
-            return 130
-
-        if exit_code != GPU_RELAUNCH_EXIT_CODE:
-            return exit_code
-
-    return GPU_RELAUNCH_EXIT_CODE
-
-
 def main() -> int:
     runtime_log, _ = configure_cli_logging("main")
     if not require_managed_runtime(ROOT, "main"):
         return 1
+    gpu_exit = prepare_gpu_launch(compiled="__compiled__" in globals())
+    if gpu_exit is not None:
+        return gpu_exit
     clear_screen()
     header("AIBrain", "Desktop connectome launcher")
     section("Desktop startup", 1)
     status("LOG", f"CLI output: {runtime_log}")
     status("START", "Preparing Qt, local model validation, and the OpenGL adapter check")
     print()
-    os.environ.setdefault("QT_OPENGL", "desktop")
-    from PySide6.QtCore import QCoreApplication, QObject, Qt, QThread, QTimer, Slot
-    from PySide6.QtGui import QFont, QSurfaceFormat
+    from PySide6.QtCore import QCoreApplication, QObject, QThread, QTimer, Slot
+    from PySide6.QtGui import QFont
     from PySide6.QtWidgets import QApplication
     from src.app.loading_window import GpuProbe, LoadingWindow
     from src.app.main_window import MainWindow
     from src.models.model_validator import StartupWorker
     from src.utils.gpu import (
         can_request_gpu_relaunch,
-        set_windows_gpu_preference,
         should_prefer_high_performance_gpu,
     )
 
     prefer_high_performance = should_prefer_high_performance_gpu()
-    if prefer_high_performance:
-        set_windows_gpu_preference(True)
-        if sys.platform == "win32" and not os.environ.get(_GPU_SUPERVISOR_ENV):
-            return _supervise_gpu_launch()
-
-    surface = QSurfaceFormat()
-    surface.setVersion(3, 3)
-    surface.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
-    surface.setDepthBufferSize(24)
-    surface.setSamples(0)
-    QSurfaceFormat.setDefaultFormat(surface)
-    QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
+    configure_opengl_surface()
     app = QApplication(sys.argv)
     app.setFont(QFont("Segoe UI", 10))
     app.setApplicationName("AIBrain")

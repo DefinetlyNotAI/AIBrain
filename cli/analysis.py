@@ -20,6 +20,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.logging import configure_cli_logging, report_exception
+from src.utils.gpu import configure_opengl_surface, prepare_gpu_launch
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
@@ -30,6 +31,9 @@ def main() -> int:
     if not require_managed_runtime(ROOT, "analysis"):
         LOG.error("Analysis CLI startup stopped because runtime preflight failed")
         return 1
+    gpu_exit = prepare_gpu_launch(compiled="__compiled__" in globals())
+    if gpu_exit is not None:
+        return gpu_exit
     clear_screen()
     from PySide6.QtCore import QTimer, Qt
     from PySide6.QtWidgets import QApplication
@@ -42,6 +46,7 @@ def main() -> int:
     status("START", "Opening the Analysis+ model inspector")
     print()
     LOG.info("Analysis runtime preflight passed; creating the desktop inspector")
+    configure_opengl_surface()
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("AIBrain Analysis")

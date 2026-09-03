@@ -5,15 +5,16 @@
 The application requires the project `.venv` at launch. There is no settings file to edit for dependency selection; use
 `cli/installer.py` to create or repair the managed environment.
 
-`cli/main.py` configures a desktop OpenGL 3.3 core-profile request before creating the Qt application. When
-high-performance rendering is selected (the default), it writes the Windows preference for both virtual-environment
-Python hosts and relaunches once before Qt creates an OpenGL context. The renderer overlay then verifies the actual
-OpenGL adapter.
+The main, diagnostics, and analysis launchers request desktop OpenGL 3.3 before creating the Qt application.
+When high-performance rendering is selected (the default), they write the Windows preference and start a fresh
+supervised process before creating an OpenGL context. Source launches register both virtual-environment hosts
+and their base `python.exe` / `pythonw.exe`: Windows venv launchers redirect to that base process image.
+This preference also applies to other applications using the same base Python executable. Packaged launches
+register their own executable. The renderer overlay and startup probe report the actual OpenGL adapter.
 
 OpenGL draws the interface and connectome; CUDA runs compute workloads. On a hybrid-GPU laptop,
-OpenGL may report Intel while CUDA uses NVIDIA. The standalone diagnostics window probes its own
-OpenGL context using Windows' current adapter selection; it does not use the main launcher's GPU
-relaunch supervisor. Its `OPENGL` log describes rendering only.
+OpenGL may report Intel while CUDA uses NVIDIA. All desktop launchers now apply the same saved rendering
+preference; choosing System default leaves selection to Windows. The `OPENGL` log describes rendering only.
 
 Diagnostics checks CUDA separately in a background worker, even when no models are installed.
 The `CUDA` log and GPU / CUDA card report a synchronized CuPy device operation and whether

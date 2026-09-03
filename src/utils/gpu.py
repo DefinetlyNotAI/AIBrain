@@ -20,6 +20,83 @@ LOG = logging.getLogger(__name__)
 GPU_RELAUNCH_EXIT_CODE = 75
 _GPU_RELAUNCH_ATTEMPT_ENV = "AIBRAIN_GPU_RELAUNCH_ATTEMPT"
 _MAX_GPU_RELAUNCH_ATTEMPTS = 1
+_GPU_SUPERVISOR_ENV = "AIBRAIN_GPU_SUPERVISOR"
+
+
+def supervise_gpu_launch(command: list[str]) -> int:
+    """Keep the console attached to a fresh GPU-configured application process."""
+    from .console_ui import report_keyboard_interrupt
+
+    environment = os.environ.copy()
+    environment[_GPU_SUPERVISOR_ENV] = "1"
+    for attempt in range(_MAX_GPU_RELAUNCH_ATTEMPTS + 1):
+        child_environment = environment.copy()
+        child_environment[_GPU_RELAUNCH_ATTEMPT_ENV] = str(attempt)
+        child = subprocess.Popen(command, env=child_environment, close_fds=False)
+        try:
+            exit_code = child.wait()
+        except KeyboardInterrupt:
+            try:
+                child.terminate()
+            except OSError:
+                pass
+            else:
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+            report_keyboard_interrupt("AIBrain")
+            return 130
+        if exit_code != GPU_RELAUNCH_EXIT_CODE:
+            return exit_code
+    return GPU_RELAUNCH_EXIT_CODE
+
+
+def prepare_gpu_launch(*, compiled: bool = False) -> int | None:
+    """Apply the saved adapter preference before any Qt application is created.
+
+    A numeric result belongs to the supervised child and must be returned by the
+    launcher. None means this process can continue creating its Qt application.
+    """
+    os.environ.setdefault("QT_OPENGL", "desktop")
+    if sys.platform != "win32" or not should_prefer_high_performance_gpu():
+        return None
+    set_windows_gpu_preference(True)
+    if not os.environ.get(_GPU_SUPERVISOR_ENV):
+        arguments = sys.argv[1:] if compiled else sys.argv
+        return supervise_gpu_launch([sys.executable, *arguments])
+    return None
+
+
+def configure_opengl_surface() -> None:
+    """Use the same desktop OpenGL context in every desktop launcher."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QSurfaceFormat
+    from PySide6.QtWidgets import QApplication
+
+    surface = QSurfaceFormat()
+    surface.setVersion(3, 3)
+    surface.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    surface.setDepthBufferSize(24)
+    surface.setSamples(0)
+    QSurfaceFormat.setDefaultFormat(surface)
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
+
+
+def _gpu_host_executables() -> set[str]:
+    """Include the real Python process image behind Windows venv redirectors."""
+    executable = Path(sys.executable).resolve()
+    hosts = {executable}
+    if executable.name.lower() in {"python.exe", "pythonw.exe"}:
+        base = getattr(sys, "_base_executable", None)
+        if base:
+            hosts.add(Path(base).resolve())
+        hosts.update(host.with_name("pythonw.exe") for host in list(hosts))
+    launched_program = Path(sys.argv[0])
+    if launched_program.suffix.lower() == ".exe":
+        hosts.add(launched_program.resolve())
+    return {str(host) for host in hosts}
 
 
 def gpu_relaunch_attempt() -> int:
@@ -72,17 +149,9 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
 
         key_path = r"Software\Microsoft\DirectX\UserGpuPreferences"
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
-            # Windows matches this setting against the executable that creates
-            # the OpenGL context. Register console, windowed, and standalone
-            # hosts so the exact launch mode receives the same request.
-            executables = {
-                str(Path(sys.executable).resolve()),
-                str(Path(sys.executable).with_name("pythonw.exe").resolve()),
-            }
-            launched_program = Path(sys.argv[0])
-            if launched_program.suffix.lower() == ".exe":
-                executables.add(str(launched_program.resolve()))
-            for executable in executables:
+            # The venv's python.exe redirects to the base Python process image;
+            # Windows chooses the graphics adapter for that image at creation.
+            for executable in _gpu_host_executables():
                 if high_performance:
                     desired = "GpuPreference=2;"
                     try:
