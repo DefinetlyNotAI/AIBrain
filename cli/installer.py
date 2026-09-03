@@ -359,9 +359,9 @@ def select_install_action(
             raise ValueError("Repair is unavailable until the managed runtime has been installed.")
         return "repair"
 
-    default = "r" if runtime_exists else "i"
+    default = "i"
     if assume_yes:
-        return "repair" if default == "r" else "install"
+        return "install"
 
     choices = {"i": "Install"}
     if runtime_exists:

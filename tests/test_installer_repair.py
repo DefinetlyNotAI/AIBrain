@@ -145,14 +145,14 @@ class InstallerRepairTests(unittest.TestCase):
                 repair_requested=True,
             )
 
-    def test_automatic_action_uses_install_without_a_runtime_and_repair_with_one(self) -> None:
+    def test_automatic_action_defaults_to_install_even_with_an_existing_runtime(self) -> None:
         self.assertEqual(
             installer.select_install_action(runtime_exists=False, assume_yes=True),
             "install",
         )
         self.assertEqual(
             installer.select_install_action(runtime_exists=True, assume_yes=True),
-            "repair",
+            "install",
         )
 
     def test_empty_interactive_action_writes_the_default_in_grey(self) -> None:
@@ -166,9 +166,9 @@ class InstallerRepairTests(unittest.TestCase):
         ):
             action = installer.select_install_action(runtime_exists=True)
 
-        self.assertEqual(action, "repair")
+        self.assertEqual(action, "install")
         self.assertIn(Color.GRAY, output.getvalue())
-        self.assertIn("Repair", strip_ansi(output.getvalue()))
+        self.assertIn("Install", strip_ansi(output.getvalue()))
 
     def test_action_flags_select_the_requested_mode(self) -> None:
         self.assertEqual(

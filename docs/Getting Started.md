@@ -17,7 +17,8 @@ model store directly and does not copy or redownload model blobs.
 
 ## Install into the managed environment
 
-The installer starts with an **Install** or **Repair** menu. Repair is unavailable until the managed runtime exists. The
+The installer starts with an **Install** or **Repair** menu. **Install** is always the default, including with an existing
+environment and when using `-y` without an explicit mode. Repair is unavailable until the managed runtime exists. The
 selected mode then automatically uses the recommended dependency and CUDA/CPU backend choices, finishes with a
 read-only health report for hardware/CUDA fallback, Python, pip/libraries, model manifests and blobs, `.cache`, and
 native DLLs. It never deletes model blobs implicitly.
