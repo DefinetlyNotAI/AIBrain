@@ -207,8 +207,15 @@ def main() -> int:
 
     def quit_for_keyboard_interrupt(_signal: int, _frame: object) -> None:
         nonlocal interrupted
+        if interrupted:
+            return
         interrupted = True
-        QTimer.singleShot(0, startup_coordinator.cancel_startup)
+        window = getattr(app, "main_window", None)
+        if window is not None:
+            LOG.info("KeyboardInterrupt requested an orderly desktop shutdown")
+            QTimer.singleShot(0, window.close)
+        else:
+            QTimer.singleShot(0, startup_coordinator.cancel_startup)
 
     signal.signal(signal.SIGINT, quit_for_keyboard_interrupt)
 

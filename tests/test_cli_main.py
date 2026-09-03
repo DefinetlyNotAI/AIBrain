@@ -24,3 +24,9 @@ class MainEntryPointTests(unittest.TestCase):
         self.assertIn("self._models_finished", source)
         self.assertIn("startup_worker.finished.connect(startup_thread.quit)", source)
         self.assertIn("startup_thread.finished.connect(startup_coordinator.startup_thread_finished)", source)
+
+    def test_keyboard_interrupt_closes_the_main_window_before_qt_exits(self) -> None:
+        source = inspect.getsource(main.main)
+
+        self.assertIn('window = getattr(app, "main_window", None)', source)
+        self.assertIn("QTimer.singleShot(0, window.close)", source)

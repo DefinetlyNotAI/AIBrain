@@ -66,6 +66,12 @@ class MainWindow(QMainWindow):
         self.simulation_transcript: list[dict[str, object]] = []
         self._analysis_is_infinite = False
         self._gpu_relaunching = False
+        self._closing = False
+        self._shutdown_saved = False
+        self._shutdown_exit_code = 0
+        self._shutdown_timer = QTimer(self)
+        self._shutdown_timer.setInterval(25)
+        self._shutdown_timer.timeout.connect(self._finish_close_when_workers_stop)
         self._setup_worker()
         self.chat = ChatPanel(self.config)
         self.visualizer = VisualizerPanel()
@@ -249,7 +255,7 @@ class MainWindow(QMainWindow):
         self.chat.stats.setText(
             "GPU mismatch detected. Returning to the startup loader…"
         )
-        QCoreApplication.exit(GPU_RELAUNCH_EXIT_CODE)
+        self._shutdown_exit_code = GPU_RELAUNCH_EXIT_CODE
         self.close()
 
     def _show_repairable_error(self, title: str, message: str) -> None:
@@ -473,13 +479,32 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         QSettings().setValue("main_splitter_sizes", self._splitter.sizes())
-        self.visualizer.analyzer.save_model()
-        if self.worker_thread.isRunning():
-            self.worker.cancel()
-            self.worker_thread.quit()
-            self.worker_thread.wait(3000)
-        if self.simulation_thread.isRunning():
-            self.simulation_worker.cancel()
-            self.simulation_thread.quit()
-            self.simulation_thread.wait(3000)
+        if not self._shutdown_saved:
+            self.visualizer.analyzer.save_model()
+            self._shutdown_saved = True
+        self.worker.cancel()
+        self.simulation_worker.cancel()
+        for thread in (self.worker_thread, self.simulation_thread):
+            if thread.isRunning():
+                thread.quit()
+        if self.worker_thread.isRunning() or self.simulation_thread.isRunning():
+            if not self._closing:
+                LOG.info("Closing AIBrain after active worker threads stop")
+            self._closing = True
+            self.hide()
+            event.ignore()
+            if not self._shutdown_timer.isActive():
+                self._shutdown_timer.start()
+            return
+        self._shutdown_timer.stop()
         super().closeEvent(event)
+
+    def _finish_close_when_workers_stop(self) -> None:
+        """Accept a deferred close once no QObject worker is still executing."""
+        if self.worker_thread.isRunning() or self.simulation_thread.isRunning():
+            return
+        self._shutdown_timer.stop()
+        self._closing = False
+        LOG.info("AIBrain worker threads stopped; completing window close")
+        self.close()
+        QCoreApplication.exit(self._shutdown_exit_code)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import inspect
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -45,6 +46,13 @@ class MainLayoutTests(unittest.TestCase):
         finally:
             window.close()
             self.app.processEvents()
+
+    def test_window_close_defers_without_blocking_on_worker_threads(self) -> None:
+        source = inspect.getsource(MainWindow.closeEvent)
+
+        self.assertIn("event.ignore()", source)
+        self.assertIn("_shutdown_timer.start()", source)
+        self.assertNotIn(".wait(", source)
 
 
 if __name__ == "__main__":
