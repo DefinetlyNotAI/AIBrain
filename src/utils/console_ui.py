@@ -634,6 +634,11 @@ class CommandOutputBox:
             return False
         return os.name != "nt" or _enable_virtual_terminal()
 
+    @property
+    def is_live(self) -> bool:
+        """Whether transient status can be redrawn instead of appended."""
+        return self._live
+
     def __enter__(self) -> CommandOutputBox:
         self.open()
         return self

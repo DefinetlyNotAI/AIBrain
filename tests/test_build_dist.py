@@ -130,7 +130,7 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertEqual(output_box.completed, [])
         self.assertEqual(output_box.partial, ["PASS 1: 30%"])
 
-    def test_renderer_logs_but_hides_redundant_nuitka_option_echo(self) -> None:
+    def test_renderer_shows_and_logs_nuitka_option_echo(self) -> None:
         class OutputBox:
             def __init__(self) -> None:
                 self.completed: list[str] = []
@@ -151,7 +151,7 @@ class BuildDistributionTests(unittest.TestCase):
             )
 
         self.assertEqual(pending, "")
-        self.assertEqual(output_box.completed, ["Nuitka: compiling"])
+        self.assertEqual(output_box.completed, ["Nuitka-Options: --standalone", "Nuitka: compiling"])
         self.assertEqual(output_box.partial, [])
         self.assertEqual(
             [call.args[0] for call in record.call_args_list],
@@ -161,6 +161,8 @@ class BuildDistributionTests(unittest.TestCase):
     @patch("cli.build_dist.time.monotonic", return_value=115.0)
     def test_silent_build_heartbeat_reports_live_work(self, _monotonic) -> None:  # type: ignore[no-untyped-def]
         class OutputBox:
+            is_live = True
+
             def __init__(self) -> None:
                 self.partial: list[str] = []
 
@@ -169,13 +171,31 @@ class BuildDistributionTests(unittest.TestCase):
 
         output_box = OutputBox()
         next_heartbeat = build_dist._report_build_heartbeat(
-            output_box, 100.0, 80.0, activity="Nuitka"
+            output_box, 100.0, 80.0, activity="Nuitka", started_at=50.0, process_id=123
         )  # type: ignore[arg-type]
 
         self.assertEqual(next_heartbeat, 115.0)
         self.assertEqual(len(output_box.partial), 1)
         self.assertIn("Still working: Nuitka is running", output_box.partial[0])
         self.assertIn("35s", output_box.partial[0])
+        self.assertIn("Elapsed: 65s", output_box.partial[0])
+        self.assertIn("PID: 123", output_box.partial[0])
+
+    def test_silent_status_redraws_each_second_but_captured_output_is_throttled(self) -> None:
+        for live, interval in ((True, 1.0), (False, 15.0)):
+            with self.subTest(live=live), redirect_stdout(StringIO()) as output:
+                with build_dist.CommandOutputBox(live=live) as box:
+                    with patch.object(build_dist.time, "monotonic", return_value=100.5):
+                        self.assertEqual(build_dist._report_build_heartbeat(
+                            box, 100.0, 100.0, activity="Nuitka"
+                        ), 100.0)
+                    self.assertNotIn("Still working", output.getvalue())
+                    with patch.object(build_dist.time, "monotonic", return_value=100.0 + interval):
+                        self.assertEqual(build_dist._report_build_heartbeat(
+                            box, 100.0, 100.0, activity="Nuitka"
+                        ), 100.0 + interval)
+                    self.assertIn("Still working", output.getvalue())
+                    self.assertEqual("\x1b[1A" in output.getvalue(), live)
 
     @patch("cli.build_dist.time.monotonic", return_value=300.0)
     def test_stall_monitor_reports_liveness_without_blocking_after_five_minutes(
@@ -226,6 +246,7 @@ class BuildDistributionTests(unittest.TestCase):
 
     def test_silent_pip_subprocess_gets_dynamic_heartbeat_and_stall_messages(self) -> None:
         class OutputBox:
+            is_live = True
             partial: list[str] = []
             completed: list[str] = []
 
@@ -267,6 +288,7 @@ class BuildDistributionTests(unittest.TestCase):
 
     def test_run_renders_unbuffered_progress_before_the_child_completes(self) -> None:
         class OutputBox:
+            is_live = True
             partial_times: list[float] = []
             completed_times: list[float] = []
 
@@ -295,6 +317,41 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertEqual(len(OutputBox.partial_times), 1)
         self.assertEqual(len(OutputBox.completed_times), 1)
         self.assertLess(OutputBox.partial_times[0], OutputBox.completed_times[0])
+
+    def test_verbose_failure_streams_all_lines_but_retains_only_a_bounded_error_tail(self) -> None:
+        class OutputBox:
+            is_live = True
+            completed: list[str] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def write(self, text):
+                self.completed.append(text)
+
+            def write_partial(self, text):
+                pass
+
+        command = [
+            sys.executable, "-u", "-c",
+            "import sys; print('first compilation unit'); "
+            "[print('compiled unit %04d: ' % i + 'x' * 80) for i in range(1000)]; "
+            "print('link failed', file=sys.stderr); sys.exit(7)",
+        ]
+        with patch.object(build_dist, "CommandOutputBox", OutputBox):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                build_dist.run(command)
+
+        self.assertEqual(raised.exception.returncode, 7)
+        self.assertEqual(len(OutputBox.completed), 1002)
+        self.assertEqual(OutputBox.completed[0], "first compilation unit")
+        self.assertEqual(OutputBox.completed[-1], "link failed")
+        self.assertLessEqual(len(raised.exception.output), 65536)
+        self.assertNotIn("first compilation unit", raised.exception.output)
+        self.assertTrue(raised.exception.output.endswith("link failed"))
 
     @patch("cli.build_dist.log_completed_command")
     @patch("cli.build_dist.subprocess.run")
@@ -353,6 +410,14 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertNotIn("--standalone", summary)
         self.assertNotIn("--include-module=typing", summary)
 
+        with (
+            patch.object(build_dist, "command_preview") as preview,
+            patch.object(build_dist, "_run_with_file_tailer") as runner,
+        ):
+            build_dist.run(command)
+        preview.assert_called_once_with(command)
+        runner.assert_called_once_with(command)
+
     def test_each_packaged_application_has_its_named_entry_point_and_icon(self) -> None:
         targets = {target.executable: target for target in build_dist.APPLICATIONS}
         numpy_runtime = (Path("numpy-runtime"), Path("numpy-dlls"))
@@ -363,8 +428,8 @@ class BuildDistributionTests(unittest.TestCase):
             command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")], numpy_runtime)
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
-            self.assertNotIn("--show-progress", command)
-            self.assertNotIn("--show-scons", command)
+            for option in ("--verbose", "--show-progress", "--show-scons", "--show-modules", "--show-memory"):
+                self.assertIn(option, command)
             excluded = {
                 item.removeprefix("--nofollow-import-to=")
                 for item in command

@@ -31,6 +31,7 @@ from src.utils.console_ui import (
     command_preview,
     error,
     header,
+    info,
     panel,
     report_keyboard_interrupt,
     section,
@@ -47,7 +48,8 @@ NUMPY_DLL_ROOT = SITE_PACKAGES / "numpy.libs"
 
 RUNTIME_DLLS = ("vcomp140.dll",)
 NATIVE_LIBRARY = ROOT / "dll" / "aibrain.connectome.dll"
-BUILD_HEARTBEAT_SECONDS = 15.0
+BUILD_HEARTBEAT_SECONDS = 1.0
+BUILD_LOG_HEARTBEAT_SECONDS = 15.0
 BUILD_STALL_SECONDS = 5 * 60.0
 BUILD_STALL_RECHECK_SECONDS = 5 * 60.0
 
@@ -306,7 +308,7 @@ def _record_build_output(line: str) -> None:
 
 
 def _summarize_build_command(command_line: list[str]) -> list[str]:
-    """Keep interactive and completion records concise for long Nuitka commands."""
+    """Keep completion records concise after showing the full command at startup."""
     if len(command_line) < 2 or _command_activity(command_line) != "Nuitka":
         return command_line
 
@@ -323,16 +325,10 @@ def _summarize_build_command(command_line: list[str]) -> list[str]:
     ]
 
 
-def _is_redundant_option_echo(line: str) -> bool:
-    """Identify Nuitka's copy of options already preserved in the log."""
-    return line.lstrip().startswith("Nuitka-Options:")
-
-
 def _write_completed_build_line(output_box: CommandOutputBox, line: str) -> None:
-    """Log every complete line while hiding redundant command option echoes."""
+    """Show and log every complete line, including Nuitka's option details."""
     _record_build_output(line)
-    if not _is_redundant_option_echo(line):
-        output_box.write(line)
+    output_box.write(line)
 
 
 def _render_output_text(
@@ -382,7 +378,7 @@ def _render_output_text(
         live_frame = None
 
     visible_partial = pending or live_frame
-    if visible_partial and not _is_redundant_option_echo(visible_partial):
+    if visible_partial:
         output_box.write_partial(visible_partial)
 
     return pending
@@ -452,10 +448,13 @@ def _report_build_heartbeat(
         last_child_output: float,
         *,
         activity: str,
+        started_at: float | None = None,
+        process_id: int | None = None,
 ) -> float:
     """Identify the active command during silence without implying progress."""
     now = time.monotonic()
-    if now - last_heartbeat < BUILD_HEARTBEAT_SECONDS:
+    interval = BUILD_HEARTBEAT_SECONDS if output_box.is_live else BUILD_LOG_HEARTBEAT_SECONDS
+    if now - last_heartbeat < interval:
         return last_heartbeat
 
     silent_seconds = now - last_child_output
@@ -463,10 +462,19 @@ def _report_build_heartbeat(
         " Source generation, compilation, and linking can be silent."
         if activity == "Nuitka" else ""
     )
-    output_box.write_partial(
+    details = ""
+    if started_at is not None:
+        details += f" Elapsed: {now - started_at:.0f}s."
+    if process_id is not None:
+        details += f" PID: {process_id}."
+    message = (
         f"Still working: {activity} is running without new output "
-        f"for {silent_seconds:.0f}s.{explanation}"
+        f"for {silent_seconds:.0f}s.{details}{explanation}"
     )
+    if output_box.is_live:
+        output_box.write_partial(message)
+    else:
+        output_box.write(message)
     return now
 
 
@@ -731,6 +739,7 @@ def _run_with_conpty(
     captured_tail = ""
     reader_finished = False
     last_child_output = time.monotonic()
+    started_at = last_child_output
     last_heartbeat = last_child_output
     stall_state = BuildStallState(last_child_output + BUILD_STALL_SECONDS)
 
@@ -785,6 +794,8 @@ def _run_with_conpty(
                         last_heartbeat,
                         last_child_output,
                         activity=activity,
+                        started_at=started_at,
+                        process_id=process.pid,
                     )
                     stall_message, stall_state = _monitor_build_stall(
                         last_child_output,
@@ -889,6 +900,7 @@ def _run_with_file_tailer(
                 offset = 0
                 pending = ""
                 last_child_output = time.monotonic()
+                started_at = last_child_output
                 last_heartbeat = last_child_output
                 stall_state = BuildStallState(last_child_output + BUILD_STALL_SECONDS)
 
@@ -916,6 +928,8 @@ def _run_with_file_tailer(
                                 last_heartbeat,
                                 last_child_output,
                                 activity=activity,
+                                started_at=started_at,
+                                process_id=process.pid,
                             )
 
                         stall_message, stall_state = _monitor_build_stall(
@@ -953,10 +967,11 @@ def _run_with_file_tailer(
                 )
                 raise
 
-        captured_output = output_path.read_text(
-            encoding="utf-8",
-            errors="replace",
-        ).rstrip()
+        # Verbose builds can produce very large transcripts. The complete
+        # stream has already been logged; retain only a bounded exception tail.
+        with output_path.open("rb") as captured_file:
+            captured_file.seek(max(0, output_path.stat().st_size - 65536))
+            captured_output = captured_file.read().decode("utf-8", errors="replace").rstrip()
 
     log_completed_command(
         _summarize_build_command(command_line), "", return_code=return_code
@@ -971,14 +986,10 @@ def _run_with_file_tailer(
 
 def run(command_line: list[str]) -> None:
     """Run a build command with live boxed output."""
-    preview = _summarize_build_command(command_line)
-    command_preview(preview)
-    if preview != command_line:
-        hidden = len(command_line) - len(preview)
-        logging.getLogger("aibrain.command").info(
-            "Command started: %s", subprocess.list2cmdline(command_line)
-        )
-        print(f"     {hidden} packaging options hidden; full command saved in the build log.")
+    command_preview(command_line)
+    logging.getLogger("aibrain.command").info(
+        "Command started: %s", subprocess.list2cmdline(command_line)
+    )
 
     if _supports_conpty():
         _run_with_conpty(command_line)
@@ -1040,6 +1051,7 @@ def stage_numpy_runtime(build_root: Path) -> tuple[Path, Path]:
     dll_target = runtime_root / "numpy.libs"
     package_target.mkdir(parents=True, exist_ok=True)
 
+    info(f"Staging NumPy Python files: {package_target}")
     for source in NUMPY_PACKAGE_ROOT.glob("*.py"):
         if source.name == "conftest.py":
             continue
@@ -1049,9 +1061,12 @@ def stage_numpy_runtime(build_root: Path) -> tuple[Path, Path]:
         source = NUMPY_PACKAGE_ROOT / name
         if not source.is_dir():
             raise RuntimeError(f"Managed NumPy runtime submodule is missing: {name}")
+        info(f"Staging NumPy runtime: {name}")
         shutil.copytree(source, package_target / name, dirs_exist_ok=True)
 
+    info(f"Staging NumPy native DLLs: {dll_target}")
     shutil.copytree(NUMPY_DLL_ROOT, dll_target, dirs_exist_ok=True)
+    info("NumPy runtime staging complete")
     return package_target, dll_target
 
 
@@ -1067,6 +1082,11 @@ def nuitka_command(
         "-u",
         "-m",
         "nuitka",
+        "--verbose",
+        "--show-progress",
+        "--show-scons",
+        "--show-modules",
+        "--show-memory",
         "--standalone",
         "--assume-yes-for-downloads",
         "--enable-plugin=pyside6",
@@ -1201,7 +1221,11 @@ def build(
 
     release.mkdir(parents=True)
 
+    info(f"Distribution directory: {release}")
+    info("Checking required Visual C++ runtime DLLs")
     runtimes = runtime_dlls()
+    for runtime in runtimes:
+        info(f"Runtime DLL: {runtime}")
 
     try:
         for index, target in enumerate(
@@ -1218,6 +1242,8 @@ def build(
                     / "_nuitka"
                     / target.directory
             )
+            target_started = time.monotonic()
+            info(f"Target {index - 1}/{len(targets)}: {target.executable}")
 
             numpy_runtime = stage_numpy_runtime(build_root)
 
@@ -1235,6 +1261,7 @@ def build(
                     / target.directory
             )
 
+            info(f"Moving compiled distribution to {application}")
             shutil.move(
                 str(
                     _produced_distribution(
@@ -1244,17 +1271,21 @@ def build(
                 application,
             )
 
+            info(f"Verifying executable and required DLLs: {target.executable}")
             executable = _verify_application(
                 application,
                 target,
             )
 
             if target.executable == "ai_brain.exe":
+                info("Setting the application's Windows GPU preference")
                 set_windows_executable_gpu_preference(
                     executable
                 )
+            info(f"Completed {target.executable} in {time.monotonic() - target_started:.1f}s")
 
     finally:
+        info(f"Removing intermediate build files: {release / '_nuitka'}")
         shutil.rmtree(
             release / "_nuitka",
             ignore_errors=True,
@@ -1308,6 +1339,8 @@ def main() -> int:
     )
     section("Build session", 1)
     print(f"  Log file: {runtime_log}")
+    info("Verbose output enabled: optimization, compilation, linker, module, DLL, and memory details")
+    info("Quiet periods show a live elapsed timer; press Ctrl+C once to stop the process tree")
 
     try:
         selected = tuple(
