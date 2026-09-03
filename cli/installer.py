@@ -496,6 +496,40 @@ def ensure_pip(python: str) -> None:
         run([python, "-m", "ensurepip", "--upgrade"])
 
 
+def cleanup_invalid_distributions(venv_dir: Path | None = None) -> list[Path]:
+    """Remove pip's tilde-prefixed leftovers only inside the managed venv."""
+    runtime = (venv_dir or VENV_DIR).resolve()
+    libraries = (
+        [runtime / "Lib" / "site-packages"]
+        if sys.platform == "win32"
+        else list((runtime / "lib").glob("python*/site-packages"))
+    )
+    targets: list[Path] = []
+    for library in libraries:
+        resolved_library = library.resolve()
+        if not resolved_library.is_relative_to(runtime):
+            raise ValueError(f"Refusing to clean site-packages outside {runtime}")
+        if not library.is_dir():
+            continue
+        for candidate in sorted(library.iterdir()):
+            if not candidate.name.startswith("~"):
+                continue
+            # Validate every absolute target before deleting anything. A linked
+            # package must never redirect cleanup into another package or tree.
+            resolved = candidate.resolve()
+            if resolved.parent != resolved_library or resolved.name != candidate.name:
+                raise ValueError(f"Refusing to remove linked distribution: {candidate}")
+            targets.append(candidate)
+
+    for target in targets:
+        info(f"Removing invalid distribution: {relative_path(target)}")
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    return targets
+
+
 def install_dependencies(
     python: str,
     gpu: GpuCapability | None = None,
@@ -777,6 +811,7 @@ def main() -> int:
         info("Updating llama-cpp-python only; Ollama model data is preserved")
         try:
             verify_managed_python(str(venv_python()))
+            cleanup_invalid_distributions()
             wheel_tag = repair_selected_subsystem(
                 args.repair_subsystem,
                 str(venv_python()),
@@ -826,6 +861,7 @@ def main() -> int:
     section("Core dependencies", 4)
     try:
         verify_managed_python(python)
+        cleanup_invalid_distributions()
         install_dependencies(python, gpu, force_reinstall=action == "repair")
     except subprocess.CalledProcessError as exc:
         error("Dependency installation failed with " f"exit code {exc.returncode}.")

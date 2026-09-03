@@ -238,6 +238,41 @@ class InstallerRepairTests(unittest.TestCase):
 
 
 class InstallerBootstrapTests(unittest.TestCase):
+    def test_invalid_distribution_cleanup_preserves_normal_libraries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory) / ".venv"
+            library = runtime / "Lib" / "site-packages"
+            library.mkdir(parents=True)
+            for name in ("~umpy", "~umpy.libs", "~umpy-2.4.6.dist-info", "numpy", "numpy.libs"):
+                (library / name).mkdir()
+                (library / name / "keep.dat").write_text("contents", encoding="utf-8")
+            (library / "~broken-file").write_text("leftover", encoding="utf-8")
+            (runtime / "~outside-site-packages").write_text("keep", encoding="utf-8")
+            with patch.object(installer.sys, "platform", "win32"):
+                removed = installer.cleanup_invalid_distributions(runtime)
+                self.assertEqual(installer.cleanup_invalid_distributions(runtime), [])
+            self.assertEqual(len(removed), 4)
+            self.assertEqual(sorted(path.name for path in library.iterdir()), ["numpy", "numpy.libs"])
+            self.assertTrue((library / "numpy" / "keep.dat").is_file())
+            self.assertTrue((runtime / "~outside-site-packages").is_file())
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows junction protection")
+    def test_invalid_distribution_cleanup_refuses_a_junction_to_other_data(self) -> None:
+        import _winapi
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / ".venv"
+            library = runtime / "Lib" / "site-packages"
+            library.mkdir(parents=True)
+            outside = root / "important"
+            outside.mkdir()
+            (outside / "keep.txt").write_text("keep", encoding="utf-8")
+            _winapi.CreateJunction(str(outside), str(library / "~linked"))
+            with self.assertRaisesRegex(ValueError, "linked distribution"):
+                installer.cleanup_invalid_distributions(runtime)
+            self.assertTrue((outside / "keep.txt").is_file())
+
     def test_help_needs_no_site_packages_and_does_not_initialize_logs(self) -> None:
         script = (
             "from unittest.mock import patch; from cli import installer; "
@@ -425,6 +460,7 @@ class InstallerBootstrapTests(unittest.TestCase):
                 for name in (
                     "clear_screen", "header", "create_environment",
                     "verify_managed_python", "install_dependencies",
+                    "cleanup_invalid_distributions",
                 ):
                     stack.enter_context(patch(f"cli.installer.{name}"))
                 stack.enter_context(patch("cli.installer.verify_python", return_value=True))

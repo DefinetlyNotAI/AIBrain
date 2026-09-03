@@ -22,6 +22,10 @@ selected mode then automatically uses the recommended dependency and CUDA/CPU ba
 read-only health report for hardware/CUDA fallback, Python, pip/libraries, model manifests and blobs, `.cache`, and
 native DLLs. It never deletes model blobs implicitly.
 
+Before package installation or repair, the installer removes entries beginning with `~` from the managed environment's
+`site-packages`. These are pip's incomplete-uninstall leftovers, such as `~umpy` and `~umpy-*.dist-info`.
+Cleanup preserves normal packages and refuses paths redirected outside the managed package directory.
+
 From the project root, run:
 
 ```powershell
