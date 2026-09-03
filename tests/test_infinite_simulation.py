@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.models.infinite_simulation import InfiniteSimulationWorker, WORLD_OPENINGS, _CONTEXT_TURNS, \
-    infinite_generation_config, select_world_opening
+    infinite_generation_config, random_world_opening
 from src.models.llama_backend import GenerationConfig
 
 
@@ -58,27 +59,38 @@ class InfiniteSimulationContextTests(unittest.TestCase):
             if role == "participant":
                 frames.append(frame)
 
-        def stop_after_first_exchange(role: str, turn: int) -> None:
+        roles = []
+
+        def record_turn(role: str, turn: int) -> None:
+            roles.append((role, turn))
+
+        def stop_after_first_exchange(role: str, _text: str, turn: int) -> None:
             if role == "world" and turn == 2:
                 worker.cancel()
 
         worker.token.connect(observe)
-        worker.turnStarted.connect(stop_after_first_exchange)
+        worker.turnStarted.connect(record_turn)
+        worker.turnFinished.connect(stop_after_first_exchange)
         worker.finished.connect(finished.append)
         worker.run("A doorway", GenerationConfig(), Path("model.gguf"))
 
         self.assertEqual(world.loaded, [Path("model.gguf")])
         self.assertEqual(participant.loaded, [Path("model.gguf")])
+        self.assertEqual(roles, [("participant", 1), ("world", 2)])
+        self.assertEqual(len(participant.calls), 1)
+        self.assertIn("A doorway", participant.calls[0][-1]["content"])
         self.assertIn("[WORLD EVENT]", participant.calls[0][-1]["content"])
-        self.assertIn("[PARTICIPANT RESPONSE]", world.calls[1][-1]["content"])
-        self.assertNotIn("[WORLD EVENT]", world.calls[1][-1]["content"])
+        self.assertEqual(len(world.calls), 1)
+        self.assertIn("[PARTICIPANT RESPONSE]", world.calls[0][-1]["content"])
+        self.assertNotIn("[WORLD EVENT]", world.calls[0][-1]["content"])
         self.assertEqual(frames[0].step, 1)
         self.assertTrue(finished[0]["cancelled"])
         self.assertTrue(world.unloaded and participant.unloaded)
 
-    def test_opening_selection_is_stable_and_uses_the_pregenerated_set(self) -> None:
-        self.assertEqual(select_world_opening("same direction"), select_world_opening("same direction"))
-        self.assertIn(select_world_opening("same direction"), WORLD_OPENINGS)
+    def test_random_opening_uses_the_pregenerated_set(self) -> None:
+        with patch("src.models.infinite_simulation.choice", return_value=WORLD_OPENINGS[-1]) as chooser:
+            self.assertEqual(random_world_opening(), WORLD_OPENINGS[-1])
+        chooser.assert_called_once_with(WORLD_OPENINGS)
         self.assertEqual(len(WORLD_OPENINGS), 10)
 
     def test_infinite_mode_overrides_low_randomness_settings(self) -> None:
@@ -94,13 +106,24 @@ class InfiniteSimulationContextTests(unittest.TestCase):
             {"role": "participant", "content": "I follow the sound.", "turn": 2},
         ]
 
-        world, participant, turn = InfiniteSimulationWorker._histories("direction", "opening", transcript)
+        world, participant, turn, next_role = InfiniteSimulationWorker._histories("direction", transcript)
 
         self.assertEqual(turn, 2)
+        self.assertEqual(next_role, "world")
         self.assertEqual(world[-1]["role"], "user")
         self.assertIn("I follow the sound.", world[-1]["content"])
         self.assertEqual(participant[-1]["role"], "assistant")
         self.assertEqual(participant[-1]["content"], "I follow the sound.")
+
+    def test_continuation_after_world_event_resumes_with_participant(self) -> None:
+        transcript = [{"role": "world", "content": "A bell rings.", "turn": 7}]
+
+        world, participant, turn, next_role = InfiniteSimulationWorker._histories("unused", transcript)
+
+        self.assertEqual(turn, 7)
+        self.assertEqual(next_role, "participant")
+        self.assertEqual(world[-1], {"role": "assistant", "content": "A bell rings."})
+        self.assertIn("A bell rings.", participant[-1]["content"])
 
 
 if __name__ == "__main__":

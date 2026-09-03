@@ -437,7 +437,7 @@ class MainWindow(QMainWindow):
         tokens = stats["participant_tokens"]
         suffix = " (stopped)" if stats["cancelled"] else ""
         self.chat.stats.setText(
-            f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}"
+            f"∞ Simulation: {turns} generated turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}"
         )
         self.chat.set_analysis_available(self.visualizer.has_analysis_records)
         self.chat.set_rewind_available(self.visualizer.has_recorded_frames)

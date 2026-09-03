@@ -7,10 +7,12 @@ the chat pane while the connectome responds to each received token.
 
 ### Infinite simulation
 
-Infinite Mode uses a deterministic selection from ten pregenerated world openings and begins with a World event prompted
-by your selected scenario text. It applies an internal high-randomness configuration (temperature at least 1.25 and top-p at least .96),
+Infinite Mode treats the compose text as the first World event. When the compose box is empty, the send action becomes
+**Random** and chooses one of ten premade World events. When it contains text, the arrow sends that text directly as the
+first World event. The Participant always responds first, then World and Participant turns alternate. Infinite Mode applies
+an internal high-randomness configuration (temperature at least 1.25 and top-p at least .96),
 regardless of the Normal Chat controls. Switching between Normal Chat and Infinite Mode clears both the conversation and
-the replay. The compose arrow becomes Stop while either mode is running; Continue is available only for a stopped Infinite scenario.
+the replay. The compose action becomes Stop while either mode is running; Continue is available only for a stopped Infinite scenario.
 
 Open **Mode Actions**, enable **Infinite Mode**, then use the compose arrow to start an open-ended local roleplay. AIBrain loads two separate copies of the selected GGUF: the
 **World** produces only external events; the **Participant** produces only first-person responses. Every stream update

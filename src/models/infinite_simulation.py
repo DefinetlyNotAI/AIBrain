@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from hashlib import blake2b
 import logging
 from pathlib import Path
+from secrets import choice
 from threading import Event
 from time import monotonic
 
@@ -42,10 +42,9 @@ WORLD_OPENINGS = (
 )
 
 
-def select_world_opening(seed: str) -> str:
-    """Choose one stable, pregenerated opening without relying on Python hash randomisation."""
-    digest = blake2b(seed.encode("utf-8"), digest_size=2).digest()
-    return WORLD_OPENINGS[int.from_bytes(digest, "big") % len(WORLD_OPENINGS)]
+def random_world_opening() -> str:
+    """Choose a pregenerated World event when the compose box is empty."""
+    return choice(WORLD_OPENINGS)
 
 
 def infinite_generation_config(config: GenerationConfig) -> GenerationConfig:
@@ -82,9 +81,7 @@ class InfiniteSimulationWorker(QObject):
         config = infinite_generation_config(config)
         started = monotonic()
         participant_tokens = 0
-        turn = 0
-        opening = select_world_opening(seed)
-        world_history, participant_history, turn = self._histories(seed, opening, transcript)
+        world_history, participant_history, turn, next_role = self._histories(seed, transcript)
         try:
             # Separate backend objects intentionally deploy two copies of the
             # same selected model: one produces the world, one is the actor.
@@ -92,53 +89,49 @@ class InfiniteSimulationWorker(QObject):
             self.participant.load(model_path, config)
             while not self._cancelled.is_set():
                 turn += 1
-                world_text, _ = self._generate("world", self.world, world_history, config, turn, participant_tokens)
-                if self._cancelled.is_set():
-                    break
-                if not world_text:
-                    raise RuntimeError("World model returned no text")
-                world_history.append({"role": "assistant", "content": world_text})
-                participant_history.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            f"[WORLD EVENT]\n"
-                            f"{world_text}\n"
-                            f"[END WORLD EVENT]\n"
-                            f"Write the PARTICIPANT response only."
-                        )
-                    }
-                )
-
-                participant_text, token_count = self._generate_participant(
-                    participant_history,
-                    config,
-                    turn + 1,
-                    participant_tokens
-                )
-
-                participant_tokens += token_count
-                if self._cancelled.is_set():
-                    break
-                if not participant_text:
-                    raise RuntimeError("Participant model returned no text")
-                participant_history.append(
-                    {
-                        "role": "assistant",
-                        "content": participant_text
-                    }
-                )
-                world_history.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            f"[PARTICIPANT RESPONSE]\n"
-                            f"{participant_text}\n"
-                            f"[END PARTICIPANT RESPONSE]\n"
-                            f"Write the next WORLD EVENT only."
-                        )
-                    }
-                )
+                if next_role == "participant":
+                    participant_text, token_count = self._generate_participant(
+                        participant_history, config, turn, participant_tokens
+                    )
+                    participant_tokens += token_count
+                    if self._cancelled.is_set():
+                        break
+                    if not participant_text:
+                        raise RuntimeError("Participant model returned no text")
+                    participant_history.append({"role": "assistant", "content": participant_text})
+                    world_history.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"[PARTICIPANT RESPONSE]\n"
+                                f"{participant_text}\n"
+                                f"[END PARTICIPANT RESPONSE]\n"
+                                f"Write the next WORLD EVENT only."
+                            )
+                        }
+                    )
+                    next_role = "world"
+                else:
+                    world_text, _ = self._generate(
+                        "world", self.world, world_history, config, turn, participant_tokens
+                    )
+                    if self._cancelled.is_set():
+                        break
+                    if not world_text:
+                        raise RuntimeError("World model returned no text")
+                    world_history.append({"role": "assistant", "content": world_text})
+                    participant_history.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"[WORLD EVENT]\n"
+                                f"{world_text}\n"
+                                f"[END WORLD EVENT]\n"
+                                f"Write the PARTICIPANT response only."
+                            )
+                        }
+                    )
+                    next_role = "participant"
                 world_history = self._trim(world_history)
                 participant_history = self._trim(participant_history)
             self.finished.emit({"turns": turn, "participant_tokens": participant_tokens,
@@ -197,28 +190,46 @@ class InfiniteSimulationWorker(QObject):
         return [messages[0], *messages[-_CONTEXT_TURNS:]]
 
     @staticmethod
-    def _histories(seed: str, opening: str, transcript: list[dict[str, object]] | None) -> tuple[
-            list[dict[str, str]], list[dict[str, str]], int]:
+    def _histories(seed: str, transcript: list[dict[str, object]] | None) -> tuple[
+            list[dict[str, str]], list[dict[str, str]], int, str]:
         world_history = [{"role": "system", "content": WORLD_SYSTEM}]
         participant_history = [{"role": "system", "content": PARTICIPANT_SYSTEM}]
         if not transcript:
-            world_history.append({"role": "user", "content": (
-                f"[SIMULATION DIRECTION]\n{seed}\n[END SIMULATION DIRECTION]\n"
-                f"[OPENING]\n{opening}\n[END OPENING]\nWrite the opening WORLD EVENT only."
-            )})
-            return world_history, participant_history, 0
+            # The seed is the first World event, whether the user wrote it or
+            # selected the random compose action. The Participant must answer
+            # it before the World Director is allowed to generate another turn.
+            world_history.append({"role": "assistant", "content": seed})
+            participant_history.append({
+                "role": "user",
+                "content": (
+                    f"[WORLD EVENT]\n{seed}\n[END WORLD EVENT]\n"
+                    f"Write the PARTICIPANT response only."
+                ),
+            })
+            return world_history, participant_history, 0, "participant"
 
         turn = 0
+        last_role = "world"
         for item in transcript:
             role, content = str(item.get("role", "")), str(item.get("content", ""))
             turn = max(turn, int(item.get("turn", 0)))
             if role == "world":
+                last_role = role
                 world_history.append({"role": "assistant", "content": content})
-                participant_history.append({"role": "user", "content": f"[WORLD EVENT]\n{content}\n[END WORLD EVENT]"})
+                participant_history.append({
+                    "role": "user",
+                    "content": f"[WORLD EVENT]\n{content}\n[END WORLD EVENT]\nWrite the PARTICIPANT response only.",
+                })
             elif role == "participant":
+                last_role = role
                 participant_history.append({"role": "assistant", "content": content})
-                world_history.append({"role": "user", "content": f"[PARTICIPANT RESPONSE]\n{content}\n[END PARTICIPANT RESPONSE]"})
-        return InfiniteSimulationWorker._trim(world_history), InfiniteSimulationWorker._trim(participant_history), turn
+                world_history.append({
+                    "role": "user",
+                    "content": f"[PARTICIPANT RESPONSE]\n{content}\n[END PARTICIPANT RESPONSE]\nWrite the next WORLD EVENT only.",
+                })
+        next_role = "participant" if last_role == "world" else "world"
+        return (InfiniteSimulationWorker._trim(world_history),
+                InfiniteSimulationWorker._trim(participant_history), turn, next_role)
 
     @Slot()
     def cancel(self) -> None:

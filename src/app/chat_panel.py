@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout
                                QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
                                QToolButton, QVBoxLayout, QWidget)
 
+from ..models.infinite_simulation import random_world_opening
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
 
@@ -331,7 +332,7 @@ class ChatPanel(QWidget):
             self._send()
 
     def _start_infinite(self) -> None:
-        seed = self.input.toPlainText().strip() or "Begin an ordinary day in a new embodied world."
+        seed = self.input.toPlainText().strip() or random_world_opening()
         self.input.clear()
         self.infiniteRequested.emit(seed)
 
@@ -362,7 +363,8 @@ class ChatPanel(QWidget):
         self.infinite_mode.setChecked(infinite)
         self.infinite_mode.blockSignals(False)
         self.input.setPlaceholderText(
-            "Describe a world opening…" if infinite else "Message your local model…  (Ctrl+Enter to send)")
+            "Describe the first World event, or use Random…"
+            if infinite else "Message your local model…  (Ctrl+Enter to send)")
         # Keep every action in the same physical slot across modes. Unavailable
         # actions are disabled instead of disappearing and shifting the UI.
         self.infinite.setEnabled(infinite)
@@ -497,8 +499,6 @@ class ChatPanel(QWidget):
 
     def generating(self, running: bool) -> None:
         self._running = running
-        self.send.setText("■" if running else "➤")
-        self.send.setAccessibleName("Stop generation" if running else "Start generation")
         self._refresh_actions()
 
     def set_analysis_mode(self, infinite: bool) -> None:
@@ -543,7 +543,23 @@ class ChatPanel(QWidget):
     def _refresh_actions(self) -> None:
         ready = self._model_available
         has_compose_text = bool(self.input.toPlainText().strip())
-        self.send.setEnabled(self._running or (ready and has_compose_text and not self._rewind_active))
+        if self._running:
+            self.send.setText("■")
+            self.send.setAccessibleName("Stop generation")
+            self.send.setToolTip("Stop the running generation")
+        elif self._infinite_mode and not has_compose_text:
+            self.send.setText("🎲")
+            self.send.setAccessibleName("Start with a random World prompt")
+            self.send.setToolTip("Choose a random pre-made World event and start with the Participant response")
+        else:
+            self.send.setText("➤")
+            self.send.setAccessibleName("Start generation")
+            self.send.setToolTip(
+                "Send this World event and start with the Participant response"
+                if self._infinite_mode else "Send the compose text; changes to Stop while generation is running"
+            )
+        can_start = self._infinite_mode or has_compose_text
+        self.send.setEnabled(self._running or (ready and can_start and not self._rewind_active))
         self.regenerate.setEnabled(
             ready and self._regenerate_available and not self._running and not self._infinite_mode)
         self.rewind.setEnabled(

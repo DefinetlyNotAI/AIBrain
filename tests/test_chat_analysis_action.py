@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QLabel, QScrollArea
 
 from src.app.chat_panel import ChatPanel, MarkdownLabel
+from src.models.infinite_simulation import WORLD_OPENINGS
 from src.models.llama_backend import GenerationConfig
 
 
@@ -42,6 +44,37 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertFalse(panel.regenerate.isEnabled())
         self.assertEqual(panel.messages_layout.count(), 1)
         self.assertEqual(panel.open_analysis.text(), "Analysis+")
+        panel.deleteLater()
+
+    def test_empty_infinite_compose_uses_random_world_event(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        requested: list[str] = []
+        panel.infiniteRequested.connect(requested.append)
+        panel.set_model_available(True)
+        panel.infinite_mode.click()
+
+        self.assertTrue(panel.send.isEnabled())
+        self.assertEqual(panel.send.text(), "🎲")
+        self.assertIn("random World prompt", panel.send.accessibleName())
+        with patch("src.app.chat_panel.random_world_opening", return_value=WORLD_OPENINGS[3]):
+            panel.send.click()
+
+        self.assertEqual(requested, [WORLD_OPENINGS[3]])
+        panel.deleteLater()
+
+    def test_custom_infinite_compose_sends_world_event_directly(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+        requested: list[str] = []
+        panel.infiniteRequested.connect(requested.append)
+        panel.set_model_available(True)
+        panel.infinite_mode.click()
+        panel.input.setPlainText("The observatory dome opens by itself.")
+
+        self.assertEqual(panel.send.text(), "➤")
+        panel.send.click()
+
+        self.assertEqual(requested, ["The observatory dome opens by itself."])
+        self.assertEqual(panel.input.toPlainText(), "")
         panel.deleteLater()
 
     def test_mode_actions_are_collapsible_without_moving_controls(self) -> None:
