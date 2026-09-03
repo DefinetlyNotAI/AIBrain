@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from time import monotonic
 
-from ..utils.array_api import array_api as np
+import numpy as np
 
 from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame

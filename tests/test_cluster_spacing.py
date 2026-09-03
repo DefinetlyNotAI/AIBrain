@@ -5,7 +5,9 @@ import unittest
 
 import numpy as np
 
+from src.connectome.activity import ActivityField
 from src.connectome.generator import build_connectome
+from src.models.instrumented_backend import ActivationFrame, ActivitySource
 
 
 class ClusterSpacingTests(unittest.TestCase):
@@ -15,6 +17,19 @@ class ClusterSpacingTests(unittest.TestCase):
         self.assertEqual(graph.positions.shape, (11000, 3))
         self.assertEqual(graph.regions.shape, (11000,))
         self.assertGreater(len(graph.edges), 0)
+
+    def test_activity_mapping_uses_the_host_generator_and_activates_pathways(self) -> None:
+        graph = build_connectome("activity-regression", "Low")
+        field = ActivityField(graph)
+
+        field.update(ActivationFrame(7, "token", 1, ActivitySource.SIMULATION))
+
+        self.assertGreater(np.count_nonzero(field.values), 0)
+        active_pathways = np.count_nonzero(
+            (field.values[graph.edges[:, 0]] > 0.1)
+            | (field.values[graph.edges[:, 1]] > 0.1)
+        )
+        self.assertGreater(active_pathways, 0)
 
     def test_spacing_changes_the_deterministic_cluster_layout(self) -> None:
         compact = build_connectome("spacing-check", "Low", .6)

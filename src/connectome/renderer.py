@@ -44,7 +44,7 @@ in float region; in float activity; uniform float u_border_width; uniform float 
 vec3 cluster_colour(int cluster) {{ {_shader_palette(colour_map)} }}
 void main() {{ vec2 p = gl_PointCoord * 2.0 - 1.0; float radius = dot(p, p); if (radius > 1.0) discard;
  vec3 base = cluster_colour(int(region + .5)); float glow = 1.0 - smoothstep(.20, 1.0, radius);
- vec3 fill = min(base * (u_idle_strength + activity * .78 + glow * .08), 1.0);
+ vec3 fill = min(base * (u_idle_strength + activity * .68 + glow * .14), 1.0);
  vec3 color = fill; if (u_border_width > .0) {{ float rim = smoothstep(1.0 - u_border_width, 1.0, radius); color = mix(fill, vec3(.015, .045, .065), rim); }}
  f_color = vec4(color, .78+activity*.22); }}
 """
@@ -62,7 +62,7 @@ def _edge_fragment_shader(colour_map: dict[str, str]) -> str:
 in float region; in float activity; uniform float u_idle_strength; out vec4 f_color;
 vec3 cluster_colour(int cluster) {{ {_shader_palette(colour_map)} }}
 void main() {{ vec3 base = cluster_colour(int(region + .5));
- f_color = vec4(min(base * (u_idle_strength * .35 + activity * .72), 1.0), .03 + activity * .38); }}
+ f_color = vec4(min(base * (u_idle_strength + activity * .62), 1.0), .10 + activity * .52); }}
 """
 
 
@@ -104,7 +104,9 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.setMinimumSize(260, 240)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
-        self.timer.start(16)
+        # Thirty frames per second keeps interaction smooth while avoiding
+        # redundant host-buffer preparation between generated tokens.
+        self.timer.start(33)
 
     def _select_render_edges(self) -> np.ndarray:
         target = (
@@ -303,7 +305,7 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._point_program["u_border_width"].value = (
                 self.neuron_border_width if self.show_neuron_borders else 0.0
             )
-            idle_strength = 0.55 if self.view_mode == "2d" else 0.12
+            idle_strength = 0.58 if self.view_mode == "2d" else 0.42
             self._point_program["u_idle_strength"].value = idle_strength
             self._edge_program["u_idle_strength"].value = idle_strength
             region_filter = (

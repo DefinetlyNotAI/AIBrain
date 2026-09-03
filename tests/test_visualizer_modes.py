@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from types import SimpleNamespace
 import unittest
 
@@ -10,6 +11,9 @@ from src.utils.array_api import array_api as np
 
 
 class VisualizerModeTests(unittest.TestCase):
+    def test_renderer_caps_continuous_repaints_at_thirty_frames_per_second(self) -> None:
+        self.assertIn("self.timer.start(33)", inspect.getsource(ConnectomeRenderer.__init__))
+
     def test_neuron_border_width_uses_backend_independent_scalar_clamping(self) -> None:
         renderer = SimpleNamespace(update=lambda: None)
 

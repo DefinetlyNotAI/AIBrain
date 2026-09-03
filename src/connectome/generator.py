@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 
-from ..utils.array_api import array_api as np
+import numpy as np
 
 from .graph import ConnectomeGraph
 
@@ -99,9 +99,9 @@ def build_connectome(
     counts = {"Low": 5000, "Medium": 11000, "High": 22000}
     n = counts.get(quality, 11000)
     rng = np.random.default_rng(_seed(model_key + quality))
-    # CuPy's Generator intentionally does not expose NumPy's ``choice`` API.
-    # Inverse-CDF sampling keeps the intended weighted region distribution and
-    # runs unchanged on either backend selected by ``array_api``.
+    # Generate the static topology on the host. These relatively small arrays
+    # feed OpenGL buffers and Qt picking, where a CUDA round trip per event is
+    # slower than NumPy and previously exposed incompatible random APIs.
     region_weights = np.array(
         [0.07, 0.10, 0.12, 0.14, 0.16, 0.10, 0.12, 0.12, 0.07]
     )

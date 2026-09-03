@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
-from ..utils.array_api import array_api as np
+import numpy as np
 from PySide6.QtCore import QSettings, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -530,7 +530,7 @@ class VisualizerPanel(QWidget):
 
     def _refresh_overlay(self) -> None:
         active_edges = int(
-            sum(
+            np.count_nonzero(
                 (self.field.values[self.graph.edges[:, 0]] > 0.1)
                 | (self.field.values[self.graph.edges[:, 1]] > 0.1)
             )
