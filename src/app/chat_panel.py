@@ -17,6 +17,18 @@ _SELECTABLE_TEXT_FLAGS = Qt.TextInteractionFlag(
 )
 
 
+def _fixed_scroll_content(content: QWidget, height: int) -> QScrollArea:
+    """Keep expanded control groups bounded while retaining every control."""
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    scroll.setFixedHeight(height)
+    scroll.setWidget(content)
+    return scroll
+
+
 def markdown_to_html(markdown: str) -> str:
     """Render the useful Markdown subset safely inside selectable Qt labels."""
     # Keep apostrophes as ordinary text. Qt's rich-text parser can otherwise
@@ -158,8 +170,8 @@ class ChatPanel(QWidget):
         self.mode_actions_toggle.setToolTip("Show or hide mode and conversation actions")
         self.mode_actions_toggle.toggled.connect(self._set_mode_actions_visible)
         action_layout.addWidget(self.mode_actions_toggle)
-        self.mode_actions_content = QWidget()
-        mode_actions_layout = QVBoxLayout(self.mode_actions_content)
+        mode_actions_body = QWidget()
+        mode_actions_layout = QVBoxLayout(mode_actions_body)
         mode_actions_layout.setContentsMargins(0, 0, 0, 0)
         mode_row = QHBoxLayout()
         self.infinite_mode = QCheckBox("Infinite Mode")
@@ -186,6 +198,7 @@ class ChatPanel(QWidget):
         for index, button in enumerate((self.regenerate, self.rewind, self.open_analysis, self.clear, self.infinite)):
             buttons.addWidget(button, index // 3, index % 3)
         mode_actions_layout.addLayout(buttons)
+        self.mode_actions_content = _fixed_scroll_content(mode_actions_body, 124)
         action_layout.addWidget(self.mode_actions_content)
         layout.addWidget(action_card)
 
@@ -200,8 +213,8 @@ class ChatPanel(QWidget):
         self.advanced_toggle.setToolTip("Show or hide optional generation settings")
         self.advanced_toggle.toggled.connect(self._set_advanced_visible)
         advanced_layout.addWidget(self.advanced_toggle)
-        self.advanced_content = QWidget()
-        advanced = QFormLayout(self.advanced_content)
+        advanced_body = QWidget()
+        advanced = QFormLayout(advanced_body)
         self.temperature = QDoubleSpinBox()
         self.temperature.setRange(0, 2)
         self.temperature.setSingleStep(.05)
@@ -254,6 +267,7 @@ class ChatPanel(QWidget):
         self.context.setToolTip("Local model context window size")
         self.gpu_layers.setToolTip("Number of layers requested on the GPU; -1 is automatic")
         self.speed.setToolTip("Replay presentation speed")
+        self.advanced_content = _fixed_scroll_content(advanced_body, 188)
         self.advanced_content.hide()
         advanced_layout.addWidget(self.advanced_content)
         layout.addWidget(advanced_group)

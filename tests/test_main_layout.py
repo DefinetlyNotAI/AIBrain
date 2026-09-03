@@ -5,7 +5,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 from src.app.main_window import MainWindow
 
@@ -28,6 +28,20 @@ class MainLayoutTests(unittest.TestCase):
             self.assertGreaterEqual(left, 300)
             self.assertGreaterEqual(right, 900)
             self.assertLess(window.minimumSizeHint().width(), 400)
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_visualizer_settings_expand_inside_a_fixed_scroll_area(self) -> None:
+        window = MainWindow([])
+        try:
+            panel = window.visualizer
+            panel.settings_toggle.click()
+
+            self.assertIsInstance(panel.settings_panel, QScrollArea)
+            self.assertFalse(panel.settings_panel.isHidden())
+            self.assertEqual(panel.settings_panel.minimumHeight(), 154)
+            self.assertEqual(panel.settings_panel.maximumHeight(), 154)
         finally:
             window.close()
             self.app.processEvents()

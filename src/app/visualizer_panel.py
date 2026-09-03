@@ -12,11 +12,13 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -224,8 +226,8 @@ class VisualizerPanel(QWidget):
         header.setColumnStretch(0, 1)
 
         self.layout.addLayout(header)
-        self.settings_panel = QWidget()
-        settings_layout = QFormLayout(self.settings_panel)
+        settings_body = QWidget()
+        settings_layout = QFormLayout(settings_body)
         settings_layout.setContentsMargins(0, 2, 0, 6)
         settings_layout.addRow("Simulation Performance", self.quality)
         settings_layout.addRow("Rendering GPU", self.render_gpu)
@@ -241,6 +243,17 @@ class VisualizerPanel(QWidget):
         borders_layout.addWidget(self.neuron_borders)
         borders_layout.addWidget(self.border_width)
         settings_layout.addRow("Neuron Borders (0–1)", borders_row)
+        self.settings_panel = QScrollArea()
+        self.settings_panel.setWidgetResizable(True)
+        self.settings_panel.setFrameShape(QFrame.Shape.NoFrame)
+        self.settings_panel.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.settings_panel.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.settings_panel.setFixedHeight(154)
+        self.settings_panel.setWidget(settings_body)
         self.settings_panel.setVisible(False)
         self.layout.addWidget(self.settings_panel)
         self.layout.addWidget(self.renderer, 1)

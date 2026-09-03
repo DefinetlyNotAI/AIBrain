@@ -5,13 +5,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QColorDialog,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
     QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ..utils.logging import PROJECT_ROOT
@@ -126,13 +133,32 @@ class ColourSettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("AIBrain colour settings")
         self._colours = colours.copy()
-        layout = QFormLayout(self)
+        layout = QVBoxLayout(self)
+        palette = QWidget()
+        self._palette_grid = QGridLayout(palette)
+        self._palette_grid.setHorizontalSpacing(12)
+        self._palette_grid.setVerticalSpacing(8)
+        self._palette_scroll = QScrollArea()
+        self._palette_scroll.setWidgetResizable(True)
+        self._palette_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._palette_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._palette_scroll.setWidget(palette)
+        layout.addWidget(self._palette_scroll, 1)
         self._buttons: dict[str, QPushButton] = {}
-        for name, value in self._colours.items():
+        for index, (name, value) in enumerate(self._colours.items()):
+            item = QWidget()
+            item_layout = QHBoxLayout(item)
+            item_layout.setContentsMargins(0, 0, 0, 0)
+            label = QLabel(name.replace("_", " ").title())
             button = QPushButton(value.upper())
+            button.setMinimumWidth(112)
             button.clicked.connect(lambda checked=False, key=name: self._choose(key))
             self._buttons[name] = button
-            layout.addRow(name.replace("_", " ").title(), button)
+            item_layout.addWidget(label, 1)
+            item_layout.addWidget(button)
+            self._palette_grid.addWidget(item, index // 2, index % 2)
             self._refresh_button(name)
         controls = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -140,7 +166,21 @@ class ColourSettingsDialog(QDialog):
         )
         controls.accepted.connect(self.accept)
         controls.rejected.connect(self.reject)
-        layout.addRow(controls)
+        layout.addWidget(controls)
+        self.resize(720, 500)
+
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        """Fit and centre the palette inside the active display."""
+        super().showEvent(event)
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        self.resize(
+            min(720, max(360, available.width() - 40)),
+            min(500, max(280, available.height() - 40)),
+        )
+        self.move(available.center() - self.rect().center())
 
     @property
     def colours(self) -> dict[str, str]:

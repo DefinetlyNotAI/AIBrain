@@ -5,7 +5,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QScrollArea
 
 from src.app.chat_panel import ChatPanel
 from src.models.llama_backend import GenerationConfig
@@ -47,10 +47,25 @@ class ChatAnalysisActionTests(unittest.TestCase):
     def test_mode_actions_are_collapsible_without_moving_controls(self) -> None:
         panel = ChatPanel(GenerationConfig())
 
+        self.assertIsInstance(panel.mode_actions_content, QScrollArea)
+        self.assertEqual(panel.mode_actions_content.minimumHeight(), 124)
+        self.assertEqual(panel.mode_actions_content.maximumHeight(), 124)
         self.assertFalse(panel.mode_actions_content.isHidden())
         panel.mode_actions_toggle.click()
         self.assertTrue(panel.mode_actions_content.isHidden())
         self.assertEqual(panel.mode_actions_toggle.text(), "Show Mode Actions")
+        panel.deleteLater()
+
+    def test_advanced_controls_expand_inside_a_fixed_scroll_area(self) -> None:
+        panel = ChatPanel(GenerationConfig())
+
+        panel.advanced_toggle.click()
+
+        self.assertIsInstance(panel.advanced_content, QScrollArea)
+        self.assertFalse(panel.advanced_content.isHidden())
+        self.assertEqual(panel.advanced_content.minimumHeight(), 188)
+        self.assertEqual(panel.advanced_content.maximumHeight(), 188)
+        self.assertIsNotNone(panel.advanced_content.widget())
         panel.deleteLater()
 
     def test_regenerate_requires_a_completed_normal_response(self) -> None:
