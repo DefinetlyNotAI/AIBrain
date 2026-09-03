@@ -121,8 +121,10 @@ The result is `dist\AIBrain_YYYYMMDD_HHMMSS\` with three self-contained applicat
 llama.cpp, native connectome, and required Visual C++ runtime files, and runs without activating the development
 `.venv`.
 
-The builder shows Nuitka's build stages, compiler selection, warnings, and results, along with elapsed status during
-quiet periods. Detailed optimization traces, module inventories, compiler command dumps, and memory reports are disabled.
+The builder shows the current module and remaining module count, analysis passes, compiler selection, build stages,
+warnings, and results. Module progress updates in place in interactive terminals and at most every three seconds in
+captured consoles. Repeated optimization retries, bytecode inventories, and memory details stay in the log. Detailed
+optimization tracing and full compiler command dumps remain disabled; quiet periods show elapsed status.
 Commands with more than eight attached flags show the main command and a flag count;
 the full command is saved in the log at startup and completion. Nuitka's duplicate option replay is kept in the log.
 Project paths are displayed relative to the repository, and wrapped lines retain their indentation. Python runs unbuffered.

@@ -419,6 +419,20 @@ class ConsoleUiTests(unittest.TestCase):
                     self.assertEqual(output.getvalue(), "")
                 self.assertEqual(output.getvalue(), "")
 
+    def test_captured_progress_is_periodic_and_stage_changes_are_immediate(self) -> None:
+        output = StringIO()
+        with redirect_stdout(output), console_ui.CommandOutputBox(live=False) as box:
+            for now, message in ((10.0, "Analyzing alpha"), (11.0, "Analyzing beta"), (13.0, "Analyzing gamma")):
+                with patch.object(console_ui.time, "monotonic", return_value=now):
+                    box.write_progress(message)
+            self.assertIn("Analyzing alpha", output.getvalue())
+            self.assertNotIn("Analyzing beta", output.getvalue())
+            self.assertIn("Analyzing gamma", output.getvalue())
+            box.write("Starting the next pass")
+            with patch.object(console_ui.time, "monotonic", return_value=13.1):
+                box.write_progress("Analyzing delta")
+            self.assertIn("Analyzing delta", output.getvalue())
+
     def test_first_partial_output_draws_one_complete_frame(self) -> None:
         output = TerminalOutput()
         with redirect_stdout(output):

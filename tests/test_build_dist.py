@@ -158,6 +158,39 @@ class BuildDistributionTests(unittest.TestCase):
             ["Nuitka-Options: --standalone", "Nuitka-Options:WARNING: check flags", "Nuitka: compiling"],
         )
 
+    def test_build_progress_keeps_modules_and_stages_but_logs_optimization_noise(self) -> None:
+        from tests.test_console_ui import TerminalOutput
+
+        output = TerminalOutput()
+        lines = [
+            "Nuitka-Progress: PASS 1:",
+            "Nuitka-Progress: Optimizing module 'alpha', 12 more modules to go after that.",
+            "Nuitka-Progress: Not finished with the module due to following change kinds: var_usage",
+            "Nuitka-Progress: Finished with the module.",
+            "Nuitka-Inclusion: Demoting module 'alpha' to bytecode from 'alpha.py'.",
+            "Nuitka-Memory: Total memory usage: 100 MB",
+            "Nuitka-Progress: Optimizing module 'beta', 11 more modules to go after that.",
+        ]
+        with redirect_stdout(output), patch.object(build_dist, "_record_build_output") as record:
+            with build_dist.CommandOutputBox(live=True) as box:
+                build_dist._render_output_text("\n".join(lines) + "\n", "", box)
+                screen = "\n".join(output.frames[-1])
+                self.assertIn("Analyzing beta (11 modules remaining)", screen)
+                self.assertNotIn("Analyzing alpha", screen)
+                self.assertIn("PASS 1", screen)
+                self.assertNotIn("var_usage", output.getvalue())
+                self.assertNotIn("bytecode", output.getvalue())
+                self.assertNotIn("100 MB", output.getvalue())
+                for message in (
+                    "Nuitka-Memory:WARNING: high memory usage",
+                    "Nuitka-Inclusion:ERROR: dependency missing",
+                    "Nuitka: Generating source code for C backend compiler.",
+                    "Nuitka-Scons: Backend C linking with 20 files.",
+                ):
+                    build_dist._write_completed_build_line(box, message)
+                    self.assertIn(message, output.getvalue())
+        self.assertEqual([call.args[0] for call in record.call_args_list[:len(lines)]], lines)
+
     @patch("cli.build_dist.time.monotonic", return_value=115.0)
     def test_silent_build_heartbeat_reports_live_work(self, _monotonic) -> None:  # type: ignore[no-untyped-def]
         class OutputBox:
@@ -436,7 +469,8 @@ class BuildDistributionTests(unittest.TestCase):
             command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")], numpy_runtime)
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
-            for option in ("--verbose", "--show-progress", "--show-scons", "--show-modules", "--show-memory"):
+            self.assertIn("--show-progress", command)
+            for option in ("--verbose", "--show-scons", "--show-modules", "--show-memory"):
                 self.assertNotIn(option, command)
             excluded = {
                 item.removeprefix("--nofollow-import-to=")

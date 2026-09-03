@@ -313,11 +313,35 @@ def _is_option_echo(line: str) -> bool:
     return bool(separator) and not prefix and not message.lstrip().startswith(("WARNING:", "ERROR:", "FATAL:"))
 
 
+def _is_build_noise(line: str) -> bool:
+    """Filter repetitive compiler internals while preserving all diagnostics."""
+    stripped = line.lstrip()
+    if re.match(r"Nuitka[^:]*:\s*(?:WARNING|ERROR|FATAL):", stripped):
+        return False
+    return _is_option_echo(line) or stripped.startswith((
+        "Nuitka-Memory: Total memory usage",
+        "Nuitka-Inclusion: Demoting module ",
+        "Nuitka-Progress: Doing module local optimizations ",
+        "Nuitka-Progress: Doing module dependency considerations ",
+        "Nuitka-Progress: Not finished with the module ",
+        "Nuitka-Progress: Not changed, but retrying ",
+        "Nuitka-Progress: Finished with the module.",
+    ))
+
+
 def _write_completed_build_line(output_box: CommandOutputBox, line: str) -> None:
-    """Log every line while keeping the command replay out of the console."""
+    """Keep the full log and show meaningful build work at a readable rate."""
     _record_build_output(line)
-    if not _is_option_echo(line):
-        output_box.write(line)
+    if _is_build_noise(line):
+        return
+    module = re.fullmatch(
+        r"Nuitka-Progress: Optimizing module '(.*?)', (\d+) more modules to go after that\.",
+        line.strip(),
+    )
+    if module:
+        output_box.write_progress(f"Analyzing {module[1]} ({module[2]} modules remaining)")
+        return
+    output_box.write(line)
 
 
 def _render_output_text(
@@ -367,7 +391,7 @@ def _render_output_text(
         live_frame = None
 
     visible_partial = pending or live_frame
-    if visible_partial and not _is_option_echo(visible_partial):
+    if visible_partial and not _is_build_noise(visible_partial):
         output_box.write_partial(visible_partial)
 
     return pending
@@ -1066,6 +1090,7 @@ def nuitka_command(
         "-u",
         "-m",
         "nuitka",
+        "--show-progress",
         "--standalone",
         "--assume-yes-for-downloads",
         "--enable-plugin=pyside6",
@@ -1315,7 +1340,7 @@ def main() -> int:
     )
     section("Build session", 1)
     info(f"Log file: {runtime_log}")
-    info("Build stages, warnings, and results appear below; quiet periods show elapsed status")
+    info("Live module progress, build stages, warnings, and results appear below")
 
     try:
         selected = tuple(

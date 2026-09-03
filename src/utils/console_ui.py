@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Mapping
 from ctypes import wintypes
 from pathlib import Path
@@ -672,6 +673,7 @@ class CommandOutputBox:
         self._live = self._can_redraw_live() if live is None else live
         self._bottom_visible = False
         self._partial_rows = 0
+        self._last_progress_at: float | None = None
 
     @staticmethod
     def _can_redraw_live() -> bool:
@@ -699,6 +701,7 @@ class CommandOutputBox:
         self._has_output = False
         self._bottom_visible = False
         self._partial_rows = 0
+        self._last_progress_at = None
 
     def _border_line(self, left: str, right: str) -> str:
         return self.prefix + color(left + BOX_HORIZONTAL * self.inner + right, Color.GRAY) + "\n"
@@ -749,6 +752,19 @@ class CommandOutputBox:
         if not lines:
             return
         self._replace_output(lines, partial=False)
+        self._last_progress_at = None
+
+    def write_progress(self, output: str, *, interval: float = 3.0) -> None:
+        """Show current work in place, or periodically in a captured console."""
+        if not self._is_open:
+            raise RuntimeError("The command output box must be opened before writing output")
+        if self._live:
+            self.write_partial(output)
+            return
+        now = time.monotonic()
+        if self._last_progress_at is None or now - self._last_progress_at >= interval:
+            self.write(output)
+            self._last_progress_at = now
 
     def write_partial(self, output: str) -> None:
         """Redraw an unterminated subprocess line, including progress bars."""
