@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import traceback
 from datetime import UTC, datetime
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -68,6 +69,22 @@ class ModelDiagnostic:
         """A mandatory, user-readable cause for failed diagnostics."""
         return "Healthy model" if self.available else self.issue_code
 
+    @property
+    def trace_report(self) -> str:
+        """Put the explanation before the full exception or validation dump."""
+        explanation, marker, exception = self.detail.partition("Traceback (most recent call last):")
+        context = (
+            f"Model: {self.reference}\n"
+            f"Reason: {self.reason}\n"
+            f"Manifest: {self.manifest_path}\n"
+            f"Blob: {self.blob_path or 'Unavailable'}"
+        )
+        raw = marker + exception if marker else (
+            "No Python exception was raised; this finding was returned by validation.\n"
+            f"Validation result: {self.detail}"
+        )
+        return f"Explanation\n{explanation.strip() or self.reason}\n\nTrace dump\n{context}\n\n{raw}"
+
 
 class OllamaDiagnostics:
     """Inspect locally installed manifests without changing any Ollama data."""
@@ -99,7 +116,8 @@ class OllamaDiagnostics:
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 diagnostics.append(
                     ModelDiagnostic(
-                        reference, manifest, None, False, f"Invalid manifest: {exc}"
+                        reference, manifest, None, False,
+                        f"Invalid manifest: {exc}\n{traceback.format_exc().rstrip()}"
                     )
                 )
         models = [model for _reference, _manifest, model in parsed]

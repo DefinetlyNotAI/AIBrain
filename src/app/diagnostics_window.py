@@ -345,7 +345,7 @@ class DiagnosticsWindow(QMainWindow):
             item.setData(
                 3,
                 self._TRACE_ROLE,
-                "" if diagnostic.available else diagnostic.detail,
+                "" if diagnostic.available else diagnostic.trace_report,
             )
             item.setToolTip(
                 3,

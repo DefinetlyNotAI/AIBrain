@@ -202,7 +202,13 @@ class ModelDiagnosticsTests(unittest.TestCase):
             self.assertIsNotNone(viewer)
             self.assertTrue(viewer.isReadOnly())
             self.assertIn("unsupported architecture", viewer.toPlainText())
+            report = viewer.toPlainText()
+            self.assertLess(report.index("Explanation"), report.index("Trace dump"))
+            self.assertIn("Model: broken:latest", report)
+            self.assertIn("Manifest: broken-manifest", report)
             self.assertIsNotNone(dialog.findChild(QPushButton, "copyTraceButton"))
+            dialog.findChild(QPushButton, "copyTraceButton").click()
+            self.assertEqual(self.app.clipboard().text(), report)
         finally:
             window.close()
             self.app.processEvents()
@@ -222,6 +228,32 @@ class ModelDiagnosticsTests(unittest.TestCase):
         finally:
             window.close()
             self.app.processEvents()
+
+    def test_trace_report_preserves_real_exception_after_explanation(self) -> None:
+        import traceback
+
+        try:
+            raise ValueError("invalid model header")
+        except ValueError:
+            raw = traceback.format_exc().rstrip()
+        diagnostic = ModelDiagnostic(
+            "broken:latest", Path("manifest"), Path("model.gguf"), False,
+            f"The model header could not be read.\n{raw}",
+        )
+        report = diagnostic.trace_report
+        self.assertTrue(report.startswith("Explanation\nThe model header could not be read."))
+        self.assertLess(report.index("Trace dump"), report.index("Traceback (most recent call last):"))
+        self.assertTrue(report.endswith(raw))
+
+    def test_manifest_parse_failure_keeps_python_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifests" / "broken"
+            manifest.parent.mkdir()
+            manifest.write_text("invalid json", encoding="utf-8")
+            diagnostic = OllamaDiagnostics(root).inspect()[0]
+        self.assertIn("JSONDecodeError", diagnostic.trace_report)
+        self.assertIn("Traceback (most recent call last):", diagnostic.trace_report)
 
     def test_background_diagnostics_logs_start_and_completion(self) -> None:
         worker = DiagnosticsWorker()
