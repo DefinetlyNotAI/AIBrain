@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 
-from .console_ui import BULLET, CROSS, Color, color
+from .console_ui import BULLET, CROSS, Color, color, console_message_lines
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAX_LOG_BYTES = 20 * 1024 * 1024
@@ -116,10 +116,7 @@ class ConsoleFormatter(logging.Formatter):
 
         marker, tone = self._PRESENTATION.get(record.levelno, (BULLET, Color.CYAN))
         prefix = f"  {marker} "
-        lines = message.splitlines() or [""]
-        rendered = "\n".join(
-            [f"{prefix}{lines[0]}", *[(" " * len(prefix)) + line for line in lines[1:]]]
-        )
+        rendered = "\n".join(console_message_lines(prefix, message))
         return color(rendered, tone, Color.BOLD) if self.colour else rendered
 
 

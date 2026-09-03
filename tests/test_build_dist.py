@@ -11,7 +11,7 @@ import tempfile
 from unittest.mock import patch
 
 from cli import build_dist
-from src.utils.console_ui import BOX_TOP_LEFT
+from src.utils.console_ui import BOX_HORIZONTAL, BOX_TOP_LEFT
 
 
 class BuildDistributionTests(unittest.TestCase):
@@ -130,7 +130,7 @@ class BuildDistributionTests(unittest.TestCase):
         self.assertEqual(output_box.completed, [])
         self.assertEqual(output_box.partial, ["PASS 1: 30%"])
 
-    def test_renderer_shows_and_logs_nuitka_option_echo(self) -> None:
+    def test_renderer_logs_nuitka_option_echo_but_keeps_only_warnings_in_console(self) -> None:
         class OutputBox:
             def __init__(self) -> None:
                 self.completed: list[str] = []
@@ -145,17 +145,17 @@ class BuildDistributionTests(unittest.TestCase):
         output_box = OutputBox()
         with patch("cli.build_dist._record_build_output") as record:
             pending = build_dist._render_output_text(
-                "Nuitka-Options: --standalone\nNuitka: compiling\n",
+                "Nuitka-Options: --standalone\nNuitka-Options:WARNING: check flags\nNuitka: compiling\n",
                 "",
                 output_box,  # type: ignore[arg-type]
             )
 
         self.assertEqual(pending, "")
-        self.assertEqual(output_box.completed, ["Nuitka-Options: --standalone", "Nuitka: compiling"])
+        self.assertEqual(output_box.completed, ["Nuitka-Options:WARNING: check flags", "Nuitka: compiling"])
         self.assertEqual(output_box.partial, [])
         self.assertEqual(
             [call.args[0] for call in record.call_args_list],
-            ["Nuitka-Options: --standalone", "Nuitka: compiling"],
+            ["Nuitka-Options: --standalone", "Nuitka-Options:WARNING: check flags", "Nuitka: compiling"],
         )
 
     @patch("cli.build_dist.time.monotonic", return_value=115.0)
@@ -195,6 +195,10 @@ class BuildDistributionTests(unittest.TestCase):
                             box, 100.0, 100.0, activity="Nuitka"
                         ), 100.0 + interval)
                     self.assertIn("Still working", output.getvalue())
+                    with patch.object(build_dist.time, "monotonic", return_value=100.0 + 2 * interval):
+                        build_dist._report_build_heartbeat(
+                            box, 100.0 + interval, 100.0, activity="Nuitka"
+                        )
                     self.assertEqual("\x1b[1A" in output.getvalue(), live)
 
     @patch("cli.build_dist.time.monotonic", return_value=300.0)
@@ -242,7 +246,6 @@ class BuildDistributionTests(unittest.TestCase):
         for command, expected in cases:
             with self.subTest(command=command):
                 self.assertEqual(build_dist._command_activity(command), expected)
-                self.assertEqual(build_dist._summarize_build_command(command), command)
 
     def test_silent_pip_subprocess_gets_dynamic_heartbeat_and_stall_messages(self) -> None:
         class OutputBox:
@@ -390,7 +393,7 @@ class BuildDistributionTests(unittest.TestCase):
             ["tool"], "", return_code=None, interrupted=True
         )
 
-    def test_nuitka_completion_summary_omits_packaging_options(self) -> None:
+    def test_command_execution_receives_every_flag_and_records_them_at_completion(self) -> None:
         command = [
             str(build_dist.VENV_PYTHON),
             "-u",
@@ -403,13 +406,6 @@ class BuildDistributionTests(unittest.TestCase):
             str(build_dist.ROOT / "cli" / "diagnostic.py"),
         ]
 
-        summary = build_dist._summarize_build_command(command)
-
-        self.assertIn("--output-filename=diagnostic.exe", summary)
-        self.assertIn("--output-dir=build", summary)
-        self.assertNotIn("--standalone", summary)
-        self.assertNotIn("--include-module=typing", summary)
-
         with (
             patch.object(build_dist, "command_preview") as preview,
             patch.object(build_dist, "_run_with_file_tailer") as runner,
@@ -417,6 +413,18 @@ class BuildDistributionTests(unittest.TestCase):
             build_dist.run(command)
         preview.assert_called_once_with(command)
         runner.assert_called_once_with(command)
+
+        quiet_command = [sys.executable, "-c", "pass", *[f"--option{index}=value" for index in range(12)]]
+        with redirect_stdout(StringIO()) as output, self.assertLogs("aibrain.command", level="INFO") as captured:
+            build_dist.run(quiet_command)
+        self.assertIn("12 flags attached", output.getvalue())
+        self.assertNotIn(BOX_TOP_LEFT + BOX_HORIZONTAL * 10, output.getvalue())
+        self.assertNotIn("--option", output.getvalue())
+        self.assertEqual(len(captured.records), 2)
+        self.assertIn("Command started:", captured.records[0].getMessage())
+        self.assertIn("Command completed", captured.records[1].getMessage())
+        for record in captured.records:
+            self.assertIn("--option11=value", record.getMessage())
 
     def test_each_packaged_application_has_its_named_entry_point_and_icon(self) -> None:
         targets = {target.executable: target for target in build_dist.APPLICATIONS}
@@ -429,7 +437,7 @@ class BuildDistributionTests(unittest.TestCase):
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
             for option in ("--verbose", "--show-progress", "--show-scons", "--show-modules", "--show-memory"):
-                self.assertIn(option, command)
+                self.assertNotIn(option, command)
             excluded = {
                 item.removeprefix("--nofollow-import-to=")
                 for item in command

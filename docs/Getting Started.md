@@ -121,9 +121,13 @@ The result is `dist\AIBrain_YYYYMMDD_HHMMSS\` with three self-contained applicat
 llama.cpp, native connectome, and required Visual C++ runtime files, and runs without activating the development
 `.venv`.
 
-The builder enables Nuitka's verbose optimization, progress, SCons compiler/linker commands, module/DLL inclusion,
-and memory output by default. The full build command and every completed output line are shown in the console;
-Python runs unbuffered. Staging, verification, cleanup, and per-target elapsed times are also reported.
+The builder shows Nuitka's build stages, compiler selection, warnings, and results, along with elapsed status during
+quiet periods. Detailed optimization traces, module inventories, compiler command dumps, and memory reports are disabled.
+Commands with more than eight attached flags show the main command and a flag count;
+the full command is saved in the log at startup and completion. Nuitka's duplicate option replay is kept in the log.
+Project paths are displayed relative to the repository, and wrapped lines retain their indentation. Python runs unbuffered.
+Staging, verification, cleanup, and per-target elapsed times are also reported. Output boxes appear with their first
+message or status update; commands with no output leave no empty frame.
 During quiet C-source generation, compilation, or linking, a **Still working** status updates every second with the
 elapsed time, silence duration, and process ID. It stays above the moving bottom border and is replaced by new output.
 Consoles without cursor support and redirected output receive a status line every 15 seconds instead.

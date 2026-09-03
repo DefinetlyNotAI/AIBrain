@@ -307,28 +307,17 @@ def _record_build_output(line: str) -> None:
         logging.getLogger("aibrain.command").info("%s", line)
 
 
-def _summarize_build_command(command_line: list[str]) -> list[str]:
-    """Keep completion records concise after showing the full command at startup."""
-    if len(command_line) < 2 or _command_activity(command_line) != "Nuitka":
-        return command_line
-
-    prefix_end = command_line.index("-m") + 2 if "-m" in command_line else 1
-    return [
-        *command_line[:prefix_end],
-        *[
-            argument
-            for argument in command_line
-            if argument.startswith("--output-filename=")
-            or argument.startswith("--output-dir=")
-        ],
-        command_line[-1],
-    ]
+def _is_option_echo(line: str) -> bool:
+    """Keep Nuitka's command replay in the log without hiding its warnings."""
+    prefix, separator, message = line.lstrip().partition("Nuitka-Options:")
+    return bool(separator) and not prefix and not message.lstrip().startswith(("WARNING:", "ERROR:", "FATAL:"))
 
 
 def _write_completed_build_line(output_box: CommandOutputBox, line: str) -> None:
-    """Show and log every complete line, including Nuitka's option details."""
+    """Log every line while keeping the command replay out of the console."""
     _record_build_output(line)
-    output_box.write(line)
+    if not _is_option_echo(line):
+        output_box.write(line)
 
 
 def _render_output_text(
@@ -378,7 +367,7 @@ def _render_output_text(
         live_frame = None
 
     visible_partial = pending or live_frame
-    if visible_partial:
+    if visible_partial and not _is_option_echo(visible_partial):
         output_box.write_partial(visible_partial)
 
     return pending
@@ -838,7 +827,7 @@ def _run_with_conpty(
 
         process.wait()
         log_completed_command(
-            _summarize_build_command(command_line),
+            command_line,
             "",
             return_code=None,
             interrupted=True,
@@ -855,7 +844,7 @@ def _run_with_conpty(
 
     captured_output = captured_tail.rstrip()
     log_completed_command(
-        _summarize_build_command(command_line), "", return_code=return_code
+        command_line, "", return_code=return_code
     )
     if return_code:
         raise subprocess.CalledProcessError(
@@ -960,7 +949,7 @@ def _run_with_file_tailer(
                 _stop_interrupted_build(process)
                 output_file.flush()
                 log_completed_command(
-                    _summarize_build_command(command_line),
+                    command_line,
                     "",
                     return_code=None,
                     interrupted=True,
@@ -974,7 +963,7 @@ def _run_with_file_tailer(
             captured_output = captured_file.read().decode("utf-8", errors="replace").rstrip()
 
     log_completed_command(
-        _summarize_build_command(command_line), "", return_code=return_code
+        command_line, "", return_code=return_code
     )
     if return_code:
         raise subprocess.CalledProcessError(
@@ -987,9 +976,6 @@ def _run_with_file_tailer(
 def run(command_line: list[str]) -> None:
     """Run a build command with live boxed output."""
     command_preview(command_line)
-    logging.getLogger("aibrain.command").info(
-        "Command started: %s", subprocess.list2cmdline(command_line)
-    )
 
     if _supports_conpty():
         _run_with_conpty(command_line)
@@ -1051,7 +1037,7 @@ def stage_numpy_runtime(build_root: Path) -> tuple[Path, Path]:
     dll_target = runtime_root / "numpy.libs"
     package_target.mkdir(parents=True, exist_ok=True)
 
-    info(f"Staging NumPy Python files: {package_target}")
+    info("Staging the required NumPy runtime files")
     for source in NUMPY_PACKAGE_ROOT.glob("*.py"):
         if source.name == "conftest.py":
             continue
@@ -1061,10 +1047,8 @@ def stage_numpy_runtime(build_root: Path) -> tuple[Path, Path]:
         source = NUMPY_PACKAGE_ROOT / name
         if not source.is_dir():
             raise RuntimeError(f"Managed NumPy runtime submodule is missing: {name}")
-        info(f"Staging NumPy runtime: {name}")
         shutil.copytree(source, package_target / name, dirs_exist_ok=True)
 
-    info(f"Staging NumPy native DLLs: {dll_target}")
     shutil.copytree(NUMPY_DLL_ROOT, dll_target, dirs_exist_ok=True)
     info("NumPy runtime staging complete")
     return package_target, dll_target
@@ -1082,11 +1066,6 @@ def nuitka_command(
         "-u",
         "-m",
         "nuitka",
-        "--verbose",
-        "--show-progress",
-        "--show-scons",
-        "--show-modules",
-        "--show-memory",
         "--standalone",
         "--assume-yes-for-downloads",
         "--enable-plugin=pyside6",
@@ -1224,8 +1203,6 @@ def build(
     info(f"Distribution directory: {release}")
     info("Checking required Visual C++ runtime DLLs")
     runtimes = runtime_dlls()
-    for runtime in runtimes:
-        info(f"Runtime DLL: {runtime}")
 
     try:
         for index, target in enumerate(
@@ -1261,7 +1238,6 @@ def build(
                     / target.directory
             )
 
-            info(f"Moving compiled distribution to {application}")
             shutil.move(
                 str(
                     _produced_distribution(
@@ -1338,9 +1314,8 @@ def main() -> int:
         "Nuitka standalone distribution builder",
     )
     section("Build session", 1)
-    print(f"  Log file: {runtime_log}")
-    info("Verbose output enabled: optimization, compilation, linker, module, DLL, and memory details")
-    info("Quiet periods show a live elapsed timer; press Ctrl+C once to stop the process tree")
+    info(f"Log file: {runtime_log}")
+    info("Build stages, warnings, and results appear below; quiet periods show elapsed status")
 
     try:
         selected = tuple(

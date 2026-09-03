@@ -352,7 +352,7 @@ class ConsoleUiTests(unittest.TestCase):
                 "  " + console_ui.PROMPT + " .\\.venv"
             )
         )
-        self.assertTrue(all(line.startswith("     ") for line in lines[1:]))
+        self.assertTrue(all(line.startswith("    ") for line in lines[1:]))
         self.assertTrue(all(len(line) <= 58 for line in lines))
         self.assertFalse(any(line.endswith("...") for line in lines))
 
@@ -379,7 +379,8 @@ class ConsoleUiTests(unittest.TestCase):
         ):
             box = console_ui.CommandOutputBox(live=True)
             box.open()
-            self.assertEqual(len(output.frames[-1]), 2)
+            self.assertEqual(output.getvalue(), "")
+            self.assertEqual(output.frames, [])
             box.write("First completed line\nSecond completed line")
             stable = output.frames[-1][:-1]
             box.write_partial("Downloading a very long model filename at 25 percent")
@@ -407,6 +408,75 @@ class ConsoleUiTests(unittest.TestCase):
             box.close()
             box.close()
             self.assertEqual(output.getvalue(), before_close)
+
+    def test_empty_command_boxes_leave_no_frame_in_live_or_captured_output(self) -> None:
+        for live in (True, False):
+            with self.subTest(live=live), redirect_stdout(StringIO()) as output:
+                with console_ui.CommandOutputBox(live=live) as box:
+                    box.write("")
+                    box.write(" \n\t")
+                    box.write_partial(" \n")
+                    self.assertEqual(output.getvalue(), "")
+                self.assertEqual(output.getvalue(), "")
+
+    def test_first_partial_output_draws_one_complete_frame(self) -> None:
+        output = TerminalOutput()
+        with redirect_stdout(output):
+            with console_ui.CommandOutputBox(live=True) as box:
+                box.write_partial("Waiting for compiler output")
+                self.assertEqual(len(output.frames), 1)
+                self.assertEqual(len(output.frames[0]), 3)
+                self.assertIn("Waiting for compiler output", output.frames[0][1])
+
+    def test_status_paths_are_relative_and_long_messages_wrap_at_the_current_width(self) -> None:
+        project_log = console_ui.ROOT / "logs" / "aibrain.build_dist.log"
+        with redirect_stdout(StringIO()) as output:
+            console_ui.info(f"Log file: {project_log}")
+        self.assertEqual(
+            console_ui.strip_ansi(output.getvalue()).strip(),
+            f"{console_ui.BULLET} Log file: .\\logs\\aibrain.build_dist.log",
+        )
+
+        for width in (38, 64):
+            with self.subTest(width=width), patch.object(console_ui, "terminal_width", return_value=width):
+                for emit in (console_ui.info, console_ui.success, console_ui.warning, console_ui.error):
+                    output = StringIO()
+                    with redirect_stdout(output), redirect_stderr(output):
+                        emit("Staging a long runtime message with enough words to wrap onto multiple rows\n  indented detail")
+                    lines = console_ui.strip_ansi(output.getvalue()).splitlines()
+                    self.assertTrue(all(len(line) <= width for line in lines))
+                    prefix_width = lines[0].index("Staging")
+                    self.assertTrue(all(line.startswith(" " * prefix_width) for line in lines[1:]))
+                    self.assertEqual(lines[-1], " " * (prefix_width + 2) + "indented detail")
+
+    def test_long_command_preview_counts_flags_and_keeps_the_full_command_in_the_log(self) -> None:
+        command = [str(console_ui.ROOT / ".venv" / "Scripts" / "python.exe"), "-u", "-m", "nuitka"]
+        options = [f"--include-module=module_{index}" for index in range(49)]
+        command += [*options, "--output-dir", "a folder", "--", "--positional-script.py"]
+        with (
+            patch.object(console_ui, "terminal_width", return_value=64),
+            redirect_stdout(StringIO()) as output,
+            self.assertLogs("aibrain.command", level="INFO") as captured,
+        ):
+            console_ui.command_preview(command)
+        lines = [line for line in console_ui.strip_ansi(output.getvalue()).splitlines() if line]
+        rendered = " ".join(line.strip() for line in lines)
+        self.assertIn(r".\.venv\Scripts\python.exe -u -m nuitka", rendered)
+        self.assertIn("(50 flags attached - Full command in log file)", rendered)
+        self.assertNotIn("--include-module", rendered)
+        self.assertNotIn("--positional-script.py", rendered)
+        self.assertTrue(all(len(line) <= 64 for line in lines))
+        self.assertTrue(all(line.startswith("    ") for line in lines[1:]))
+        self.assertIn(options[-1], captured.output[0])
+        self.assertIn("--positional-script.py", captured.output[0])
+        self.assertIn(str(console_ui.ROOT), captured.output[0])
+
+    def test_path_shortening_preserves_neighboring_directories_and_handles_flag_values(self) -> None:
+        neighbor = str(console_ui.ROOT) + "-backup\\file.py"
+        self.assertEqual(console_ui.shorten_command_argument(neighbor), neighbor)
+        self.assertEqual(console_ui.shorten_output_paths(neighbor), neighbor)
+        rendered = console_ui.display_command(["tool", f"--output-dir={console_ui.ROOT / 'dist'}"])
+        self.assertIn(r"--output-dir=.\dist", rendered)
 
     def test_redirected_command_output_has_no_cursor_redraws_or_duplicate_progress(self) -> None:
         output = StringIO()

@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from src.utils import console_ui
 from src.utils.logging import (
     AlignedFormatter,
     BoundedFileHandler,
@@ -78,6 +79,19 @@ class LoggingTests(unittest.TestCase):
         self.assertNotIn("aibrain.model_validator", rendered)
         self.assertNotRegex(rendered, r"\d{2}:\d{2}:\d{2}")
         self.assertNotIn("WARNING", rendered)
+
+    def test_console_records_wrap_relative_paths_without_mutating_the_file_message(self) -> None:
+        path = console_ui.ROOT / "logs" / "aibrain.build_dist.log"
+        message = f"Log file: {path}\n  This indented runtime detail has enough words to require more than one row"
+        record = logging.LogRecord("aibrain.build", logging.INFO, "", 0, message, (), None)
+        with patch.object(console_ui, "terminal_width", return_value=42):
+            rendered = ConsoleFormatter(colour=False).format(record)
+        lines = rendered.splitlines()
+        self.assertTrue(all(len(line) <= 42 for line in lines))
+        self.assertNotIn(str(console_ui.ROOT), rendered)
+        self.assertIn(r".\logs\aibrain.build_dist.log", rendered)
+        self.assertTrue(all(line.startswith("      ") for line in lines if "indented" in line or "words" in line))
+        self.assertEqual(record.getMessage(), message)
 
     def test_feature_logs_are_scoped_and_crash_logs_are_lazy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

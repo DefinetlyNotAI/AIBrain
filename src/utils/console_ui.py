@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 from collections.abc import Mapping
 from ctypes import wintypes
@@ -16,6 +18,7 @@ DEFAULT_WIDTH = 82
 MIN_WIDTH = 60
 RIGHT_EDGE_MARGIN = 4
 COMMAND_INDENT = 2
+MAX_PREVIEW_FLAGS = 8
 ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -414,7 +417,7 @@ def relative_path(path: str | Path) -> str:
 def shorten_command_argument(argument: str) -> str:
     root_text = str(ROOT.resolve())
     normalized = argument.replace("/", "\\")
-    if normalized.lower().startswith(root_text.lower()):
+    if normalized.lower() == root_text.lower() or normalized.lower().startswith(root_text.lower() + "\\"):
         relative = normalized[len(root_text):].lstrip("\\/")
         return rf".\{relative}" if relative else "."
 
@@ -435,7 +438,7 @@ def shorten_command_argument(argument: str) -> str:
 
 def display_command(command_line: list[str]) -> str:
     """Render a command preview that can be pasted safely into PowerShell."""
-    arguments = [shorten_command_argument(part) for part in command_line]
+    arguments = [shorten_output_paths(shorten_command_argument(part)) for part in command_line]
     rendered = [_powershell_quote(argument) for argument in arguments]
     if rendered and rendered[0] != arguments[0]:
         return "& " + " ".join(rendered)
@@ -452,7 +455,7 @@ def _powershell_quote(argument: str) -> str:
 def shorten_output_paths(text: str) -> str:
     root = str(ROOT.resolve())
     for variant in (root, root.replace("\\", "/")):
-        text = re.sub(re.escape(variant), ".", text, flags=re.IGNORECASE)
+        text = re.sub(re.escape(variant) + r"(?=[\\/]|$|[\"'])", ".", text, flags=re.IGNORECASE)
     return text
 
 
@@ -471,25 +474,28 @@ def wrap_console_line(text: str, width: int) -> list[str]:
 
 
 def wrap_prefixed_text(prefix: str, text: str, *, width: int, continuation: str | None = None) -> list[str]:
-    """Wrap text with a stable continuation indentation and no ellipsis."""
+    """Wrap each logical line with aligned gutters and its original indentation."""
     continuation_prefix = continuation if continuation is not None else " " * len(prefix)
-    available = max(width - len(prefix), 1)
-    continuation_available = max(width - len(continuation_prefix), 1)
     lines: list[str] = []
-    remaining = text.strip()
-    current_prefix = prefix
-    current_width = available
-
-    while len(remaining) > current_width:
-        split_at = remaining.rfind(" ", 0, current_width + 1)
-        if split_at <= 0:
-            split_at = current_width
-        lines.append(current_prefix + remaining[:split_at].rstrip())
-        remaining = remaining[split_at:].lstrip()
-        current_prefix = continuation_prefix
-        current_width = continuation_available
-    lines.append(current_prefix + remaining)
+    for index, raw_line in enumerate(strip_ansi(text).expandtabs(4).splitlines() or [""]):
+        indentation = raw_line[:len(raw_line) - len(raw_line.lstrip())]
+        remaining = raw_line.lstrip().rstrip()
+        current_prefix = (prefix if index == 0 else continuation_prefix) + indentation
+        while len(remaining) > max(width - len(current_prefix), 1):
+            available = max(width - len(current_prefix), 1)
+            split_at = remaining.rfind(" ", 0, available + 1)
+            if split_at <= 0:
+                split_at = available
+            lines.append(current_prefix + remaining[:split_at].rstrip())
+            remaining = remaining[split_at:].lstrip()
+            current_prefix = continuation_prefix + indentation
+        lines.append(current_prefix + remaining)
     return lines
+
+
+def console_message_lines(prefix: str, message: str) -> list[str]:
+    """Apply project-relative paths and terminal-width wrapping to status text."""
+    return wrap_prefixed_text(prefix, shorten_output_paths(str(message)), width=terminal_width())
 
 
 def _box_line(content: str, *, width: int, tone: str) -> None:
@@ -533,11 +539,12 @@ def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = Non
     for label, value in rows:
         prefix = f"  {label:<{label_width}}  "
         continuation = " " * len(prefix)
-        for line in wrap_prefixed_text(prefix, value, width=width - 4, continuation=continuation):
+        for line in wrap_prefixed_text(prefix, shorten_output_paths(value), width=width - 4, continuation=continuation):
             _box_line(line, width=width, tone=tone)
     if footer:
         print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
-        _box_line(visible_trim(footer, width - 4), width=width, tone=tone)
+        for line in wrap_prefixed_text("", shorten_output_paths(footer), width=width - 4):
+            _box_line(line, width=width, tone=tone)
     print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, tone))
     print()
 
@@ -552,11 +559,11 @@ def instruction_list(steps: list[tuple[str, str, str]], *, stream: TextIO | None
 
 
 def info(message: str) -> None:
-    print(f"  {color(BULLET, Color.CYAN)} {message}")
+    _print_status_message(BULLET, message, Color.CYAN)
 
 
 def success(message: str) -> None:
-    print(f"  {color(CHECK, Color.GREEN, Color.BOLD)} {message}")
+    _print_status_message(CHECK, message, Color.GREEN)
 
 
 def report_gui_closed(application: str) -> None:
@@ -571,38 +578,76 @@ def report_keyboard_interrupt(application: str) -> None:
 
 
 def warning(message: str) -> None:
-    print(f"  {color('!', Color.YELLOW, Color.BOLD)} {message}")
+    _print_status_message("!", message, Color.YELLOW)
 
 
 def error(message: str) -> None:
     """Render an error without collapsing a multiline traceback into one row."""
-    prefix = f"  {CROSS} "
-    lines = str(message).splitlines() or [""]
-    print(
-        color(prefix, Color.RED, Color.BOLD) + lines[0],
-        file=sys.stderr,
-    )
-    continuation = " " * len(prefix)
+    _print_status_message(CROSS, message, Color.RED, stream=sys.stderr)
+
+
+def _print_status_message(marker: str, message: str, tone: str, *, stream: TextIO | None = None) -> None:
+    prefix = f"  {marker} "
+    lines = console_message_lines(prefix, message)
+    print(color(prefix, tone, Color.BOLD) + lines[0][len(prefix):], file=stream or sys.stdout)
     for line in lines[1:]:
-        print(continuation + line, file=sys.stderr)
+        print(line, file=stream or sys.stdout)
 
 
 def detail(label: str, value: str) -> None:
     prefix = "     " + label.ljust(12)
-    for line in wrap_prefixed_text(prefix, value, width=terminal_width()):
+    for line in console_message_lines(prefix, value):
         print(color(line[:len(prefix)], Color.GRAY) + color(line[len(prefix):], Color.WHITE))
 
 
 def status(label: str, message: str, tone: str = Color.CYAN) -> None:
-    print(f"  {color(label.upper().ljust(8), Color.BOLD, tone)} {message}")
+    _print_status_message(label.upper().ljust(8), message, tone)
+
+
+def command_preview_parts(command_line: list[str]) -> tuple[list[str], int]:
+    """Keep the executable/module/script and count its attached option tokens."""
+    if not command_line:
+        return [], 0
+    end = 1
+    executable = Path(command_line[0]).name.lower().removesuffix(".exe")
+    if re.fullmatch(r"py|pythonw?(?:\d+(?:\.\d+)*)?", executable):
+        while end < len(command_line):
+            argument = command_line[end]
+            end += 1
+            if argument in {"-m", "-c"}:
+                end = min(end + 1, len(command_line))
+                break
+            if argument in {"-W", "-X", "--check-hash-based-pycs"}:
+                end = min(end + 1, len(command_line))
+            elif not argument.startswith("-"):
+                break
+    # Retain subcommands such as "pip install" or "git diff".
+    while end < len(command_line) and not command_line[end].startswith("-"):
+        end += 1
+    flag_count = 0
+    for argument in command_line[end:]:
+        if argument == "--":
+            break
+        if re.match(r"--?[A-Za-z]", argument):
+            flag_count += 1
+    if flag_count <= MAX_PREVIEW_FLAGS:
+        return command_line, 0
+    return command_line[:end], flag_count
 
 
 def command_preview(command_line: list[str]) -> None:
+    logging.getLogger("aibrain.command").info(
+        "Command started: %s", subprocess.list2cmdline(command_line)
+    )
+    preview, flag_count = command_preview_parts(command_line)
+    rendered = display_command(preview)
+    if flag_count:
+        rendered += f" ({flag_count} flags attached - Full command in log file)"
     prefix = " " * COMMAND_INDENT + PROMPT + " "
-    continuation = " " * (COMMAND_INDENT + len(PROMPT) + 2)
+    continuation = " " * len(prefix)
     lines = wrap_prefixed_text(
         prefix,
-        display_command(command_line),
+        rendered,
         width=terminal_width(),
         continuation=continuation,
     )
@@ -623,6 +668,7 @@ class CommandOutputBox:
         self.inner = max(terminal_width() - indent, 20) - 2
         self.content_width = self.inner - 2
         self._is_open = False
+        self._has_output = False
         self._live = self._can_redraw_live() if live is None else live
         self._bottom_visible = False
         self._partial_rows = 0
@@ -649,13 +695,9 @@ class CommandOutputBox:
     def open(self) -> None:
         if self._is_open:
             return
-        frame = self._border_line(BOX_TOP_LEFT, BOX_TOP_RIGHT)
-        if self._live:
-            frame += self._border_line(BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT)
-        sys.stdout.write(frame)
-        sys.stdout.flush()
         self._is_open = True
-        self._bottom_visible = self._live
+        self._has_output = False
+        self._bottom_visible = False
         self._partial_rows = 0
 
     def _border_line(self, left: str, right: str) -> str:
@@ -663,18 +705,20 @@ class CommandOutputBox:
 
     def _rendered_lines(self, output: str) -> list[str]:
         rendered = shorten_output_paths(strip_ansi(output)).rstrip("\r\n")
-        if not rendered:
+        if not rendered.strip():
             return []
         return [
             line
             for raw_line in rendered.splitlines()
-            for line in wrap_console_line(raw_line, self.content_width)
+            for line in wrap_prefixed_text("", raw_line, width=self.content_width)
         ]
 
     def _replace_output(self, lines: list[str], *, partial: bool) -> None:
         """Replace transient rows and move the footer in one flushed frame."""
         frame = ""
-        if self._live:
+        if not self._has_output:
+            frame = self._border_line(BOX_TOP_LEFT, BOX_TOP_RIGHT)
+        elif self._live:
             rows = self._partial_rows + int(self._bottom_visible)
             frame = "\x1b[1A\x1b[2K\r" * rows
         frame += "".join(
@@ -693,6 +737,7 @@ class CommandOutputBox:
         # Do not flush between erasing the old footer and drawing its replacement.
         sys.stdout.write(frame)
         sys.stdout.flush()
+        self._has_output = True
         self._bottom_visible = self._live
         self._partial_rows = len(lines) if partial else 0
 
@@ -721,7 +766,7 @@ class CommandOutputBox:
     def close(self) -> None:
         if not self._is_open:
             return
-        if not self._bottom_visible:
+        if self._has_output and not self._bottom_visible:
             sys.stdout.write(self._border_line(BOX_BOTTOM_LEFT, BOX_BOTTOM_RIGHT))
             sys.stdout.flush()
             self._bottom_visible = True
