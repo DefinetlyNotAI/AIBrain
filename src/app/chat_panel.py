@@ -271,7 +271,15 @@ class ChatPanel(QWidget):
         self.analysis_memory_mb.setSingleStep(16)
         self.analysis_memory_mb.setValue(100)
         self.analysis_memory_mb.setToolTip(
-            "Maximum RAM retained for Infinite-mode Analysis+ frames; oldest records are discarded above this limit")
+            "Maximum RAM retained for Infinite-mode rewind frames; older Analysis+ records move to the temporary cache")
+        self.analysis_cache_mb = QSpinBox()
+        self.analysis_cache_mb.setRange(0, 8192)
+        self.analysis_cache_mb.setSingleStep(128)
+        self.analysis_cache_mb.setValue(1024)
+        self.analysis_cache_mb.setSpecialValueText("Disabled")
+        self.analysis_cache_mb.setToolTip(
+            "Maximum temporary Analysis+ cache in .cache/temp; 0 disables paging"
+        )
         self.speed = QSlider()
         self.speed.setOrientation(Qt.Orientation.Horizontal)
         self.speed.setRange(1, 10)
@@ -290,6 +298,7 @@ class ChatPanel(QWidget):
         advanced.addRow("Context", self.context)
         advanced.addRow("GPU layers (-1 auto)", self.gpu_layers)
         advanced.addRow("Analysis+ RAM (MB)", self.analysis_memory_mb)
+        advanced.addRow("Analysis+ cache (MB)", self.analysis_cache_mb)
         advanced.addRow("Generation speed", speed_row)
         self.regenerate.setToolTip("Generate a new answer for the most recent normal-chat prompt")
         self.clear.setToolTip("Clear the current conversation and recorded replay")
@@ -520,7 +529,7 @@ class ChatPanel(QWidget):
         label = "⚠ Analysis+" if exceeded and self._infinite_mode else "Analysis+" if self._infinite_mode else "Analysis"
         self.open_analysis.setText(label)
         self.open_analysis.setToolTip(
-            "Exceeded the Analysis+ memory limit. Oldest recorded signals were discarded; analyze soon."
+            "Analysis+ cache is full or disabled. Oldest records were discarded; export soon."
             if exceeded else "Export compact neural findings for an Infinite simulation" if self._infinite_mode
             else "Export normal chat session data without neural-network findings"
         )

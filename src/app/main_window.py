@@ -332,6 +332,7 @@ class MainWindow(QMainWindow):
             return
         self.config = self.chat.config()
         self.visualizer.set_analysis_memory_limit(None)
+        self.visualizer.set_analysis_cache_limit(0)
         self._analysis_is_infinite = False
         self.chat.set_analysis_mode(False)
         self.chat.set_analysis_available(False)
@@ -374,6 +375,7 @@ class MainWindow(QMainWindow):
         self.chat.set_analysis_mode(True)
         self.config = self.chat.config()
         self.visualizer.set_analysis_memory_limit(self.chat.analysis_memory_mb.value())
+        self.visualizer.set_analysis_cache_limit(self.chat.analysis_cache_mb.value())
         save_generation_settings(self.config)
         self.unloadModel.emit()
         if not continuation:
@@ -437,7 +439,7 @@ class MainWindow(QMainWindow):
         self.chat.stats.setText(
             f"∞ Simulation: {turns} world turn(s), {tokens} participant tokens in {seconds:.1f}s{suffix}"
         )
-        self.chat.set_analysis_available(bool(self.visualizer.analyzer.records))
+        self.chat.set_analysis_available(self.visualizer.has_analysis_records)
         self.chat.set_rewind_available(self.visualizer.has_recorded_frames)
         self.chat.set_analysis_memory_exceeded(self.visualizer.analysis_memory_exceeded)
         self.chat.generating(False)
@@ -445,7 +447,7 @@ class MainWindow(QMainWindow):
     def _simulation_failed(self, error: str) -> None:
         LOG.error("%s", error)
         self.chat.stats.setText(error)
-        self.chat.set_analysis_available(bool(self.visualizer.analyzer.records))
+        self.chat.set_analysis_available(self.visualizer.has_analysis_records)
         self.chat.set_rewind_available(self.visualizer.has_recorded_frames)
         self.chat.generating(False)
         self._show_repairable_error("Infinite simulation error", error)
@@ -548,6 +550,7 @@ class MainWindow(QMainWindow):
                 self._shutdown_timer.start()
             return
         self._shutdown_timer.stop()
+        self.visualizer.cleanup_analysis_cache()
         super().closeEvent(event)
 
     def _finish_close_when_workers_stop(self) -> None:

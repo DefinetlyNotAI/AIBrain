@@ -66,6 +66,9 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertEqual(panel.advanced_content.minimumHeight(), 188)
         self.assertEqual(panel.advanced_content.maximumHeight(), 188)
         self.assertIsNotNone(panel.advanced_content.widget())
+        self.assertEqual(panel.analysis_cache_mb.minimum(), 0)
+        self.assertEqual(panel.analysis_cache_mb.value(), 1024)
+        self.assertEqual(panel.analysis_cache_mb.specialValueText(), "Disabled")
         panel.deleteLater()
 
     def test_regenerate_requires_a_completed_normal_response(self) -> None:

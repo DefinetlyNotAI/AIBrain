@@ -14,6 +14,7 @@ compact: no raw renderer frames, model weights, source prompts, or transformer a
 | `mean_reconstruction_error`, `mean_coherence` | Autoencoder reconstruction quality for this export. | unitless | derived |
 | `maturity` | Persisted training-health state, conditions, and readiness. | object | health/status |
 | `smart_analysis` | Present only in `aibrain.infinite-analysis-plus.v1`. | object | derived |
+| `analysis_storage` | Paged/resident record counts, cache limit, cache bytes, and whether oldest pages were discarded. | object | measured |
 | `smart_analysis.neural_network` | Autoencoder architecture, calibration and lifetime health. | object | health/status |
 | `session_findings` | Compact regional and pattern findings for this export. | object | derived |
 | `regional_profile` | Per-region mean and peak visual activity. | unitless | simulated/derived |

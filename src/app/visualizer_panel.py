@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import ConnectomeAnalyzer
+from ..connectome.analysis_cache import AnalysisPageCache
 from ..connectome.export import export_nn_analysis_plus, export_session_analysis
 from ..connectome.generator import build_connectome
 from ..connectome.mapper import ActivityMapper
@@ -83,7 +84,6 @@ class VisualizerPanel(QWidget):
         self._spacing_timer.timeout.connect(self._commit_cluster_spacing)
         self._selected_node: int | None = None
         self._playback: list[PlaybackStep] = []
-        self._all_signals: list[PlaybackStep] = []
         self._playback_index = -1
         self._rewind_active = False
         self._replay_active = False
@@ -93,6 +93,7 @@ class VisualizerPanel(QWidget):
         self._analysis_memory_limit_bytes: int | None = None
         self._analysis_memory_exceeded = False
         self._analysis_retained_bytes = 0
+        self._analysis_cache = AnalysisPageCache()
         self._colours = load_colours()
         self._build_graph("Medium")
         self._build_ui()
@@ -393,7 +394,6 @@ class VisualizerPanel(QWidget):
                 frame, self.field.values.copy(), self.field.peaks.copy()
             )
             self._playback.append(signal)
-            self._all_signals.append(signal)
             self.analyzer.observe(frame, self.field.values)
             self._analysis_retained_bytes += self._signal_bytes(signal)
             self._trim_analysis_memory()
@@ -402,9 +402,9 @@ class VisualizerPanel(QWidget):
     def begin_recording(self) -> None:
         self._stop_playback()
         self._playback.clear()
-        self._all_signals.clear()
         self._playback_index = -1
         self.analyzer.records.clear()
+        self._analysis_cache.cleanup()
         self._analysis_memory_exceeded = False
         self._analysis_retained_bytes = 0
         self.analysisMemoryExceeded.emit(False)
@@ -414,6 +414,16 @@ class VisualizerPanel(QWidget):
             None if megabytes is None else max(16, megabytes) * 1024 * 1024
         )
 
+    def set_analysis_cache_limit(self, megabytes: int) -> None:
+        had_cached_records = self._analysis_cache.record_count > 0
+        self._analysis_cache.set_limit(max(0, megabytes) * 1024 * 1024)
+        data_lost = self._analysis_cache.overflowed or (
+            megabytes == 0 and had_cached_records
+        )
+        if data_lost and not self._analysis_memory_exceeded:
+            self._analysis_memory_exceeded = True
+            self.analysisMemoryExceeded.emit(True)
+
     @property
     def analysis_memory_exceeded(self) -> bool:
         return self._analysis_memory_exceeded
@@ -421,6 +431,17 @@ class VisualizerPanel(QWidget):
     @property
     def has_recorded_frames(self) -> bool:
         return bool(self._playback)
+
+    @property
+    def has_analysis_records(self) -> bool:
+        return bool(self.analyzer.records) or self._analysis_cache.record_count > 0
+
+    def iter_analysis_records(self):  # type: ignore[no-untyped-def]
+        yield from self._analysis_cache.iter_records()
+        yield from self.analyzer.records
+
+    def cleanup_analysis_cache(self) -> None:
+        self._analysis_cache.cleanup()
 
     @staticmethod
     def _signal_bytes(signal: PlaybackStep) -> int:
@@ -435,14 +456,18 @@ class VisualizerPanel(QWidget):
         if self._analysis_memory_limit_bytes is None:
             return
         while (
-            self._all_signals
+            self._playback
             and self._analysis_retained_bytes > self._analysis_memory_limit_bytes
         ):
-            oldest = self._all_signals.pop(0)
+            oldest = self._playback.pop(0)
             self._analysis_retained_bytes -= self._signal_bytes(oldest)
             if self.analyzer.records:
-                self.analyzer.records.pop(0)
-            if not self._analysis_memory_exceeded:
+                record = self.analyzer.records.pop(0)
+                overflowed = self._analysis_cache.append(record)
+            else:
+                overflowed = False
+            data_lost = overflowed or not self._analysis_cache.enabled
+            if data_lost and not self._analysis_memory_exceeded:
                 self._analysis_memory_exceeded = True
                 self.analysisMemoryExceeded.emit(True)
 
@@ -451,6 +476,7 @@ class VisualizerPanel(QWidget):
         self._stop_playback()
         self._playback.clear()
         self._playback_index = -1
+        self._analysis_retained_bytes = 0
 
     def set_conversation(self, conversation: list[dict[str, object]]) -> None:
         self._conversation = [dict(turn) for turn in conversation]
@@ -629,7 +655,7 @@ class VisualizerPanel(QWidget):
             self.renderer.set_neuron_borders(visible, self.border_width.value())
 
     def run_nn_analysis_plus(self) -> None:
-        if not self.analyzer.records:
+        if not self.has_analysis_records:
             QMessageBox.information(
                 self,
                 "NN Analysis+",
@@ -644,19 +670,29 @@ class VisualizerPanel(QWidget):
         )
         if not filename:
             return
+        cache_status = self._analysis_cache.status(len(self.analyzer.records))
+        frame_count = int(cache_status["paged_records"]) + int(
+            cache_status["resident_records"]
+        )
         try:
             export_nn_analysis_plus(
-                Path(filename), self.graph, self.analyzer, self._conversation
+                Path(filename),
+                self.graph,
+                self.analyzer,
+                self._conversation,
+                records=self.iter_analysis_records,
+                cache_status=cache_status,
             )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             QMessageBox.critical(self, "NN Analysis+ export failed", str(exc))
             return
+        self._analysis_cache.cleanup()
         QMessageBox.information(
             self,
             "NN Analysis+ complete",
             f"Created {Path(filename).name}\n\n"
             f"Conversation turns: {len(self._conversation)}\n"
-            f"Visual brain-signal frames analyzed: {len(self.analyzer.records)}\n\n"
+            f"Visual brain-signal frames analyzed: {frame_count}\n\n"
             f"The JSON contains compact neural-network findings, not a raw frame dump.",
         )
 

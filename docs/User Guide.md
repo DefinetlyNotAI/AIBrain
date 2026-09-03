@@ -18,7 +18,7 @@ is tied to both its role and turn number, so World tokens cannot append to a Par
 the two role histories from the stopped transcript rather than restarting the scenario. The UI clearly labels
 this as a simulation—the model is generating roleplay text, not a real sentient being. The session continues until
 **Stop** is pressed, while each model keeps only a bounded recent context window so it can run without unbounded prompt
-growth. The right-side connectome records both role streams as procedural visual signals.
+growth. The right-side connectome renders and records Participant activity only; World narration remains in the chat.
 
 ## NN Analysis+
 
@@ -50,7 +50,8 @@ The controls at the bottom of the chat pane are saved in Windows application set
 | Max tokens       | Target upper limit; AIBrain permits a short grace window to finish the current sentence.                       |
 | Context          | Context window requested from llama.cpp.                                                                       |
 | GPU layers       | `-1` requests automatic/all-layer offload where the installed backend supports it; `0` requests CPU inference. |
-| Analysis+ RAM    | Infinite-mode RAM budget for retained visual frames. Oldest frames are discarded above the limit.              |
+| Analysis+ RAM    | Infinite-mode RAM budget for the rewind tail. Older compact analysis records move to the temporary cache.       |
+| Analysis+ cache  | Temporary `.cache/temp` budget for paged Analysis+ records. Defaults to 1 GB; `0` disables it.                  |
 | Generation speed | UI token pacing from 0.1x to 1.0x. It does not change model sampling.                                          |
 
 ## Connectome controls
@@ -81,8 +82,9 @@ never modify model weights or inference.
 
 ## Analysis and export
 
-After generating a response, choose **NN Analysis+** to create its compact neural-analysis JSON. Full semantics and file
-layout are documented in [Connectome and analysis](Connectome%20and%20Analysis.md). Chat bubbles render safe Markdown
+After generating a response, choose **NN Analysis+** to create its compact neural-analysis JSON. Use **Export chat** for
+a complete conversation-only JSON or readable text file. Full semantics and file layout are documented in
+[Connectome and analysis](Connectome%20and%20Analysis.md). Chat bubbles render safe Markdown
 for headings, emphasis, inline code, and HTTP (S) links while preserving selectable source text. Generated chat follows
 the newest token only while the message list is already at the bottom; scroll up to read or copy earlier text without
 being pulled back down.

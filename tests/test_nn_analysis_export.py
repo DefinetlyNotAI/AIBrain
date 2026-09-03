@@ -81,6 +81,29 @@ class NNAnalysisExportTests(unittest.TestCase):
 
         self.assertEqual(payload["smart_analysis"]["key_events"][0]["step"], 1)
 
+    def test_analysis_plus_streams_paged_and_resident_records(self) -> None:
+        record = self.analyzer.records[0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "analysis.json"
+
+            def records():
+                yield record
+                yield record
+
+            export_nn_analysis_plus(
+                path,
+                self.graph,
+                self.analyzer,
+                [],
+                records=records,
+                cache_status={"paged_records": 1, "resident_records": 1},
+            )
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["recorded_frame_summary"]["frames"], 2)
+        self.assertEqual(payload["smart_analysis"]["frames_processed"], 2)
+        self.assertEqual(payload["analysis_storage"]["paged_records"], 1)
+
     def test_learned_model_persists_between_analysis_sessions(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "learned.npz"

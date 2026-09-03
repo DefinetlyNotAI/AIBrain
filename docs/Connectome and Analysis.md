@@ -18,9 +18,10 @@ long-range links.
 | Derived    | Observable measurements mapped onto visual regions.                   |
 | Simulation | Procedural activity tied to observable model/token state.             |
 
-The current llama.cpp GGUF path is **Simulation**. For each generated token it creates a deterministic cascading
+The current llama.cpp GGUF path is **Simulation**. For each Participant token it creates a deterministic cascading
 activity pattern, applies importance and silencing controls, and lets values decay between frames. This makes playback
-repeatable while avoiding a false claim that the displayed nodes are model parameters.
+repeatable while avoiding a false claim that the displayed nodes are model parameters. Infinite-mode World narration
+does not render on the connectome.
 
 ## Rendering
 
@@ -68,6 +69,12 @@ entry with its data type, shape, and complete values beside the JSON metadata vi
 renderer-amplitude bias; findings remain analysis of procedural visual signals, not measured transformer activations.
 The export contains the complete session conversation, network architecture and fit metrics, regional profile, pattern
 segments, and a bounded set of high-novelty events. It intentionally excludes massive per-neuron frame dumps.
+
+Infinite mode keeps only a bounded rewind tail in RAM. Older compact Analysis+ records are written as compressed pages
+under `.cache/temp` and streamed into the JSON export without loading the whole cache into memory. The cache defaults to
+1 GB, can be changed in Advanced Options, and is disabled at `0`. If it fills, the oldest pages are removed and the
+Analysis+ button shows a warning. A successful export consumes the temporary pages. Normal close and Python shutdown
+remove the active cache; a later launch also removes stale page folders left by an interrupted process.
 
 This is analysis of AIBrain's visual activity stream. It is not an inspection of model hidden states, attention,
 weights, or reasoning.

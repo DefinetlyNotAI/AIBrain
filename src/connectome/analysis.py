@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
@@ -49,6 +50,14 @@ class AnalysisRecord:
     coherence: float
     embedding: tuple[float, ...]
     regional_activity: tuple[float, ...]
+
+
+RecordSource = Iterable[AnalysisRecord] | Callable[[], Iterable[AnalysisRecord]]
+
+
+def _record_iterator(records: RecordSource) -> Iterator[AnalysisRecord]:
+    source = records() if callable(records) else records
+    return iter(source)
 
 
 class ConnectomeAnalyzer:
@@ -493,44 +502,106 @@ class ConnectomeAnalyzer:
             "note": "Maturity describes persisted training health and coverage; it is not a measured accuracy guarantee.",
         }
 
-    def summary(self) -> dict[str, object]:
+    def summary(self, records: RecordSource | None = None) -> dict[str, object]:
+        records = self.records if records is None else records
         maturity = self.maturity_report()
-        if not self.records:
+        count = 0
+        novelty_total = 0.0
+        peak_novelty = 0.0
+        reconstruction_total = 0.0
+        coherence_total = 0.0
+        most_active: AnalysisRecord | None = None
+        for record in _record_iterator(records):
+            count += 1
+            novelty_total += record.novelty
+            peak_novelty = max(peak_novelty, record.novelty)
+            reconstruction_total += record.reconstruction_error
+            coherence_total += record.coherence
+            if most_active is None or record.active_nodes > most_active.active_nodes:
+                most_active = record
+        if not count or most_active is None:
             return {"frames": 0, "maturity": maturity}
-        novelty = np.array([record.novelty for record in self.records])
-        reconstruction = np.array(
-            [record.reconstruction_error for record in self.records]
-        )
-        coherence = np.array([record.coherence for record in self.records])
         return {
-            "frames": len(self.records),
-            "mean_novelty": float(novelty.mean()),
-            "peak_novelty": float(novelty.max()),
-            "mean_reconstruction_error": float(reconstruction.mean()),
-            "mean_coherence": float(coherence.mean()),
-            "most_active_region": max(
-                self.records, key=lambda item: item.active_nodes
-            ).dominant_region,
+            "frames": count,
+            "mean_novelty": novelty_total / count,
+            "peak_novelty": peak_novelty,
+            "mean_reconstruction_error": reconstruction_total / count,
+            "mean_coherence": coherence_total / count,
+            "most_active_region": most_active.dominant_region,
             "maturity": maturity,
         }
 
-    def smart_report(self) -> dict[str, object]:
+    def smart_report(self, records: RecordSource | None = None) -> dict[str, object]:
         """Return compact findings learned from all frames, rather than raw vectors."""
-        if not self.records:
+        records = self.records if records is None else records
+        count = 0
+        novelty_total = 0.0
+        peak_novelty = 0.0
+        reconstruction_total = 0.0
+        coherence_total = 0.0
+        most_active: AnalysisRecord | None = None
+        region_totals = _numpy.zeros(self.region_count, dtype="f8")
+        region_peaks = _numpy.zeros(self.region_count, dtype="f4")
+        key_events: list[AnalysisRecord] = []
+        segments: list[PatternSegment] = []
+        segments_complete = False
+
+        for record in _record_iterator(records):
+            count += 1
+            novelty_total += record.novelty
+            peak_novelty = max(peak_novelty, record.novelty)
+            reconstruction_total += record.reconstruction_error
+            coherence_total += record.coherence
+            if most_active is None or record.active_nodes > most_active.active_nodes:
+                most_active = record
+            regional = _numpy.asarray(record.regional_activity, dtype="f4")
+            region_totals += regional
+            region_peaks = _numpy.maximum(region_peaks, regional)
+            key_events.append(record)
+            key_events.sort(
+                key=lambda item: item.novelty + item.reconstruction_error * 3,
+                reverse=True,
+            )
+            del key_events[24:]
+            if segments_complete:
+                continue
+            if not segments or segments[-1]["dominant_region"] != record.dominant_region:
+                if len(segments) >= 40:
+                    segments_complete = True
+                    continue
+                segments.append(
+                    {
+                        "start_step": record.step,
+                        "end_step": record.step,
+                        "dominant_region": record.dominant_region,
+                        "frames": 1,
+                        "mean_novelty": record.novelty,
+                    }
+                )
+                continue
+            group = segments[-1]
+            frame_count = group["frames"]
+            group["end_step"] = record.step
+            group["frames"] = frame_count + 1
+            group["mean_novelty"] = (
+                group["mean_novelty"] * frame_count + record.novelty
+            ) / (frame_count + 1)
+
+        if not count or most_active is None:
             return {"frames_processed": 0, "maturity": self.maturity_report()}
-        regional = np.asarray(
-            [record.regional_activity for record in self.records], dtype="f4"
-        )
-        region_means = regional.mean(axis=0)
-        region_peaks = regional.max(axis=0)
-        key_events = sorted(
-            self.records,
-            key=lambda item: item.novelty + item.reconstruction_error * 3,
-            reverse=True,
-        )[:24]
+        region_means = region_totals / count
         top_region = self.graph.region_names[int(region_means.argmax())]
+        summary = {
+            "frames": count,
+            "mean_novelty": novelty_total / count,
+            "peak_novelty": peak_novelty,
+            "mean_reconstruction_error": reconstruction_total / count,
+            "mean_coherence": coherence_total / count,
+            "most_active_region": most_active.dominant_region,
+            "maturity": self.maturity_report(),
+        }
         return {
-            "frames_processed": len(self.records),
+            "frames_processed": count,
             "neural_network": {
                 "architecture": f"{self.input_width} → {self.hidden_width} → {self.input_width} autoencoder",
                 "activation": "tanh encoder / sigmoid decoder",
@@ -547,9 +618,9 @@ class ConnectomeAnalyzer:
                 "maturity": self.maturity_report(),
             },
             "session_findings": {
-                **self.summary(),
+                **summary,
                 "primary_pattern": f"Highest mean visual activity was in {top_region}.",
-                "pattern_segments": self._segments(),
+                "pattern_segments": segments,
             },
             "regional_profile": [
                 {
@@ -573,11 +644,14 @@ class ConnectomeAnalyzer:
             ],
         }
 
-    def _segments(self) -> list[PatternSegment]:
+    def _segments(self, records: RecordSource | None = None) -> list[PatternSegment]:
+        records = self.records if records is None else records
         groups: list[PatternSegment] = []
 
-        for record in self.records:
+        for record in _record_iterator(records):
             if not groups or groups[-1]["dominant_region"] != record.dominant_region:
+                if len(groups) >= 40:
+                    break
                 groups.append(
                     {
                         "start_step": record.step,
@@ -597,4 +671,4 @@ class ConnectomeAnalyzer:
                 group["mean_novelty"] * frame_count + record.novelty
             ) / (frame_count + 1)
 
-        return groups[:40]
+        return groups
