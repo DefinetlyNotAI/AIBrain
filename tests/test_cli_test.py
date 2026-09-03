@@ -36,6 +36,19 @@ class TestLauncherTests(unittest.TestCase):
             len(set(modules)),
         )
 
+    def test_all_launcher_suites_cover_every_test_module(self) -> None:
+        registered = {
+            module
+            for _title, suite in test.SUITES.values()
+            for module in suite
+        }
+        discovered = {
+            f"tests.{path.stem}"
+            for path in Path(__file__).parent.glob("test_*.py")
+        }
+
+        self.assertEqual(registered, discovered)
+
     @patch("cli.test.in_managed_virtual_environment", return_value=False)
     @patch("cli.test.subprocess.run")
     @patch("pathlib.Path.is_file", return_value=True)

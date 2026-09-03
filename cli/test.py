@@ -43,11 +43,15 @@ SUITES: dict[str, tuple[str, list[str]]] = {
     "2": (
         "Desktop UI and presentation tests",
         [
+            "tests.test_chat_analysis_action",
             "tests.test_chat_scroll",
             "tests.test_cluster_palette",
             "tests.test_cluster_spacing",
             "tests.test_console_ui",
+            "tests.test_main_layout",
             "tests.test_markdown",
+            "tests.test_theme",
+            "tests.test_visualizer_modes",
         ],
     ),
     "3": (
@@ -73,6 +77,7 @@ SUITES: dict[str, tuple[str, list[str]]] = {
         "Infrastructure tests",
         [
             "tests.test_logging",
+            "tests.test_runtime",
             "tests.test_source_encoding",
         ],
     ),
