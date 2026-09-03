@@ -5,18 +5,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from src.models.llama_backend import GenerationConfig, LlamaBackend, _handle_native_log
+from src.models.llama_backend import GenerationConfig, LlamaBackend
+from src.models.llama_runtime import _handle_native_log
 
 
 class LlamaBackendLoggingTests(unittest.TestCase):
     def test_native_log_handler_accepts_the_three_argument_llama_abi(self) -> None:
-        with self.assertLogs("src.models.llama_backend", level="ERROR") as logs:
+        with self.assertLogs("src.models.llama_runtime", level="ERROR") as logs:
             _handle_native_log(2, b"model load failed", None)
 
-        self.assertEqual(logs.output, ["ERROR:src.models.llama_backend:llama.cpp: model load failed"])
+        self.assertEqual(logs.output, ["ERROR:src.models.llama_runtime:llama.cpp: model load failed"])
 
     def test_native_log_handler_ignores_empty_and_non_error_messages(self) -> None:
-        with self.assertNoLogs("src.models.llama_backend", level="ERROR"):
+        with self.assertNoLogs("src.models.llama_runtime", level="ERROR"):
             _handle_native_log(1, None, None)
             _handle_native_log(1, b"...", None)
             _handle_native_log(1, b"model metadata loaded", None)
@@ -35,7 +36,10 @@ class LlamaBackendLoggingTests(unittest.TestCase):
             llama_log_callback=lambda callback: callback,
             llama_log_set=lambda _callback, _context: None,
         )
-        with patch.dict("sys.modules", {"llama_cpp": fake_module}):
+        with (
+            patch.dict("sys.modules", {"llama_cpp": fake_module}),
+            patch("src.models.llama_runtime._LOG_CALLBACK", None),
+        ):
             backend = LlamaBackend()
             backend.load(Path("model.gguf"), GenerationConfig(gpu_layers=-1))
 

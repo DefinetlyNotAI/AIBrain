@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import sys
 import sysconfig
 from pathlib import Path
@@ -12,6 +13,30 @@ from typing import Any
 
 _DLL_HANDLES: dict[Path, Any] = {}
 _DLL_LOCK = Lock()
+_LOG_CALLBACK: Any = None
+_LOG_LOCK = Lock()
+_LOG = logging.getLogger(__name__)
+
+
+def _handle_native_log(level: int, text: bytes | None, _user_data: object) -> None:
+    """Send native runtime messages through the same formatter as Python logs."""
+    if not text:
+        return
+    try:
+        message = text.decode("utf-8", errors="replace").strip()
+        if not message or not message.strip("."):
+            return
+        # Keep device discovery and warnings visible; detailed model metadata is
+        # DEBUG only. Native callbacks must not print directly to stderr.
+        severity = {2: logging.WARNING, 3: logging.ERROR}.get(level, logging.DEBUG)
+        if "ggml_cuda_init:" in message or message.startswith("Device "):
+            severity = logging.INFO
+        elif any(word in message.lower() for word in ("error", "failed", "unknown model architecture")):
+            severity = logging.ERROR
+        _LOG.log(severity, "llama.cpp: %s", message)
+    except Exception:
+        # A ctypes callback must never propagate across the C boundary.
+        return
 
 
 def cuda_dll_directories() -> list[Path]:
@@ -60,4 +85,11 @@ def load_llama_cpp() -> ModuleType:
     prepare_cuda_dll_search()
     import llama_cpp
 
+    global _LOG_CALLBACK
+    with _LOG_LOCK:
+        if _LOG_CALLBACK is None:
+            _LOG_CALLBACK = llama_cpp.llama_log_callback(_handle_native_log)
+        # Install before any probe can initialize ggml/CUDA. Keeping the callback
+        # alive at module scope also protects later native calls from GC.
+        llama_cpp.llama_log_set(_LOG_CALLBACK, None)
     return llama_cpp
