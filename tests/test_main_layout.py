@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import inspect
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -76,6 +77,19 @@ class MainLayoutTests(unittest.TestCase):
             self.assertTrue(window.chat.regenerate.isEnabled())
             self.assertTrue(window.chat.rewind.isEnabled())
             self.assertTrue(window.chat.open_analysis.isEnabled())
+        finally:
+            window.close()
+            self.app.processEvents()
+
+    def test_world_tokens_do_not_drive_connectome_rendering(self) -> None:
+        window = MainWindow([])
+        frame = object()
+        try:
+            with patch.object(window.visualizer, "apply_frame") as apply_frame:
+                window._simulation_token("world", 1, "weather", frame)
+                window._simulation_token("participant", 2, "I move", frame)
+
+            apply_frame.assert_called_once_with(frame)
         finally:
             window.close()
             self.app.processEvents()

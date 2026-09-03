@@ -370,7 +370,7 @@ class MainWindow(QMainWindow):
         bubble = self._simulation_bubbles.get((role, turn))
         if bubble is not None:
             self.chat.append_message_text(bubble, text)
-        if frame is not None:
+        if role == "participant" and frame is not None:
             self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
 
     def _simulation_turn_finished(self, role: str, text: str, turn: int) -> None:

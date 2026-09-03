@@ -8,6 +8,8 @@ from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome_kernels import native
 
+ACTIVITY_DECAY_SECONDS = 0.11
+
 
 class ActivityField:
     def __init__(self, graph: ConnectomeGraph) -> None:
@@ -55,7 +57,7 @@ class ActivityField:
         delta = min(now - self.last_time, 1.0)
         self.last_time = now
         self.active_count_cached = native.decay(
-            self.values, float(np.exp(-delta / 0.30)), 0.10
+            self.values, float(np.exp(-delta / ACTIVITY_DECAY_SECONDS)), 0.10
         )
 
     def set_disabled(self, index: int, disabled: bool) -> None:
