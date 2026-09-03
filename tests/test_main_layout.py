@@ -54,6 +54,32 @@ class MainLayoutTests(unittest.TestCase):
         self.assertIn("_shutdown_timer.start()", source)
         self.assertNotIn(".wait(", source)
 
+    def test_cancelled_response_with_output_enables_post_stop_actions(self) -> None:
+        window = MainWindow([])
+        try:
+            window.chat.set_model_available(True)
+            window.history = [{"role": "user", "content": "Prompt"}]
+            window._assistant_bubble = window.chat.add_message(
+                "assistant", "Partial response"
+            )
+            window.visualizer._playback.append(object())  # type: ignore[arg-type]
+
+            window._finished(
+                {
+                    "seconds": 1.0,
+                    "generated_tokens": 3,
+                    "prompt_tokens": 1,
+                    "cancelled": True,
+                }
+            )
+
+            self.assertTrue(window.chat.regenerate.isEnabled())
+            self.assertTrue(window.chat.rewind.isEnabled())
+            self.assertTrue(window.chat.open_analysis.isEnabled())
+        finally:
+            window.close()
+            self.app.processEvents()
+
 
 if __name__ == "__main__":
     unittest.main()
