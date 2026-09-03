@@ -71,7 +71,7 @@ class InstallerRepairTests(unittest.TestCase):
 
         self.assertEqual(repaired, "dependencies")
         install_dependencies.assert_called_once_with(
-            "managed-python", None, force_reinstall=True
+            "managed-python", None, force_reinstall=False
         )
 
     def test_installer_uses_the_build_runner_for_live_command_output(self) -> None:
@@ -82,7 +82,7 @@ class InstallerRepairTests(unittest.TestCase):
 
         run_live.assert_called_once_with(command)
 
-    def test_repair_reinstalls_dependencies_and_backend(self) -> None:
+    def test_install_force_reinstalls_every_managed_root_and_backend(self) -> None:
         with (
             patch("cli.installer.run") as run_command,
             patch("cli.installer.ensure_pip"),
@@ -106,6 +106,83 @@ class InstallerRepairTests(unittest.TestCase):
         self.assertIn("--no-cache-dir", backend_command)
         self.assertIn(installer.LLAMA_CPP_PYTHON_REQUIREMENT, backend_command)
         self.assertIn("--only-binary=llama-cpp-python", backend_command)
+
+    def test_repair_keeps_healthy_dependencies_and_pip_installed(self) -> None:
+        with (
+            patch("cli.installer.run") as run_command,
+            patch("cli.installer.ensure_pip"),
+            patch("cli.installer.broken_dependencies", return_value=[]),
+        ):
+            installer.install_dependencies("managed-python", None, force_reinstall=False)
+
+        self.assertEqual(run_command.call_count, 1)
+        resolver_command = run_command.call_args.args[0]
+        self.assertEqual(resolver_command[:4], ["managed-python", "-m", "pip", "install"])
+        self.assertNotIn("--force-reinstall", resolver_command)
+        self.assertNotIn("--upgrade", resolver_command)
+        self.assertNotIn("pip", resolver_command[4:])
+
+    def test_repair_force_reinstalls_only_a_broken_root_without_dependencies(self) -> None:
+        broken = installer.BASE_PACKAGES[1]
+        with (
+            patch("cli.installer.run") as run_command,
+            patch("cli.installer.ensure_pip"),
+            patch("cli.installer.broken_dependencies", return_value=[broken]),
+        ):
+            installer.install_dependencies("managed-python", None, force_reinstall=False)
+
+        repair_command, resolver_command = [call.args[0] for call in run_command.call_args_list]
+        self.assertEqual(
+            repair_command,
+            ["managed-python", "-m", "pip", "install", "--force-reinstall", "--no-deps", broken],
+        )
+        self.assertNotIn("--force-reinstall", resolver_command)
+
+    def test_dependency_probe_finds_only_failed_functional_imports(self) -> None:
+        results = [
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 1, "", "broken"),
+        ]
+        requirements = (installer.BASE_PACKAGES[0], installer.BASE_PACKAGES[1])
+        with patch("cli.installer.subprocess.run", side_effect=results) as probe:
+            self.assertEqual(
+                installer.broken_dependencies("managed-python", requirements),
+                [installer.BASE_PACKAGES[1]],
+            )
+        self.assertEqual(probe.call_count, 2)
+        self.assertIn("from PySide6 import QtCore", probe.call_args_list[0].args[0][2])
+        self.assertIn("import moderngl", probe.call_args_list[1].args[0][2])
+
+    def test_repair_skips_a_healthy_matching_backend(self) -> None:
+        with (
+            patch("cli.installer.select_wheel", return_value=("cu132", "CUDA")),
+            patch("cli.installer.probe_llama_runtime", return_value=(True, "")) as probe,
+            patch("cli.installer.run") as run_command,
+        ):
+            installed = installer.install_llama(
+                "managed-python", None, force_reinstall=False
+            )
+        self.assertEqual(installed, "cu132")
+        probe.assert_called_once_with(
+            "managed-python", require_cuda=True, require_cpu=False
+        )
+        run_command.assert_not_called()
+
+    def test_repair_reinstalls_a_broken_backend_and_verifies_it(self) -> None:
+        with (
+            patch("cli.installer.select_wheel", return_value=("cpu", "CPU")),
+            patch(
+                "cli.installer.probe_llama_runtime",
+                side_effect=[(False, "missing DLL"), (True, "")],
+            ) as probe,
+            patch("cli.installer.run") as run_command,
+        ):
+            installed = installer.install_llama(
+                "managed-python", None, force_reinstall=False
+            )
+        self.assertEqual(installed, "cpu")
+        self.assertEqual(probe.call_count, 2)
+        self.assertIn("--force-reinstall", run_command.call_args.args[0])
 
     def test_unloadable_cuda_wheel_is_replaced_with_a_verified_cpu_wheel(self) -> None:
         with (
@@ -409,7 +486,11 @@ class InstallerBootstrapTests(unittest.TestCase):
         def probe(command, **_kwargs):
             result = subprocess.CompletedProcess(command, 0, "", "")
             output = StringIO()
-            fake_backend = SimpleNamespace(llama_supports_gpu_offload=lambda: False)
+            fake_backend = SimpleNamespace(
+                llama_supports_gpu_offload=lambda: False,
+                llama_log_callback=lambda callback: callback,
+                llama_log_set=lambda _callback, _context: None,
+            )
             with (
                 redirect_stdout(output),
                 patch.dict(sys.modules, {"llama_cpp": fake_backend}),
@@ -478,7 +559,9 @@ class InstallerBootstrapTests(unittest.TestCase):
                     self.assertEqual(installer.repair_selected_subsystem(
                         "backend", "managed-python", None, preference="cpu"
                     ), "cpu")
-                    install.assert_called_once_with("managed-python", None, preference="cpu")
+                    install.assert_called_once_with(
+                        "managed-python", None, preference="cpu", force_reinstall=False
+                    )
                     cache.assert_called_once_with()
 
     def test_install_and_repair_refresh_cache_only_after_verification(self) -> None:
@@ -488,15 +571,20 @@ class InstallerBootstrapTests(unittest.TestCase):
                 stack.enter_context(patch.object(sys, "argv", ["installer.py", f"--{action}", "-y"]))
                 stack.enter_context(patch("cli.installer.configure_cli_logging", return_value=(Path("log"), None)))
                 stack.enter_context(patch("cli.installer.venv_python", return_value=Path(sys.executable)))
+                patched_commands = {}
                 for name in (
                     "clear_screen", "header", "create_environment",
                     "verify_managed_python", "install_dependencies",
                     "cleanup_invalid_distributions",
                 ):
-                    stack.enter_context(patch(f"cli.installer.{name}"))
+                    patched_commands[name] = stack.enter_context(
+                        patch(f"cli.installer.{name}")
+                    )
                 stack.enter_context(patch("cli.installer.verify_python", return_value=True))
                 stack.enter_context(patch("cli.installer.detect_nvidia", return_value=None))
-                stack.enter_context(patch("cli.installer.install_llama", return_value="cpu"))
+                backend_install = stack.enter_context(
+                    patch("cli.installer.install_llama", return_value="cpu")
+                )
                 verification = stack.enter_context(patch("cli.installer.verify_installation"))
                 if failure:
                     verification.side_effect = subprocess.CalledProcessError(1, ["verify"])
@@ -513,6 +601,13 @@ class InstallerBootstrapTests(unittest.TestCase):
                     cache.assert_called_once_with()
                     self.assertTrue(health.call_args.kwargs["libraries_verified"])
                     complete.assert_called_once()
+                patched_commands["install_dependencies"].assert_called_once_with(
+                    str(sys.executable), None, force_reinstall=action == "install"
+                )
+                backend_install.assert_called_once_with(
+                    str(sys.executable), None, preference="auto", interactive=False,
+                    force_reinstall=action == "install",
+                )
 
 
 if __name__ == "__main__":

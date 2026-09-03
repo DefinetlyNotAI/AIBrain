@@ -243,11 +243,13 @@ def repair_selected_subsystem(
 ) -> str:
     """Run exactly one selected repair; destructive work is explicit and narrow."""
     if subsystem == "dependencies":
-        install_dependencies(python, gpu, force_reinstall=True)
+        install_dependencies(python, gpu, force_reinstall=False)
         return "dependencies"
     if subsystem == "backend":
         ensure_pip(python)
-        wheel_tag = install_llama(python, gpu, preference=preference)
+        wheel_tag = install_llama(
+            python, gpu, preference=preference, force_reinstall=False
+        )
         repair_validation_cache()
         return wheel_tag
     if subsystem == "native":
@@ -543,20 +545,14 @@ def install_dependencies(
     force_reinstall: bool = False,
 ) -> None:
     ensure_pip(python)
-    info("Updating Python package manager")
-
-    run(
-        [
-            python,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "pip",
-        ]
-    )
-
-    success("pip is ready")
+    if force_reinstall:
+        info("Reinstalling Python package manager")
+        run([
+            python, "-m", "pip", "install", "--upgrade", "--force-reinstall", "pip",
+        ])
+        success("pip reinstalled")
+    else:
+        success("Existing pip installation is healthy")
 
     print()
     info("Installing AIBrain runtime dependencies")
@@ -565,6 +561,14 @@ def install_dependencies(
     for package in packages:
         detail("Package", package)
 
+    if not force_reinstall:
+        for package in broken_dependencies(python, packages):
+            warning(f"Repairing broken library: {package}")
+            # Reinstall only the broken root package. The normal resolver pass
+            # below restores any missing transitive dependencies without
+            # replacing healthy installed distributions.
+            run([python, "-m", "pip", "install", "--force-reinstall", "--no-deps", package])
+
     command = [python, "-m", "pip", "install"]
     if force_reinstall:
         command.extend(("--upgrade", "--force-reinstall"))
@@ -572,6 +576,43 @@ def install_dependencies(
     run(command)
 
     success("Core dependencies installed")
+
+
+def _dependency_probe(requirement: str) -> str:
+    """Return a functional import probe for one managed root requirement."""
+    name = re.split(r"[<>=!~\[]", requirement, maxsplit=1)[0].lower()
+    probes = {
+        "pyside6": "from PySide6 import QtCore; assert QtCore.qVersion()",
+        "moderngl": "import moderngl; assert moderngl.__version__",
+        "nuitka": "import nuitka; assert nuitka.__file__",
+        "numpy": "import numpy; assert numpy.ones(1).sum() == 1",
+        "cupy-cuda13x": "import cupy; assert cupy.ones(1).sum().item() == 1",
+        "cupy-cuda12x": "import cupy; assert cupy.ones(1).sum().item() == 1",
+    }
+    try:
+        return probes[name]
+    except KeyError as exc:
+        raise ValueError(f"No repair probe is defined for {requirement}") from exc
+
+
+def broken_dependencies(python: str, requirements: tuple[str, ...]) -> list[str]:
+    """Identify broken managed roots without modifying healthy distributions."""
+    broken: list[str] = []
+    for requirement in requirements:
+        try:
+            result = subprocess.run(
+                [python, "-c", _dependency_probe(requirement)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            broken.append(requirement)
+            continue
+        if result.returncode:
+            broken.append(requirement)
+    return broken
 
 
 def llama_install_command(python: str, wheel_tag: str) -> list[str]:
@@ -607,12 +648,22 @@ def cuda_runtime_packages(wheel_tag: str) -> tuple[str, ...]:
     )
 
 
-def probe_llama_runtime(python: str, *, require_cuda: bool = False) -> tuple[bool, str]:
+def probe_llama_runtime(
+    python: str, *, require_cuda: bool = False, require_cpu: bool = False
+) -> tuple[bool, str]:
     """Check the installed native backend without printing an import traceback."""
+    if require_cuda and require_cpu:
+        raise ValueError("A backend probe cannot require both CUDA and CPU")
     cuda_check = (
         "    if not llama_cpp.llama_supports_gpu_offload():\n"
         "        raise RuntimeError('The installed wheel does not support GPU offload')\n"
         if require_cuda
+        else ""
+    )
+    cpu_check = (
+        "    if llama_cpp.llama_supports_gpu_offload():\n"
+        "        raise RuntimeError('The installed wheel is CUDA-enabled, not CPU-only')\n"
+        if require_cpu
         else ""
     )
     verification = (
@@ -620,6 +671,7 @@ def probe_llama_runtime(python: str, *, require_cuda: bool = False) -> tuple[boo
         "    from src.models.llama_runtime import load_llama_cpp\n"
         "    llama_cpp = load_llama_cpp()\n"
         f"{cuda_check}"
+        f"{cpu_check}"
         "except Exception as exc:\n"
         "    print(f'{type(exc).__name__}: {exc}')\n"
         "    raise SystemExit(1)\n"
@@ -664,6 +716,7 @@ def install_llama(
     *,
     preference: str = "auto",
     interactive: bool = False,
+    force_reinstall: bool = True,
 ) -> str:
     wheel_tag, description = select_wheel(
         gpu, preference=preference, interactive=interactive
@@ -681,6 +734,17 @@ def install_llama(
     )
 
     detail("Wheel", wheel_tag)
+
+    if not force_reinstall:
+        ready, reason = probe_llama_runtime(
+            python,
+            require_cuda=wheel_tag != "cpu",
+            require_cpu=wheel_tag == "cpu",
+        )
+        if ready:
+            success(f"Existing llama-cpp-python {wheel_tag} backend is healthy")
+            return wheel_tag
+        warning(f"Repairing broken llama-cpp-python backend: {reason}")
 
     try:
         runtime_packages = cuda_runtime_packages(wheel_tag)
@@ -900,7 +964,7 @@ def main() -> int:
     try:
         verify_managed_python(python)
         cleanup_invalid_distributions()
-        install_dependencies(python, gpu, force_reinstall=action == "repair")
+        install_dependencies(python, gpu, force_reinstall=action == "install")
     except subprocess.CalledProcessError as exc:
         error("Dependency installation failed with " f"exit code {exc.returncode}.")
         return 1
@@ -912,6 +976,7 @@ def main() -> int:
             gpu,
             preference=args.backend,
             interactive=False,
+            force_reinstall=action == "install",
         )
     except subprocess.CalledProcessError as exc:
         error(

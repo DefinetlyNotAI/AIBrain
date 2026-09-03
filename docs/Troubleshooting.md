@@ -43,7 +43,8 @@ loader together, then run `python cli\installer.py --repair --repair-subsystem b
 The installer ensures the matching NVIDIA runtime packages exist. AIBrain's loader makes their DLLs visible to both
 Windows DLL loading mechanisms before importing llama.cpp; a full system CUDA Toolkit installation is not required.
 
-Run the installer in Repair mode to reinstall the managed dependencies and selected llama.cpp backend, then review its
+Run the installer in Repair mode to probe the managed dependencies and selected llama.cpp backend, reinstall anything
+missing or broken, and then review its
 final health report: `py cli\installer.py -y --repair`. Repair is available only after the managed runtime has been
 installed. It clears the disposable validation cache so a stale backend failure is not reused. Each failure includes a
 `REASON`; model blobs and native DLLs are never removed by the standard repair flow.

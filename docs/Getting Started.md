@@ -35,8 +35,8 @@ py cli\installer.py
 
 `cli/installer.py` is the sole allowed system-Python entry point. It starts with only the Python standard library:
 neither the launching interpreter nor a fresh `.venv` needs PySide6 or other application packages preinstalled.
-It creates `.venv`, checks that its interpreter is a working Python 3.11+ virtual environment, restores pip with
-`ensurepip` if needed, and updates pip inside it. It installs PySide6, ModernGL, Nuitka, and NumPy (with CuPy for
+It creates `.venv`, checks that its interpreter is a working Python 3.11+ virtual environment, and restores pip with
+`ensurepip` if needed. Install mode reinstalls pip, PySide6, ModernGL, Nuitka, and NumPy (with CuPy for
 supported CUDA drivers), then chooses a prebuilt `llama-cpp-python` wheel. The installer checks
 `nvidia-smi` first: when a compatible published NVIDIA CUDA wheel is available it uses that; otherwise it installs the
 official CPU wheel. It does not fall back to a local C/C++ source build.
@@ -59,7 +59,9 @@ It requires a binary wheel for `llama-cpp-python` and reinstalls it even when sw
 between CPU and CUDA builds with the same version. It confirms that the selected wheel can load its native runtime,
 and that a CUDA selection supports GPU offload. In auto mode, if a
 CUDA wheel installs but a required DLL cannot load, it retries a fresh official CPU wheel without using the
-pip cache. Repair mode also forces a fresh dependency reinstall. Successful installation and repair clear the disposable
+pip cache. Repair mode functionally probes each managed library and the selected llama.cpp backend. It reinstalls only
+missing or broken root packages, while a normal resolver pass supplies missing transitive dependencies without replacing
+healthy distributions. Install mode force-reinstalls every managed root package. Successful installation and repair clear the disposable
 validation cache so an earlier backend result cannot mask the updated runtime. Both preserve Ollama model blobs.
 
 CUDA installation includes NVIDIA's cuBLAS and CUDA runtime wheels for the selected CUDA major version. Both the
