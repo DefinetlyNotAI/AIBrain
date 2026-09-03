@@ -168,7 +168,9 @@ class BuildDistributionTests(unittest.TestCase):
                 self.partial.append(text)
 
         output_box = OutputBox()
-        next_heartbeat = build_dist._report_build_heartbeat(output_box, 100.0, 80.0)  # type: ignore[arg-type]
+        next_heartbeat = build_dist._report_build_heartbeat(
+            output_box, 100.0, 80.0, activity="Nuitka"
+        )  # type: ignore[arg-type]
 
         self.assertEqual(next_heartbeat, 115.0)
         self.assertEqual(len(output_box.partial), 1)
@@ -182,6 +184,7 @@ class BuildDistributionTests(unittest.TestCase):
         message, state = build_dist._monitor_build_stall(
             0.0,
             build_dist.BuildStallState(build_dist.BUILD_STALL_SECONDS),
+            activity="Nuitka",
         )
 
         self.assertIsNotNone(message)
@@ -196,10 +199,71 @@ class BuildDistributionTests(unittest.TestCase):
         message, state = build_dist._monitor_build_stall(
             0.0,
             build_dist.BuildStallState(600.0),
+            activity="Nuitka",
         )
 
         self.assertIsNone(message)
         self.assertEqual(state.next_check, 600.0)
+
+    def test_activity_names_the_executed_command_instead_of_a_package_argument(self) -> None:
+        cases = (
+            ([sys.executable, "-m", "pip", "install", "nuitka"], "pip install"),
+            ([sys.executable, "-m", "pip", "check"], "pip check"),
+            ([sys.executable, "-m", "ensurepip", "--upgrade"], "ensurepip"),
+            ([sys.executable, "-u", "-m", "nuitka", "cli/main.py"], "Nuitka"),
+            ([sys.executable, "-m", "nuitka", "cli/main.py"], "Nuitka"),
+            ([sys.executable, "-X", "utf8", "-m", "pip", "install"], "pip install"),
+            ([sys.executable, "-c", "print('nuitka')"], "Python command"),
+            ([sys.executable, str(Path("cli") / "build_native.py")], "build_native.py"),
+            (["ollama", "pull", "demo"], "ollama"),
+            (["nuitka.exe", "cli/main.py"], "Nuitka"),
+            (["nuitka.exe"], "Nuitka"),
+        )
+        for command, expected in cases:
+            with self.subTest(command=command):
+                self.assertEqual(build_dist._command_activity(command), expected)
+                self.assertEqual(build_dist._summarize_build_command(command), command)
+
+    def test_silent_pip_subprocess_gets_dynamic_heartbeat_and_stall_messages(self) -> None:
+        class OutputBox:
+            partial: list[str] = []
+            completed: list[str] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def write(self, text):
+                self.completed.append(text)
+
+            def write_partial(self, text):
+                self.partial.append(text)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # A local pip stand-in exercises a real silent subprocess without
+            # installing packages or relying on network access.
+            (root / "pip.py").write_text(
+                "import time; time.sleep(0.3); print('Installation finished')",
+                encoding="utf-8",
+            )
+            with (
+                patch.object(build_dist, "ROOT", root),
+                patch.object(build_dist, "CommandOutputBox", OutputBox),
+                patch.object(build_dist, "BUILD_HEARTBEAT_SECONDS", 0.05),
+                patch.object(build_dist, "BUILD_STALL_SECONDS", 0.1),
+            ):
+                build_dist.run([sys.executable, "-u", "-m", "pip", "install", "nuitka"])
+
+        self.assertTrue(OutputBox.partial)
+        self.assertTrue(all("pip install is running" in line for line in OutputBox.partial))
+        self.assertTrue(any("No new output from pip install" in line for line in OutputBox.completed))
+        self.assertIn("Installation finished", OutputBox.completed)
+        messages = " ".join(OutputBox.partial + OutputBox.completed)
+        self.assertNotIn("Nuitka", messages)
+        self.assertNotIn("linking", messages)
 
     def test_run_renders_unbuffered_progress_before_the_child_completes(self) -> None:
         class OutputBox:

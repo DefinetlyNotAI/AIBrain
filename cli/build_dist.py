@@ -307,11 +307,12 @@ def _record_build_output(line: str) -> None:
 
 def _summarize_build_command(command_line: list[str]) -> list[str]:
     """Keep interactive and completion records concise for long Nuitka commands."""
-    if "nuitka" not in command_line:
+    if len(command_line) < 2 or _command_activity(command_line) != "Nuitka":
         return command_line
 
+    prefix_end = command_line.index("-m") + 2 if "-m" in command_line else 1
     return [
-        *command_line[:4],
+        *command_line[:prefix_end],
         *[
             argument
             for argument in command_line
@@ -416,20 +417,55 @@ def _render_new_build_output(
     return offset, pending
 
 
+def _command_activity(command_line: list[str]) -> str:
+    """Name the running program, module, or script without exposing its arguments."""
+    executable = Path(command_line[0]).name
+    name = executable.lower().removesuffix(".exe")
+    if name == "nuitka":
+        return "Nuitka"
+    if not re.fullmatch(r"py|pythonw?(?:\d+(?:\.\d+)*)?", name):
+        return executable
+
+    arguments = iter(command_line[1:])
+    for argument in arguments:
+        if argument == "-m":
+            module = next(arguments, "Python")
+            if module == "nuitka":
+                return "Nuitka"
+            if module == "pip":
+                operation = next(arguments, "")
+                if operation in {"install", "download", "wheel", "check", "uninstall"}:
+                    return f"pip {operation}"
+            return module
+        if argument == "-c":
+            return "Python command"
+        if argument in {"-W", "-X", "--check-hash-based-pycs"}:
+            next(arguments, None)
+        elif not argument.startswith("-"):
+            return Path(argument).name
+    return "Python"
+
+
 def _report_build_heartbeat(
         output_box: CommandOutputBox,
         last_heartbeat: float,
         last_child_output: float,
+        *,
+        activity: str,
 ) -> float:
-    """Keep silent Nuitka stages visibly alive without implying progress."""
+    """Identify the active command during silence without implying progress."""
     now = time.monotonic()
     if now - last_heartbeat < BUILD_HEARTBEAT_SECONDS:
         return last_heartbeat
 
     silent_seconds = now - last_child_output
+    explanation = (
+        " Source generation, compilation, and linking can be silent."
+        if activity == "Nuitka" else ""
+    )
     output_box.write_partial(
-        "Still working: Nuitka is running without new output "
-        f"for {silent_seconds:.0f}s (source generation, compilation, and linking can be silent)."
+        f"Still working: {activity} is running without new output "
+        f"for {silent_seconds:.0f}s.{explanation}"
     )
     return now
 
@@ -437,15 +473,22 @@ def _report_build_heartbeat(
 def _monitor_build_stall(
         last_child_output: float,
         state: BuildStallState,
+        *,
+        activity: str,
 ) -> tuple[str | None, BuildStallState]:
     """Report extended silence without blocking the output pump or Qt event loop."""
     now = time.monotonic()
     if now - last_child_output < BUILD_STALL_SECONDS or now < state.next_check:
         return None, state
 
+    explanation = (
+        "Native linking can remain silent for a long time. "
+        if activity == "Nuitka" else ""
+    )
     message = (
-        f"No new Nuitka output for {now - last_child_output:.0f}s. "
-        "The process is still alive; native linking can remain silent for a long time. "
+        f"No new output from {activity} for {now - last_child_output:.0f}s. "
+        "The process is still alive. "
+        f"{explanation}"
         "Monitoring will continue. Press Ctrl+C once to stop the process tree."
     )
     return message, BuildStallState(now + BUILD_STALL_RECHECK_SECONDS)
@@ -664,6 +707,7 @@ def _run_with_conpty(
     command_line: list[str],
 ) -> None:
     """Run Nuitka through ConPTY so terminal progress remains live."""
+    activity = _command_activity(command_line)
     process = _create_conpty_process(command_line)
 
     chunks: queue.Queue[bytes | None] = queue.Queue()
@@ -740,10 +784,12 @@ def _run_with_conpty(
                         output_box,
                         last_heartbeat,
                         last_child_output,
+                        activity=activity,
                     )
                     stall_message, stall_state = _monitor_build_stall(
                         last_child_output,
                         stall_state,
+                        activity=activity,
                     )
                     if stall_message:
                         output_box.write(stall_message)
@@ -812,6 +858,7 @@ def _run_with_file_tailer(
         command_line: list[str],
 ) -> None:
     """Fallback runner for platforms without Windows ConPTY."""
+    activity = _command_activity(command_line)
     with tempfile.TemporaryDirectory(
             prefix="aibrain-nuitka-"
     ) as temporary_directory:
@@ -868,11 +915,13 @@ def _run_with_file_tailer(
                                 output_box,
                                 last_heartbeat,
                                 last_child_output,
+                                activity=activity,
                             )
 
                         stall_message, stall_state = _monitor_build_stall(
                             last_child_output,
                             stall_state,
+                            activity=activity,
                         )
                         if stall_message:
                             output_box.write(stall_message)

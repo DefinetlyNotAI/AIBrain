@@ -47,6 +47,8 @@ The installer previews commands with PowerShell-safe quoting and streams their o
 by the distribution builder. In an interactive terminal, the bottom border remains visible while the command runs:
 new lines replace the old border and move it down, while progress updates replace their previous rows in place.
 Each update writes the output and its border together. Redirected output uses a single closing border when the command ends.
+During silent periods, heartbeat and extended-wait messages name the active command, such as `pip install`, `ensurepip`,
+or a Python script. Nuitka compilation explanations appear only when Nuitka itself is running.
 
 It requires a binary wheel for `llama-cpp-python` and reinstalls it even when switching
 between CPU and CUDA builds with the same version. It confirms that the selected wheel can load its native runtime,
