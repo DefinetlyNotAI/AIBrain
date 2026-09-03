@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
 
 from src.utils.kernel32 import kernel32
 from src.utils.console_ui import (
+    COMMAND_INDENT,
     Color,
     CommandOutputBox,
     clear_screen,
@@ -35,6 +36,7 @@ from src.utils.console_ui import (
     panel,
     report_keyboard_interrupt,
     section,
+    terminal_width,
 )
 from src.utils.gpu import set_windows_executable_gpu_preference
 from src.utils.runtime import require_managed_runtime
@@ -334,13 +336,6 @@ def _write_completed_build_line(output_box: CommandOutputBox, line: str) -> None
     _record_build_output(line)
     if _is_build_noise(line):
         return
-    module = re.fullmatch(
-        r"Nuitka-Progress: Optimizing module '(.*?)', (\d+) more modules to go after that\.",
-        line.strip(),
-    )
-    if module:
-        output_box.write_progress(f"Analyzing {module[1]} ({module[2]} modules remaining)")
-        return
     output_box.write(line)
 
 
@@ -392,7 +387,12 @@ def _render_output_text(
 
     visible_partial = pending or live_frame
     if visible_partial and not _is_build_noise(visible_partial):
-        output_box.write_partial(visible_partial)
+        if re.search(r"\d+(?:\.\d+)?%.*?\b\d+/\d+", visible_partial):
+            # Keep Nuitka's own bar, percentage, counts, and current item. A
+            # captured console gets periodic snapshots instead of losing it.
+            output_box.write_progress(visible_partial)
+        else:
+            output_box.write_partial(visible_partial)
 
     return pending
 
@@ -878,6 +878,22 @@ def _run_with_conpty(
         )
 
 
+def _build_process_environment(command_line: list[str]) -> dict[str, str] | None:
+    """Let Nuitka's native Rich bars render through our incremental capture."""
+    if _command_activity(command_line) != "Nuitka":
+        return None
+    environment = os.environ.copy()
+    environment.update({
+        "TTY_COMPATIBLE": "1",
+        "TTY_INTERACTIVE": "1",
+        "TERM": "xterm-256color",
+        "COLUMNS": str(max(terminal_width() - COMMAND_INDENT - 4, 16)),
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+    })
+    return environment
+
+
 def _run_with_file_tailer(
         command_line: list[str],
 ) -> None:
@@ -900,6 +916,7 @@ def _run_with_file_tailer(
             process = subprocess.Popen(
                 command_line,
                 cwd=ROOT,
+                env=_build_process_environment(command_line),
                 stdout=output_file,
                 stderr=subprocess.STDOUT,
                 creationflags=getattr(
@@ -1090,7 +1107,7 @@ def nuitka_command(
         "-u",
         "-m",
         "nuitka",
-        "--show-progress",
+        "--progress-bar=rich",
         "--standalone",
         "--assume-yes-for-downloads",
         "--enable-plugin=pyside6",
@@ -1340,7 +1357,7 @@ def main() -> int:
     )
     section("Build session", 1)
     info(f"Log file: {runtime_log}")
-    info("Live module progress, build stages, warnings, and results appear below")
+    info("Native Nuitka progress bars, build stages, warnings, and results appear below")
 
     try:
         selected = tuple(

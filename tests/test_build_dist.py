@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 import sys
 import time
 import unittest
@@ -158,25 +159,28 @@ class BuildDistributionTests(unittest.TestCase):
             ["Nuitka-Options: --standalone", "Nuitka-Options:WARNING: check flags", "Nuitka: compiling"],
         )
 
-    def test_build_progress_keeps_modules_and_stages_but_logs_optimization_noise(self) -> None:
+    def test_native_progress_bars_remain_intact_while_diagnostics_are_preserved(self) -> None:
         from tests.test_console_ui import TerminalOutput
 
         output = TerminalOutput()
         lines = [
             "Nuitka-Progress: PASS 1:",
-            "Nuitka-Progress: Optimizing module 'alpha', 12 more modules to go after that.",
             "Nuitka-Progress: Not finished with the module due to following change kinds: var_usage",
             "Nuitka-Progress: Finished with the module.",
             "Nuitka-Inclusion: Demoting module 'alpha' to bytecode from 'alpha.py'.",
             "Nuitka-Memory: Total memory usage: 100 MB",
-            "Nuitka-Progress: Optimizing module 'beta', 11 more modules to go after that.",
         ]
         with redirect_stdout(output), patch.object(build_dist, "_record_build_output") as record:
             with build_dist.CommandOutputBox(live=True) as box:
                 build_dist._render_output_text("\n".join(lines) + "\n", "", box)
+                first = "PASS 1 ------ 25.0% | 1/4 modules | alpha"
+                latest = "PASS 1 ------------------ 75.0% | 3/4 modules | beta"
+                build_dist._render_output_text(first + "\r", "", box)
+                self.assertIn(first, "\n".join(output.frames[-1]))
+                build_dist._render_output_text(latest + "\r", "", box)
                 screen = "\n".join(output.frames[-1])
-                self.assertIn("Analyzing beta (11 modules remaining)", screen)
-                self.assertNotIn("Analyzing alpha", screen)
+                self.assertIn(latest, screen)
+                self.assertNotIn(first, screen)
                 self.assertIn("PASS 1", screen)
                 self.assertNotIn("var_usage", output.getvalue())
                 self.assertNotIn("bytecode", output.getvalue())
@@ -190,6 +194,32 @@ class BuildDistributionTests(unittest.TestCase):
                     build_dist._write_completed_build_line(box, message)
                     self.assertIn(message, output.getvalue())
         self.assertEqual([call.args[0] for call in record.call_args_list[:len(lines)]], lines)
+
+    def test_native_bar_environment_is_scoped_to_nuitka_and_matches_box_width(self) -> None:
+        with (
+            patch.dict(os.environ, {"TTY_COMPATIBLE": "0", "TTY_INTERACTIVE": "0", "COLUMNS": "140"}),
+            patch.object(build_dist, "terminal_width", return_value=80),
+        ):
+            environment = build_dist._build_process_environment([sys.executable, "-u", "-m", "nuitka"])
+            self.assertEqual(environment["TTY_COMPATIBLE"], "1")
+            self.assertEqual(environment["TTY_INTERACTIVE"], "1")
+            self.assertEqual(environment["COLUMNS"], "74")
+            self.assertEqual(environment["PYTHONIOENCODING"], "utf-8")
+            self.assertEqual(os.environ["TTY_COMPATIBLE"], "0")
+            self.assertEqual(os.environ["COLUMNS"], "140")
+            self.assertIsNone(build_dist._build_process_environment(
+                [sys.executable, "-m", "pip", "install", "nuitka"]
+            ))
+
+    def test_captured_native_bars_are_visible_without_printing_every_redraw(self) -> None:
+        with redirect_stdout(StringIO()) as output, build_dist.CommandOutputBox(live=False) as box:
+            for now, percentage in ((10.0, 25), (11.0, 50), (13.0, 75)):
+                frame = f"PASS 1 ------ {percentage}.0% | 1/4 modules | example"
+                with patch.object(build_dist.time, "monotonic", return_value=now):
+                    build_dist._render_output_text(frame + "\r", "", box)
+        self.assertIn("25.0%", output.getvalue())
+        self.assertNotIn("50.0%", output.getvalue())
+        self.assertIn("75.0%", output.getvalue())
 
     @patch("cli.build_dist.time.monotonic", return_value=115.0)
     def test_silent_build_heartbeat_reports_live_work(self, _monotonic) -> None:  # type: ignore[no-untyped-def]
@@ -469,8 +499,8 @@ class BuildDistributionTests(unittest.TestCase):
             command = build_dist.nuitka_command(target, Path("build"), [Path("vcomp140.dll")], numpy_runtime)
             self.assertIn(f"--windows-icon-from-ico={target.icon}", command)
             self.assertIn(f"--output-filename={target.executable}", command)
-            self.assertIn("--show-progress", command)
-            for option in ("--verbose", "--show-scons", "--show-modules", "--show-memory"):
+            self.assertIn("--progress-bar=rich", command)
+            for option in ("--verbose", "--show-progress", "--show-scons", "--show-modules", "--show-memory"):
                 self.assertNotIn(option, command)
             excluded = {
                 item.removeprefix("--nofollow-import-to=")
