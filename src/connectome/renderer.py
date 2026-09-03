@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from ..utils.array_api import array_api as np
+import numpy as np
 from PySide6.QtCore import QPointF, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -11,6 +11,7 @@ from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP, cluster_colour_map_for_background
 from .graph import ConnectomeGraph
 from ..native.wrapper.connectome_kernels import native
+from ..utils.array_api import to_numpy
 from ..utils.gpu import can_request_gpu_relaunch, should_prefer_high_performance_gpu
 
 LOG = logging.getLogger(__name__)
@@ -111,7 +112,8 @@ class ConnectomeRenderer(QOpenGLWidget):
             if len(self.graph.positions) <= 5_000
             else 50_000 if len(self.graph.positions) <= 12_000 else 110_000
         )
-        return self.graph.edges[:: max(1, len(self.graph.edges) // target)]
+        selected = self.graph.edges[:: max(1, len(self.graph.edges) // target)]
+        return np.ascontiguousarray(to_numpy(selected), dtype=np.int32)
 
     def initializeGL(self) -> None:
         try:
@@ -173,13 +175,14 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def _build_gpu_resources(self) -> None:
         assert self._ctx is not None
-        positions = np.ascontiguousarray(self.graph.positions, dtype="f4")
-        regions = np.ascontiguousarray(self.graph.regions.astype("f4"))
+        positions = np.ascontiguousarray(to_numpy(self.graph.positions), dtype="f4")
+        graph_regions = to_numpy(self.graph.regions)
+        regions = np.ascontiguousarray(graph_regions, dtype="f4")
         edge_positions = np.ascontiguousarray(
             positions[self._render_edges].reshape(-1, 3)
         )
         edge_regions = np.ascontiguousarray(
-            self.graph.regions[self._render_edges].reshape(-1).astype("f4")
+            graph_regions[self._render_edges].reshape(-1).astype("f4")
         )
         position_buffer = self._ctx.buffer(positions.tobytes())
         region_buffer = self._ctx.buffer(regions.tobytes())
@@ -267,7 +270,7 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._node_activity_buffer is not None
             and self._edge_activity_buffer is not None
         )
-        values = np.ascontiguousarray(self.field.values, dtype="f4")
+        values = np.ascontiguousarray(to_numpy(self.field.values), dtype="f4")
         native.edges(values, self._render_edges, self._edge_activity_values)
         self._node_activity_buffer.write(values.tobytes())
         self._edge_activity_buffer.write(self._edge_activity_values.tobytes())
@@ -322,10 +325,12 @@ class ConnectomeRenderer(QOpenGLWidget):
         indices = self._visible_indices()
         points = self._project_for_pick()[indices]
         stride = max(1, len(points) // 3000)
+        activities = to_numpy(self.field.values)[indices]
+        regions = to_numpy(self.graph.regions)[indices]
         for point, activity, region in zip(
             points[::stride],
-            self.field.values[indices][::stride],
-            self.graph.regions[indices][::stride],
+            activities[::stride],
+            regions[::stride],
         ):
             colour = QColor(
                 self._cluster_colour_map[self.graph.region_names[int(region)]]
@@ -336,7 +341,7 @@ class ConnectomeRenderer(QOpenGLWidget):
         painter.end()
 
     def _project_for_pick(self) -> np.ndarray:
-        p = self.graph.positions
+        p = to_numpy(self.graph.positions)
         if self.view_mode == "2d":
             x, y = p[:, 0], p[:, 1]
             scale = min(self.width(), self.height()) / (32 * self.zoom)
@@ -448,4 +453,4 @@ class ConnectomeRenderer(QOpenGLWidget):
     def _visible_indices(self) -> np.ndarray:
         if self.region_filter is None:
             return np.arange(len(self.graph.positions))
-        return np.flatnonzero(self.graph.regions == self.region_filter)
+        return np.flatnonzero(to_numpy(self.graph.regions) == self.region_filter)

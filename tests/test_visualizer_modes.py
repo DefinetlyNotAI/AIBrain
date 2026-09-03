@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 import unittest
 
+import numpy as host_np
+
 from src.connectome.renderer import ConnectomeRenderer
 from src.utils.array_api import array_api as np
 
@@ -32,6 +34,21 @@ class VisualizerModeTests(unittest.TestCase):
 
         self.assertEqual(matrix[3, 0], .2)
         self.assertEqual(matrix[3, 1], -.3)
+
+    def test_projection_matrix_is_always_a_host_numpy_array(self) -> None:
+        renderer = SimpleNamespace(
+            view_mode="3d",
+            zoom=1.0,
+            yaw=.25,
+            pitch=-.2,
+            width=lambda: 800,
+            height=lambda: 600,
+        )
+
+        matrix = ConnectomeRenderer._mvp(renderer)  # type: ignore[arg-type]
+
+        self.assertIsInstance(matrix, host_np.ndarray)
+        self.assertTrue(matrix.flags.c_contiguous)
 
     def test_sector_mode_limits_visible_neurons_and_rejects_invalid_regions(self) -> None:
         renderer = SimpleNamespace(
