@@ -26,8 +26,8 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import (
     Color as Colour,
+    CommandOutputBox,
     clear_screen,
-    command_output_box,
     command_preview,
     error,
     header,
@@ -70,11 +70,12 @@ def run_command(
         check: bool = False,
         show_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    """Run an external command and render its output consistently."""
+    """Run an external command and render each output line as it arrives."""
     command_preview(command_line)
-
+    process: subprocess.Popen[str] | None = None
+    captured: list[str] = []
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             command_line,
             cwd=ROOT,
             text=True,
@@ -82,27 +83,36 @@ def run_command(
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            bufsize=1,
         )
+        if process.stdout is None:
+            raise RuntimeError("Could not capture command output")
+        with CommandOutputBox() as output_box:
+            for output_line in process.stdout:
+                captured.append(output_line)
+                if show_output:
+                    output_box.write(output_line)
+        return_code = process.wait()
     except KeyboardInterrupt:
-        log_completed_command(command_line, "", return_code=None, interrupted=True)
+        if process is not None and process.poll() is None:
+            process.terminate()
+            process.wait()
+        log_completed_command(
+            command_line, "".join(captured).rstrip(), return_code=None, interrupted=True
+        )
         raise
 
-    output = result.stdout.rstrip()
-    log_completed_command(command_line, output, return_code=result.returncode)
+    output = "".join(captured).rstrip()
+    log_completed_command(command_line, output, return_code=return_code)
 
-    if show_output:
-        command_output_box(
-            output or f"Command completed with exit code {result.returncode}."
-        )
-
-    if check and result.returncode:
+    if check and return_code:
         raise subprocess.CalledProcessError(
-            result.returncode,
+            return_code,
             command_line,
             output=output,
         )
 
-    return result
+    return subprocess.CompletedProcess(command_line, return_code, output, "")
 
 
 def discover_compiler(explicit: str | None) -> Compiler:

@@ -72,6 +72,7 @@ SUITES: dict[str, tuple[str, list[str]]] = {
     "4": (
         "Build and packaging tests",
         [
+            "tests.test_build_native",
             "tests.test_build_dist",
             "tests.test_packaged_utilities",
         ],
