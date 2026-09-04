@@ -6,8 +6,11 @@ from dataclasses import replace
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Callable
 
+import numpy as np
+
+from .instrumented_backend import GenerationChunk, LogitMetrics
 from .llama_runtime import load_llama_cpp
 
 if TYPE_CHECKING:
@@ -15,6 +18,7 @@ if TYPE_CHECKING:
     from llama_cpp.llama_types import ChatCompletionRequestMessage
 
 LOG = logging.getLogger(__name__)
+
 
 @dataclass(slots=True)
 class GenerationConfig:
@@ -27,6 +31,62 @@ class GenerationConfig:
 
 
 _SENTENCE_END_RE = re.compile(r"[.!?][\"')\]]*\s*$")
+
+
+class _LogitTelemetryProbe:
+    """Read raw model logits before sampler transforms without changing them."""
+
+    def __init__(self, context_tokens: Callable[[], int]) -> None:
+        self._context_tokens = context_tokens
+        self._latest: LogitMetrics | None = None
+
+    def __call__(self, _input_ids: np.ndarray, scores: np.ndarray) -> np.ndarray:
+        values = np.asarray(scores, dtype=np.float32)
+        vocabulary_size = int(values.size)
+        if not vocabulary_size or not bool(np.isfinite(values).all()):
+            self._latest = None
+            return scores
+        maximum = float(values.max())
+        weights = np.exp(values - maximum)
+        total = float(weights.sum(dtype=np.float64))
+        if not np.isfinite(total) or total <= 0:
+            self._latest = None
+            return scores
+        probabilities = weights / total
+        entropy_nats = float(
+            np.log(total)
+            - np.sum(probabilities * (values - maximum), dtype=np.float64)
+        )
+        maximum_entropy = float(np.log(vocabulary_size))
+        entropy_nats = min(maximum_entropy, max(0.0, entropy_nats))
+        candidate_count = min(5, vocabulary_size)
+        top = np.partition(probabilities, vocabulary_size - candidate_count)[
+            -candidate_count:
+        ]
+        top.sort()
+        top_probability = float(top[-1])
+        second_probability = float(top[-2]) if candidate_count > 1 else 0.0
+        self._latest = LogitMetrics(
+            vocabulary_size=vocabulary_size,
+            context_tokens=max(0, int(self._context_tokens())),
+            raw_entropy_bits=entropy_nats / np.log(2.0),
+            raw_normalized_entropy=min(
+                1.0, max(0.0, entropy_nats / max(maximum_entropy, 1e-6))
+            ),
+            raw_top_probability=top_probability,
+            raw_top_five_mass=min(
+                1.0, max(0.0, float(top.sum(dtype=np.float64)))
+            ),
+            raw_confidence_margin=min(
+                1.0, max(0.0, top_probability - second_probability)
+            ),
+        )
+        return scores
+
+    def take(self) -> LogitMetrics | None:
+        latest = self._latest
+        self._latest = None
+        return latest
 
 
 def sentence_grace_config(config: GenerationConfig) -> GenerationConfig:
@@ -92,16 +152,19 @@ class LlamaBackend:
             self,
             messages: list[ChatCompletionRequestMessage],
             config: GenerationConfig,
-    ) -> Iterator[str]:
+    ) -> Iterator[GenerationChunk]:
         if self._llm is None:
             raise RuntimeError("No model is loaded")
 
+        llm = self._llm
+        telemetry = _LogitTelemetryProbe(lambda: llm.n_tokens)
         response = self._llm.create_chat_completion(
             messages=messages,
             temperature=config.temperature,
             top_p=config.top_p,
             max_tokens=config.max_tokens,
             stream=True,
+            logits_processor=[telemetry],
         )
 
         for chunk in response:
@@ -123,7 +186,11 @@ class LlamaBackend:
             token = delta.get("content")
 
             if isinstance(token, str) and token:
-                yield token
+                yield GenerationChunk(
+                    token,
+                    tuple(self.tokenize(token)),
+                    telemetry.take(),
+                )
 
     def tokenize(self, text: str) -> list[int]:
         if self._llm is None:

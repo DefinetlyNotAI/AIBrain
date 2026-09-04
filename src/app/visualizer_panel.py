@@ -44,13 +44,13 @@ class PlaybackStep:
     peaks: np.ndarray
 
 
-class NeuronInspectorLabel(QLabel):
-    """Selectable inspector text with a click target only over the node number."""
+class SignalNodeInspectorLabel(QLabel):
+    """Selectable inspector text with a click target only over the signal-node number."""
 
-    neuronNumberClicked = Signal()
-    _prefix = "Selected neuron: "
+    nodeNumberClicked = Signal()
+    _prefix = "Selected signal node: "
 
-    def set_neuron_details(self, index: int, details: str) -> None:
+    def set_node_details(self, index: int, details: str) -> None:
         self.setText(f"{self._prefix}{index:05d}{details}")
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -60,7 +60,7 @@ class NeuronInspectorLabel(QLabel):
             event.button() == Qt.MouseButton.LeftButton
             and prefix_width <= event.position().x() <= prefix_width + number_width
         ):
-            self.neuronNumberClicked.emit()
+            self.nodeNumberClicked.emit()
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -118,10 +118,10 @@ class VisualizerPanel(QWidget):
         header.setHorizontalSpacing(8)
         header.setVerticalSpacing(6)
 
-        title = QLabel("Live Connectome")
+        title = QLabel("Real-Time Connectome")
         title.setObjectName("title")
 
-        self.mode = QLabel("SIMULATION")
+        self.mode = QLabel("REAL-TIME")
         self.mode.setObjectName("mode")
 
         self.quality = QComboBox()
@@ -147,17 +147,17 @@ class VisualizerPanel(QWidget):
 
         settings = QSettings()
 
-        self.neuron_borders = QCheckBox("Neuron borders")
-        self.neuron_borders.setToolTip(
-            "Outline each visual neuron for clearer separation"
+        self.node_borders = QCheckBox("Signal-node borders")
+        self.node_borders.setToolTip(
+            "Outline each telemetry display node for clearer separation"
         )
 
-        neuron_borders_value = settings.value("neuron_borders", True)
-        self.neuron_borders.setChecked(
-            neuron_borders_value if isinstance(neuron_borders_value, bool) else True
+        node_borders_value = settings.value("neuron_borders", True)
+        self.node_borders.setChecked(
+            node_borders_value if isinstance(node_borders_value, bool) else True
         )
 
-        self.neuron_borders.toggled.connect(self._set_neuron_borders)
+        self.node_borders.toggled.connect(self._set_node_borders)
 
         self.border_width = QDoubleSpinBox()
         self.border_width.setRange(0, 1)
@@ -171,14 +171,14 @@ class VisualizerPanel(QWidget):
             else 0.12
         )
 
-        self.border_width.setToolTip("Neuron outline width")
+        self.border_width.setToolTip("Signal-node outline width")
         self.border_width.valueChanged.connect(
-            lambda _: self._set_neuron_borders(self.neuron_borders.isChecked())
+            lambda _: self._set_node_borders(self.node_borders.isChecked())
         )
 
         self.analysis = QPushButton("NN Analysis+")
         self.analysis.setToolTip(
-            "Analyze every recorded visual frame and export compact neural-network findings"
+            "Analyze recorded real-time inference telemetry and export compact findings"
         )
         self.analysis.clicked.connect(self.run_nn_analysis_plus)
         self.analysis.hide()
@@ -230,7 +230,7 @@ class VisualizerPanel(QWidget):
         settings_body = QWidget()
         settings_layout = QFormLayout(settings_body)
         settings_layout.setContentsMargins(0, 2, 0, 6)
-        settings_layout.addRow("Simulation Performance", self.quality)
+        settings_layout.addRow("Signal-map detail", self.quality)
         settings_layout.addRow("Rendering GPU", self.render_gpu)
         spacing_row = QWidget()
         spacing_row_layout = QHBoxLayout(spacing_row)
@@ -241,9 +241,9 @@ class VisualizerPanel(QWidget):
         borders_row = QWidget()
         borders_layout = QHBoxLayout(borders_row)
         borders_layout.setContentsMargins(0, 0, 0, 0)
-        borders_layout.addWidget(self.neuron_borders)
+        borders_layout.addWidget(self.node_borders)
         borders_layout.addWidget(self.border_width)
-        settings_layout.addRow("Neuron Borders (0–1)", borders_row)
+        settings_layout.addRow("Signal-node borders (0–1)", borders_row)
         self.settings_panel = QScrollArea()
         self.settings_panel.setWidgetResizable(True)
         self.settings_panel.setFrameShape(QFrame.Shape.NoFrame)
@@ -265,9 +265,9 @@ class VisualizerPanel(QWidget):
         self.replay_rewind = QPushButton("Replay")
         self.next_rewind = QPushButton("Next")
         for button, tip in (
-            (self.previous_rewind, "Show the previous recorded token frame"),
-            (self.replay_rewind, "Play recorded token frames from the beginning"),
-            (self.next_rewind, "Show the next recorded token frame"),
+            (self.previous_rewind, "Show the previous recorded telemetry frame"),
+            (self.replay_rewind, "Play recorded telemetry frames from the beginning"),
+            (self.next_rewind, "Show the next recorded telemetry frame"),
         ):
             button.setToolTip(tip)
             rewind_layout.addWidget(button)
@@ -288,14 +288,14 @@ class VisualizerPanel(QWidget):
         self.overlay.setWordWrap(True)
         self.overlay.setTextInteractionFlags(selectable_text_flags)
 
-        self.inspector = NeuronInspectorLabel(
-            "Click a visual neuron to inspect its mapped visual data."
+        self.inspector = SignalNodeInspectorLabel(
+            "Click a signal node to inspect its measured telemetry channel."
         )
         self.inspector.setObjectName("muted")
         self.inspector.setTextInteractionFlags(selectable_text_flags)
-        self.inspector.neuronNumberClicked.connect(self._prompt_for_neuron)
+        self.inspector.nodeNumberClicked.connect(self._prompt_for_node)
 
-        self.silence = QPushButton("Silence selected neuron")
+        self.silence = QPushButton("Hide selected signal node")
         self.silence.clicked.connect(self._toggle_selected_node)
         self.silence.setEnabled(False)
 
@@ -316,7 +316,7 @@ class VisualizerPanel(QWidget):
         self.layout.addWidget(self.inspector)
         self.layout.addLayout(inspect_controls)
 
-        self._set_neuron_borders(self.neuron_borders.isChecked())
+        self._set_node_borders(self.node_borders.isChecked())
         self._refresh_overlay()
 
     def _rebuild(self, quality: str) -> None:
@@ -331,9 +331,9 @@ class VisualizerPanel(QWidget):
         if hasattr(self, "region_selector"):
             self._populate_region_selector()
             self._apply_view_mode()
-        if hasattr(self, "neuron_borders"):
-            self.renderer.set_neuron_borders(
-                self.neuron_borders.isChecked(), self.border_width.value()
+        if hasattr(self, "node_borders"):
+            self.renderer.set_node_borders(
+                self.node_borders.isChecked(), self.border_width.value()
             )
         self.layout.insertWidget(index, self.renderer, 1)
         self._refresh_overlay()
@@ -397,7 +397,7 @@ class VisualizerPanel(QWidget):
                 frame, self.field.values.copy(), self.field.peaks.copy()
             )
             self._playback.append(signal)
-            self.analyzer.observe(frame, self.field.values)
+            self.analyzer.observe(frame)
             self._analysis_retained_bytes += self._signal_bytes(signal)
             self._trim_analysis_memory()
         self._refresh_overlay()
@@ -451,7 +451,7 @@ class VisualizerPanel(QWidget):
         return (
             signal.values.nbytes
             + signal.peaks.nbytes
-            + len(signal.frame.token_text.encode("utf-8"))
+            + len(signal.frame.chunk_text.encode("utf-8"))
             + 96
         )
 
@@ -549,7 +549,15 @@ class VisualizerPanel(QWidget):
         self.field.values[:] = step.values
         self.field.peaks[:] = step.peaks
         self.field.step = step.frame.step
-        self.field.current_token = step.frame.token_text
+        self.field.current_chunk = step.frame.chunk_text
+        self.field.current_source = step.frame.source.value
+        self.field.telemetry = {
+            name: float(value) for name, value in step.frame.metrics.items()
+        }
+        self.field.channel_values = {
+            name: float(np.clip(step.frame.regions.get(name, 0.0), 0.0, 1.0))
+            for name in self.graph.region_names
+        }
         self.field.last_time = monotonic()
         self.mode.setText(step.frame.source.value.upper())
         self.renderer.update()
@@ -581,18 +589,42 @@ class VisualizerPanel(QWidget):
                 | (self.field.values[self.graph.edges[:, 1]] > 0.1)
             )
         )
-        strongest = int(self.field.values.argmax()) if len(self.field.values) else 0
-        region = self.graph.region_names[int(self.graph.regions[strongest])]
         backend = getattr(self, "_backend", "ModernGL GPU renderer initializing…")
+        metrics = self.field.telemetry
+        data_text = "awaiting the first generated chunk"
+        measurement_text = "  ·  Strongest measurement: awaiting data"
+        if metrics:
+            strongest_channel = max(
+                self.graph.region_names,
+                key=lambda name: self.field.channel_values.get(name, 0.0),
+            )
+            raw_logits_available = bool(metrics.get("raw_logits_available", 0.0))
+            data_text = (
+                "live raw llama.cpp logits and observed stream timing"
+                if raw_logits_available
+                else "live stream timing; raw-logit snapshot unavailable"
+            )
+            raw_logit_text = (
+                f"  ·  Raw-logit entropy {metrics.get('raw_logit_entropy_bits', 0.0):.2f} bits"
+                f"  ·  Raw top {metrics.get('raw_top_probability', 0.0) * 100:.1f}%"
+                if raw_logits_available
+                else "  ·  Raw logits unavailable for this chunk"
+            )
+            measurement_text = (
+                f"  ·  Strongest measurement: {strongest_channel}"
+                f"{raw_logit_text}"
+                f"  ·  Stream latency {metrics.get('stream_latency_ms', 0.0):.1f} ms"
+                f"  ·  {metrics.get('retokenized_tokens_per_second', 0.0):.1f} retokenized tok/s"
+            )
         self.overlay.setText(
             f"{backend}"
-            f"  ·  Visualization: Simulation (token-driven)"
+            f"  ·  Data: {data_text}"
             f"  ·  View: {'2D sector' if self.renderer.region_filter is not None else self.renderer.view_mode.upper()}"
             f"  ·  Step {self.field.step}"
-            f"  ·  Active neurons {self.field.active_count:,}"
-            f"  ·  Active pathways {active_edges:,}"
-            f"  ·  Strongest: {region}"
-            f"  ·  Token: {self.field.current_token!r}"
+            f"  ·  Lit display nodes {self.field.active_count:,}"
+            f"  ·  Lit display links {active_edges:,}"
+            f"  ·  Output chunk: {self.field.current_chunk!r}"
+            f"{measurement_text}"
         )
 
     def _set_backend(self, backend: str) -> None:
@@ -604,20 +636,22 @@ class VisualizerPanel(QWidget):
         self.silence.setEnabled(True)
         self.importance.setEnabled(True)
         self.importance.setValue(float(self.field.importance[index]))
-        self.inspector.set_neuron_details(
+        channel = self.graph.region_names[int(self.graph.regions[index])]
+        self.inspector.set_node_details(
             index,
-            f"  ·  Region: {self.graph.region_names[int(self.graph.regions[index])]}"
-            f"  ·  Current activity: {self.field.values[index]:.3f}"
-            f"  ·  Peak: {self.field.peaks[index]:.3f}"
-            f"  ·  Data source: Simulation",
+            f"  ·  Channel: {channel}"
+            f"  ·  Normalized measurement: {self.field.channel_values.get(channel, 0.0):.3f}"
+            f"  ·  Display intensity: {self.field.values[index]:.3f}"
+            f"  ·  Display peak: {self.field.peaks[index]:.3f}"
+            f"  ·  Data source: {self.field.current_source} llama.cpp telemetry",
         )
 
-    def _prompt_for_neuron(self) -> None:
+    def _prompt_for_node(self) -> None:
         current = self._selected_node if self._selected_node is not None else 0
         index, accepted = QInputDialog.getInt(
             self,
-            "Select visual neuron",
-            "Neuron number:",
+            "Select signal node",
+            "Signal-node number:",
             current,
             0,
             len(self.graph.positions) - 1,
@@ -632,7 +666,7 @@ class VisualizerPanel(QWidget):
         disabled = not bool(self.field.disabled[index])
         self.field.set_disabled(index, disabled)
         self.silence.setText(
-            "Restore selected neuron" if disabled else "Silence selected neuron"
+            "Show selected signal node" if disabled else "Hide selected signal node"
         )
         self.renderer.update()
 
@@ -651,11 +685,11 @@ class VisualizerPanel(QWidget):
         self._cluster_spacing = self._pending_cluster_spacing
         self._rebuild(self.quality.currentText())
 
-    def _set_neuron_borders(self, visible: bool) -> None:
+    def _set_node_borders(self, visible: bool) -> None:
         QSettings().setValue("neuron_borders", visible)
         QSettings().setValue("neuron_border_width", self.border_width.value())
         if hasattr(self, "renderer"):
-            self.renderer.set_neuron_borders(visible, self.border_width.value())
+            self.renderer.set_node_borders(visible, self.border_width.value())
 
     def run_nn_analysis_plus(self) -> None:
         if not self.has_analysis_records:
@@ -695,8 +729,8 @@ class VisualizerPanel(QWidget):
             "NN Analysis+ complete",
             f"Created {Path(filename).name}\n\n"
             f"Conversation turns: {len(self._conversation)}\n"
-            f"Visual brain-signal frames analyzed: {frame_count}\n\n"
-            f"The JSON contains compact neural-network findings, not a raw frame dump.",
+            f"Real-time inference frames analyzed: {frame_count}\n\n"
+            f"The JSON contains compact telemetry findings, not a raw frame dump.",
         )
 
     def run_session_analysis(self) -> None:

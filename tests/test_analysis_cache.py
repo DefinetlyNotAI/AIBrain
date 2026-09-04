@@ -17,16 +17,17 @@ from src.models.instrumented_backend import ActivationFrame, ActivitySource
 def _record(step: int) -> AnalysisRecord:
     return AnalysisRecord(
         step=step,
-        token=f"token-{step}",
-        active_nodes=step,
-        mean_activity=0.2,
-        peak_activity=0.8,
-        dominant_region="Token Input",
+        output_text=f"token-{step}",
+        active_channels=step,
+        mean_signal=0.2,
+        peak_signal=0.8,
+        dominant_channel="Raw-logit entropy",
         novelty=0.1 * step,
         reconstruction_error=0.02,
         coherence=0.9,
         embedding=(0.1, 0.2),
-        regional_activity=(0.3, 0.4),
+        channel_values=(0.3, 0.4),
+        telemetry={"raw_logit_entropy_bits": 4.2},
     )
 
 
@@ -41,7 +42,10 @@ class AnalysisPageCacheTests(unittest.TestCase):
             cache.append(_record(2))
 
             self.assertIsNotNone(cache.directory)
-            self.assertEqual([item.step for item in cache.iter_records()], [1, 2])
+            restored = list(cache.iter_records())
+            self.assertEqual([item.step for item in restored], [1, 2])
+            self.assertEqual(restored[0].output_text, "token-1")
+            self.assertEqual(restored[0].telemetry["raw_logit_entropy_bits"], 4.2)
             self.assertGreater(cache.disk_bytes, 0)
             cache_directory = cache.directory
             cache.cleanup()
@@ -87,7 +91,7 @@ class AnalysisPageCacheTests(unittest.TestCase):
                 1024 * 1024, root=Path(directory) / "temp", page_records=8
             )
             signal = PlaybackStep(
-                ActivationFrame(1, "token", 1, ActivitySource.SIMULATION),
+                ActivationFrame("token", 1, ActivitySource.REAL_TIME),
                 np.ones(4, dtype="f4"),
                 np.ones(4, dtype="f4"),
             )

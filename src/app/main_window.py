@@ -392,7 +392,8 @@ class MainWindow(QMainWindow):
             self._simulation_bubbles.clear()
         self.chat.generating(True)
         self.chat.stats.setText(
-            "∞ Simulation Thinking… loading the world and participant roles; the right pane records their visual signals."
+            "∞ Simulation Thinking… loading the world and participant roles; "
+            "the right pane records Participant inference telemetry."
         )
         transcript = self.simulation_transcript.copy() if continuation else None
         self.startInfiniteSimulation.emit(

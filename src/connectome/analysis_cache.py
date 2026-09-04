@@ -22,18 +22,23 @@ DEFAULT_CACHE_BYTES = 1024 * 1024 * 1024
 def _decode_record(payload: dict[str, object]) -> AnalysisRecord:
     return AnalysisRecord(
         step=int(payload["step"]),
-        token=str(payload["token"]),
-        active_nodes=int(payload["active_nodes"]),
-        mean_activity=float(payload["mean_activity"]),
-        peak_activity=float(payload["peak_activity"]),
-        dominant_region=str(payload["dominant_region"]),
+        output_text=str(payload["output_text"]),
+        active_channels=int(payload["active_channels"]),
+        mean_signal=float(payload["mean_signal"]),
+        peak_signal=float(payload["peak_signal"]),
+        dominant_channel=str(payload["dominant_channel"]),
         novelty=float(payload["novelty"]),
         reconstruction_error=float(payload["reconstruction_error"]),
         coherence=float(payload["coherence"]),
         embedding=tuple(float(value) for value in payload["embedding"]),  # type: ignore[union-attr]
-        regional_activity=tuple(
-            float(value) for value in payload["regional_activity"]  # type: ignore[union-attr]
+        channel_values=tuple(
+            float(value) for value in payload["channel_values"]  # type: ignore[union-attr]
         ),
+        source=str(payload.get("source", "Real-time")),
+        telemetry={
+            str(name): float(value)
+            for name, value in dict(payload.get("telemetry", {})).items()  # type: ignore[arg-type]
+        },
     )
 
 

@@ -5,20 +5,11 @@ import hashlib
 import numpy as np
 
 from .graph import ConnectomeGraph
+from ..models.instrumented_backend import REALTIME_REGIONS
 
-REGIONS = (
-    "Input / tokens",
-    "Embeddings",
-    "Early processing",
-    "Attention clusters",
-    "MLP clusters",
-    "Residual pathways",
-    "Middle processing",
-    "Late processing",
-    "Output / logits",
-)
+REGIONS = REALTIME_REGIONS
 
-# Region names are stable, so this map gives every procedural cluster the same
+# Region names are stable, so every measured telemetry channel retains the same
 # distinct color across launches, qualities, replay, and fallback rendering.
 DARK_BACKGROUND_CLUSTER_COLOR_MAP = dict(
     zip(
@@ -129,7 +120,7 @@ def build_connectome(
         source = nodes[_sample_indices(rng, len(nodes), len(nodes) * edges_per_node)]
         destination = nodes[_sample_indices(rng, len(nodes), len(source))]
         edge_parts.append(np.column_stack((source, destination)))
-        # Directed-ish neighboring region bridges create activity paths.
+        # Neighboring display links keep related telemetry channels readable.
         target_nodes = np.flatnonzero(region_ids == (region + 1) % len(REGIONS))
         if len(target_nodes):
             edge_parts.append(
@@ -144,7 +135,7 @@ def build_connectome(
                     )
                 )
             )
-    # Sparse axon-like long-range connections.
+    # Sparse long-range display links connect nonadjacent measurements.
     edge_parts.append(rng.integers(0, n, size=(max(100, n // 30), 2)))
     edges = np.vstack(edge_parts).astype(np.int32, copy=False)
     return ConnectomeGraph(

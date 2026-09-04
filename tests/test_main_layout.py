@@ -48,6 +48,18 @@ class MainLayoutTests(unittest.TestCase):
             window.close()
             self.app.processEvents()
 
+    def test_connectome_identifies_realtime_data_and_awaiting_state(self) -> None:
+        window = MainWindow([])
+        try:
+            self.assertEqual(window.visualizer.mode.text(), "REAL-TIME")
+            self.assertIn(
+                "awaiting the first generated chunk",
+                window.visualizer.overlay.text(),
+            )
+        finally:
+            window.close()
+            self.app.processEvents()
+
     def test_reopened_visualizer_settings_return_to_the_first_control(self) -> None:
         window = MainWindow([])
         try:

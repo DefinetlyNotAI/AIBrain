@@ -1,1 +1,1 @@
-"""Procedural connectome graph and activity mapping."""
+"""Real-time inference telemetry graph, rendering, and analysis."""

@@ -14,6 +14,7 @@ from src.connectome.analysis import (
     ADULT_FRAME_FLOOR,
     BABY_FRAME_FLOOR,
     CONSISTENCY_WINDOW,
+    FEATURE_SCHEMA,
     ConnectomeAnalyzer,
 )
 from src.connectome.export import export_nn_analysis_plus, export_session_analysis
@@ -37,9 +38,18 @@ class NNAnalysisExportTests(unittest.TestCase):
         self.analyzer = ConnectomeAnalyzer(
             self.graph, hidden_width=4, model_path=self.model_path
         )
-        self.analyzer.observe(
-            ActivationFrame(1, "hello", 1, ActivitySource.SIMULATION),
-            np.array([0.5, 0.0], dtype=np.float32),
+        self.analyzer.observe(self._frame(1, "hello"))
+
+    def _frame(self, step: int, text: str) -> ActivationFrame:
+        return ActivationFrame(
+            text,
+            step,
+            ActivitySource.REAL_TIME,
+            regions={
+                name: (index + 1) / len(self.graph.region_names)
+                for index, name in enumerate(self.graph.region_names)
+            },
+            metrics={"raw_logit_entropy_bits": 6.25, "stream_latency_ms": 18.0},
         )
 
     def test_json_contains_compact_neural_analysis(self) -> None:
@@ -50,7 +60,7 @@ class NNAnalysisExportTests(unittest.TestCase):
             )
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["schema"], "aibrain.infinite-analysis-plus.v1")
+        self.assertEqual(payload["schema"], "aibrain.infinite-analysis-plus.v2")
         self.assertEqual(payload["conversation"][0]["content"], "hi")
         self.assertEqual(payload["smart_analysis"]["frames_processed"], 1)
         self.assertIn(
@@ -58,6 +68,12 @@ class NNAnalysisExportTests(unittest.TestCase):
         )
         self.assertNotIn("brain_signals", payload)
         self.assertNotIn("positions", payload["graph"])
+        self.assertEqual(payload["graph"]["topology"], "display_only")
+        self.assertIn("channel_profile", payload["smart_analysis"])
+        self.assertEqual(
+            payload["recorded_frame_summary"]["most_active_channel"],
+            self.graph.region_names[-1],
+        )
 
     def test_normal_session_export_excludes_neural_analysis(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -67,10 +83,21 @@ class NNAnalysisExportTests(unittest.TestCase):
             )
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(payload["schema"], "aibrain.session-analysis.v1")
+        self.assertEqual(payload["schema"], "aibrain.session-analysis.v2")
         self.assertIn("recorded_frame_summary", payload)
         self.assertNotIn("smart_analysis", payload)
         self.assertNotIn("integrity", payload)
+
+    def test_analysis_features_ignore_renderer_intensity(self) -> None:
+        record = self.analyzer.records[0]
+
+        np.testing.assert_allclose(
+            record.channel_values,
+            tuple(
+                (index + 1) / len(self.graph.region_names)
+                for index, _name in enumerate(self.graph.region_names)
+            ),
+        )
 
     def test_gzip_export_is_valid_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -109,10 +136,7 @@ class NNAnalysisExportTests(unittest.TestCase):
             path = Path(directory) / "learned.npz"
             first = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
             initial_weights = first.encoder_weights.copy()
-            first.observe(
-                ActivationFrame(2, "learn", 2, ActivitySource.SIMULATION),
-                np.array([0.3, 0.2], dtype=np.float32),
-            )
+            first.observe(self._frame(2, "learn"))
             self.assertTrue(path.is_file())
             self.assertFalse(np.array_equal(first.encoder_weights, initial_weights))
             second = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=path)
@@ -153,10 +177,7 @@ class NNAnalysisExportTests(unittest.TestCase):
                 region_names=self.graph.region_names,
             )
             first = ConnectomeAnalyzer(backend_graph, hidden_width=4, model_path=path)
-            first.observe(
-                ActivationFrame(2, "gpu", 2, ActivitySource.SIMULATION),
-                array_api.asarray([0.3, 0.2], dtype=array_api.float32),
-            )
+            first.observe(self._frame(2, "gpu"))
             restored = ConnectomeAnalyzer(
                 backend_graph, hidden_width=4, model_path=path
             )
@@ -209,16 +230,13 @@ class NNAnalysisExportTests(unittest.TestCase):
         self.analyzer.update_magnitude_history = [0.002] * 96
         self.analyzer._advance_maturity()
         before = self.analyzer.encoder_weights.copy()
-        self.analyzer.observe(
-            ActivationFrame(3, "frozen", 3, ActivitySource.SIMULATION),
-            np.array([0.4, 0.1], dtype=np.float32),
-        )
+        self.analyzer.observe(self._frame(3, "frozen"))
 
         self.assertEqual(self.analyzer.maturity_state, "Elder")
         self.assertTrue(self.analyzer.weights_frozen)
         self.assertTrue(np.array_equal(before, self.analyzer.encoder_weights))
 
-    def test_legacy_npz_is_conservatively_migrated_as_baby(self) -> None:
+    def test_legacy_simulation_npz_is_not_loaded_into_realtime_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             legacy = Path(directory) / "legacy.npz"
             np.savez_compressed(
@@ -232,9 +250,15 @@ class NNAnalysisExportTests(unittest.TestCase):
             )
             restored = ConnectomeAnalyzer(self.graph, hidden_width=4, model_path=legacy)
 
-        self.assertEqual(restored.frames_seen, 9000)
+        self.assertEqual(restored.frames_seen, 0)
         self.assertEqual(restored.maturity_state, "Baby")
         self.assertFalse(restored.reconstruction_history)
+
+    def test_persisted_model_identifies_the_realtime_feature_schema(self) -> None:
+        with np.load(self.model_path, allow_pickle=False) as stored:
+            schema = str(np.asarray(stored["feature_schema"]).reshape(-1)[0])
+
+        self.assertEqual(schema, FEATURE_SCHEMA)
 
     def test_default_memory_path_is_user_writable_not_the_application_directory(
         self,

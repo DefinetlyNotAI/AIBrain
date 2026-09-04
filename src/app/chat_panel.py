@@ -203,7 +203,7 @@ class ChatPanel(QWidget):
         buttons = QGridLayout()
         self.regenerate = QPushButton("Regenerate")
         self.rewind = QPushButton("Rewind")
-        self.rewind.setToolTip("Enter token-by-token connectome replay below the graph")
+        self.rewind.setToolTip("Enter frame-by-frame connectome replay below the graph")
         self.infinite = QPushButton("Continue")
         self.infinite.setToolTip("Continue the current Infinite Mode scenario after it has stopped")
         self.clear = QPushButton("Clear")
@@ -341,7 +341,7 @@ class ChatPanel(QWidget):
         self._refresh_actions()
 
     def set_rewind_available(self, available: bool) -> None:
-        """Enable rewind only after the visualizer has recorded token frames."""
+        """Enable rewind only after the visualizer has recorded telemetry frames."""
         self._rewind_available = available
         self._refresh_actions()
 
@@ -408,9 +408,9 @@ class ChatPanel(QWidget):
         controls = QWidget()
         layout = QHBoxLayout(controls)
         layout.setContentsMargins(4, 1, 4, 5)
-        previous = QPushButton("◀ Token")
-        replay = QPushButton("▶ Replay neurons")
-        next_token = QPushButton("Token ▶")
+        previous = QPushButton("◀ Frame")
+        replay = QPushButton("▶ Replay signals")
+        next_token = QPushButton("Frame ▶")
         previous.clicked.connect(self.playbackPreviousRequested)
         replay.clicked.connect(self.playbackRequested)
         next_token.clicked.connect(self.playbackNextRequested)
@@ -452,7 +452,7 @@ class ChatPanel(QWidget):
         """The graph owns rewind navigation; chat remains read-only until exit."""
         self._rewind_active = active
         self.rewind.setText("Exit rewind" if active else "Rewind")
-        self.rewind.setToolTip("Return to normal chat actions" if active else "Enter token-by-token connectome replay")
+        self.rewind.setToolTip("Return to normal chat actions" if active else "Enter frame-by-frame connectome replay")
         if active:
             for control in (self.send, self.regenerate, self.open_analysis, self.export_chat, self.clear, self.infinite,
                             self.models, self.infinite_mode, self.advanced_settings):

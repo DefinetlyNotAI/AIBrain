@@ -44,6 +44,15 @@ valid as a file can still be incompatible with a particular llama.cpp build or e
 
 ## Data-source honesty
 
-The public direct GGUF interface does not guarantee access to hidden states, attention values, or MLP activations. The
-current backend therefore emits `Simulation` frames based on observable token events. The visualizer presents that
-status in its mode label and overlay. It never labels simulation as real model-neuron data.
+The direct GGUF backend emits **Real-time** frames from a read-only llama.cpp logits processor and observed stream
+timing. For each visible generated chunk it records the current context position; a softmax summary of the raw
+next-token logits; elapsed chunk latency; retokenized output rate and progress; and exact recent emitted-text
+repetition. The processor returns the supplied logits object unchanged, so instrumentation does not alter generation.
+
+The raw logits are observed before llama.cpp applies repetition penalties, grammar constraints, candidate filtering,
+temperature, and token selection. Their entropy, top probability, top-five mass, and confidence margin therefore
+describe the raw model distribution, not the final sampling distribution.
+
+`llama-cpp-python` does not expose hidden states, attention matrices, MLP activations, or model topology through this
+path. The connectome's nodes and links are an explicit display layout for measured channels. They are never exported or
+described as model neurons or physical connections.

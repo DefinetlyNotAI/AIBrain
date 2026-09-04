@@ -18,7 +18,10 @@ class ActivityField:
         self.peaks = self.values.copy()
         self.last_time = monotonic()
         self.step = 0
-        self.current_token = ""
+        self.current_chunk = ""
+        self.current_source = "Real-time"
+        self.telemetry: dict[str, float] = {}
+        self.channel_values: dict[str, float] = {}
         self.active_count_cached = 0
         self.disabled = np.zeros(len(graph.positions), dtype=bool)
         self.importance = np.ones(len(graph.positions), dtype=np.float32)
@@ -26,31 +29,21 @@ class ActivityField:
     def update(self, frame: ActivationFrame) -> None:
         self.decay()
         self.step = frame.step
-        self.current_token = frame.token_text
-        # Stable token/step mapping: procedural, but tied to observable inference events.
-        token_key = (
-            sum(ord(c) * (index + 1) for index, c in enumerate(frame.token_text))
-            + frame.step * 7919
-        )
-        rng = np.random.default_rng(token_key & 0xFFFFFFFF)
-        primary = frame.step % len(self.graph.region_names)
-        cascade = [
-            (primary + offset) % len(self.graph.region_names) for offset in range(4)
-        ]
-        for depth, region in enumerate(cascade):
-            candidates = np.flatnonzero(self.graph.regions == region)
-            if len(candidates):
-                selected = rng.choice(
-                    candidates,
-                    size=min(len(candidates), 40 + depth * 30),
-                    replace=False,
-                )
-                amount = 1.0 / (1 + depth * 0.55)
-                self.values[selected] = np.maximum(
-                    self.values[selected], amount * self.importance[selected]
-                )
+        self.current_chunk = frame.chunk_text
+        self.current_source = frame.source.value
+        self.telemetry = {name: float(value) for name, value in frame.metrics.items()}
+        self.channel_values = {
+            name: float(np.clip(frame.regions.get(name, 0.0), 0.0, 1.0))
+            for name in self.graph.region_names
+        }
+        self.values.fill(0.0)
+        for region, name in enumerate(self.graph.region_names):
+            nodes = self.graph.regions == region
+            measured_value = self.channel_values[name]
+            self.values[nodes] = measured_value * self.importance[nodes]
         self.peaks = np.maximum(self.peaks * 0.995, self.values)
         self.values[self.disabled] = 0.0
+        self.active_count_cached = int(np.count_nonzero(self.values > 0.10))
 
     def decay(self) -> None:
         now = monotonic()

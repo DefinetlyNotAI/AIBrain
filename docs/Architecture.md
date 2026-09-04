@@ -8,9 +8,9 @@ cli/main.py
        └─ MainWindow
             ├─ ChatPanel
             ├─ GenerationWorker (QThread)
-            │    └─ LlamaBackend → local GGUF through llama-cpp-python
+            │    └─ LlamaBackend → local GGUF + read-only raw-logit probe
             └─ VisualizerPanel
-                 ├─ connectome graph generator
+                 ├─ telemetry display-graph generator
                  ├─ ActivityField and ActivityMapper
                  ├─ ConnectomeRenderer (QOpenGLWidget + ModernGL)
                  └─ ConnectomeAnalyzer / exporter
@@ -25,9 +25,11 @@ OpenGL and installs SIGINT handling.
 `MainWindow` owns conversation state and coordinates UI signals. It discovers and validates models, owns the worker
 thread, updates the thinking indicator, and saves generation settings.
 
-`GenerationWorker` owns streaming inference work away from the UI thread. It translates each returned text chunk into a
-normalized `ActivationFrame` with a data-source label. `ActivityMapper` then applies that frame to the visual activity
-field.
+`GenerationWorker` owns streaming inference work away from the UI thread. `LlamaBackend` attaches a read-only logits
+processor before each completion is sampled. Each visible text chunk carries raw-logit statistics; the worker combines
+them with observed context, timing, retokenized output, and repetition values in a normalized `ActivationFrame` labelled
+`Real-time`. `ActivityMapper` maps those nine channel values onto a display field. User display controls never alter the
+frame supplied to `ConnectomeAnalyzer`.
 
 ## Key modules
 
@@ -44,11 +46,12 @@ destructive action and always requires confirmation.
 | `cli/build_dist.py`                | Creates timestamped self-contained ai_brain, diagnostic, and analysis distributions. |
 | `src/models/ollama_discovery.py`   | Finds and performs lightweight validation of local Ollama blobs.              |
 | `src/models/model_validator.py`    | Validates candidates against llama.cpp and caches profile-scoped GGUF results. |
-| `src/models/llama_backend.py`      | Loads, streams, tokenizes, and unloads GGUF models.                           |
-| `src/connectome/generator.py`      | Creates deterministic visual graph topology.                                  |
-| `src/connectome/activity.py`       | Holds decaying activity, peaks, silencing, and importance state.              |
+| `src/models/llama_backend.py`      | Loads and streams GGUF models while collecting raw pre-sampler logit metrics. |
+| `src/models/instrumented_backend.py` | Defines and normalizes the real-time telemetry frame contract.               |
+| `src/connectome/generator.py`      | Creates deterministic display topology for the nine measurement channels.     |
+| `src/connectome/activity.py`       | Separates measured channel values from decaying, user-adjustable display intensity. |
 | `src/connectome/renderer.py`       | Batched ModernGL 3D/2D draw pipeline, sector filtering, and interaction.     |
-| `src/connectome/analysis.py`       | Online derived visual-stream analysis.                                        |
+| `src/connectome/analysis.py`       | Online analysis of normalized real-time telemetry channels.                   |
 | `src/native/c/connectome_kernels.c` | Optional native hot-path implementation.                                      |
 | `src/native/wrapper/connectome_kernels.py` | ctypes contract and NumPy fallback for `dll/aibrain.connectome.dll`.          |
 
@@ -70,7 +73,8 @@ destructive action and always requires confirmation.
 
 - Keep the UI native Qt; do not introduce browser, React, Electron, or WebView components.
 - Preserve the venv-only runtime guard.
-- Keep data-source labels honest. Do not represent procedural or derived visual data as measured transformer internals.
+- Keep **Real-time** limited to values observed during active generation. Name raw-logit values as pre-sampler data.
+- Keep display nodes and links explicitly separate from transformer neurons, layers, and physical model topology.
 - Keep heavy inference work off the Qt UI thread.
 - Preserve NumPy fallbacks for optional native-DLL acceleration.
 - Update the relevant document when user-visible behavior changes.

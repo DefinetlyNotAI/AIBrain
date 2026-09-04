@@ -103,6 +103,6 @@ context, so the hook is not needed in the distribution and excluding it avoids a
 
 ## NN Analysis+ does nothing
 
-Complete an Infinite-mode run first. Analysis+ processes the session's recorded visual frames through its online
+Complete an Infinite-mode run first. Analysis+ processes the session's recorded real-time telemetry frames through its online
 autoencoder. Complete a normal chat to enable the separate non-NN **Analysis** export. Changing model, quality, or
 spacing discards old replay/analysis data to prevent mixing incompatible graph layouts.

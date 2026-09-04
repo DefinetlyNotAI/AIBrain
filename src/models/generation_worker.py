@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from pathlib import Path
 from threading import Event
 from time import monotonic
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from .instrumented_backend import ActivationFrame, ActivitySource
+from .instrumented_backend import realtime_activation_frame, retokenized_throughput
 from .llama_backend import GenerationConfig, LlamaBackend, reached_sentence_end, sentence_grace_config
 
 LOG = logging.getLogger(__name__)
@@ -34,16 +35,31 @@ class GenerationWorker(QObject):
             self.backend.load(model_path, config)
             prompt_tokens = sum(len(self.backend.tokenize(message["content"])) for message in messages)
             response_chunks: list[str] = []
-            for text in self.backend.stream_chat(messages, sentence_grace_config(config)):
+            recent_output: deque[str] = deque(maxlen=32)
+            for chunk in self.backend.stream_chat(messages, sentence_grace_config(config)):
                 if self._cancelled.is_set():
                     break
                 now = monotonic()
-                normal_interval = normal_interval * .8 + (now - previous_token_at) * .2
-                token_ids = self.backend.tokenize(text)
-                generated_tokens += max(1, len(token_ids))
+                latency = now - previous_token_at
+                normal_interval = normal_interval * .8 + latency * .2
+                text = chunk.text
+                retokenized_ids = chunk.retokenized_ids
+                retokenized_count = len(retokenized_ids)
+                generated_tokens += max(1, retokenized_count)
                 response_chunks.append(text)
-                frame = ActivationFrame(token_ids[-1] if token_ids else None, text, generated_tokens,
-                                        ActivitySource.SIMULATION)
+                recent_output_occurrences = recent_output.count(text)
+                frame = realtime_activation_frame(
+                    chunk,
+                    generated_tokens,
+                    max_tokens=config.max_tokens,
+                    context_limit=config.context_length,
+                    stream_latency_seconds=latency,
+                    retokenized_tokens_per_second=retokenized_throughput(
+                        retokenized_count, latency
+                    ),
+                    recent_output_occurrences=recent_output_occurrences,
+                )
+                recent_output.append(text)
                 self.token.emit(text, frame)
                 if reached_sentence_end("".join(response_chunks), generated_tokens, config.max_tokens):
                     break

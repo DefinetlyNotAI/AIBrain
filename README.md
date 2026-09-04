@@ -1,7 +1,8 @@
 # AIBrain
 
 AIBrain is a native Windows desktop application for chatting with GGUF models already installed by Ollama and exploring
-token-driven activity through a live connectome visualization.
+real-time llama.cpp inference telemetry through a live connectome visualization. The display measures raw next-token
+logit statistics and generation timing; its graph is a visual layout, not a map of transformer neurons.
 
 It is built with Python and PySide6/Qt. The interface is a real Windows window with a native OpenGL context—there is no
 React, Electron, browser, or WebView layer.

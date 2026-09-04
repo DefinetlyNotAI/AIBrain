@@ -6,7 +6,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypedDict
 
@@ -14,11 +14,11 @@ import numpy as _numpy
 
 from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
-from ..native.wrapper.connectome_kernels import native
 from ..utils.array_api import array_api as np, to_numpy
 
 LOG = logging.getLogger(__name__)
 MODEL_FILENAME = "aibrain.analyser.npz"
+FEATURE_SCHEMA = "aibrain.realtime-inference-telemetry.v1"
 METRIC_HISTORY_LIMIT = 512
 MATURITY_STATES = ("Baby", "Teen", "Adult", "Elder")
 BABY_FRAME_FLOOR = 2_048
@@ -36,7 +36,7 @@ def _normal(rng: object, mean: float, deviation: float, size: object) -> np.ndar
 class PatternSegment(TypedDict):
     start_step: int
     end_step: int
-    dominant_region: str
+    dominant_channel: str
     frames: int
     mean_novelty: float
 
@@ -44,16 +44,18 @@ class PatternSegment(TypedDict):
 @dataclass(slots=True)
 class AnalysisRecord:
     step: int
-    token: str
-    active_nodes: int
-    mean_activity: float
-    peak_activity: float
-    dominant_region: str
+    output_text: str
+    active_channels: int
+    mean_signal: float
+    peak_signal: float
+    dominant_channel: str
     novelty: float
     reconstruction_error: float
     coherence: float
     embedding: tuple[float, ...]
-    regional_activity: tuple[float, ...]
+    channel_values: tuple[float, ...]
+    source: str = "Real-time"
+    telemetry: dict[str, float] = field(default_factory=dict)
 
 
 RecordSource = Iterable[AnalysisRecord] | Callable[[], Iterable[AnalysisRecord]]
@@ -65,11 +67,11 @@ def _record_iterator(records: RecordSource) -> Iterator[AnalysisRecord]:
 
 
 class ConnectomeAnalyzer:
-    """Online NumPy autoencoder that learns compact visual-activity patterns.
+    """Online autoencoder that learns compact inference-telemetry patterns.
 
-    The network consumes every recorded visual frame but retains only learned
-    embeddings and useful event metrics. Its inputs are AIBrain's procedural
-    connectome signals, never hidden LLM states.
+    The network consumes normalized real-time llama.cpp telemetry channels and
+    retains learned embeddings and useful event metrics. It does not consume
+    renderer topology or claim access to hidden transformer activations.
     """
 
     def __init__(
@@ -114,45 +116,26 @@ class ConnectomeAnalyzer:
         """Return the project-local learned-analysis model location."""
         return Path(__file__).resolve().parents[2] / "models" / MODEL_FILENAME
 
-    @staticmethod
-    def legacy_model_path() -> Path:
-        """Return the previous per-user location for one-time migration."""
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        base = (
-            Path(local_app_data)
-            if local_app_data
-            else Path.home() / "AppData" / "Local"
-        )
-        return base / "AIBrain" / "analysis_model" / "connectome_autoencoder_v1.npz"
-
-    def observe(self, frame: ActivationFrame, values: np.ndarray) -> AnalysisRecord:
+    def observe(self, frame: ActivationFrame) -> AnalysisRecord:
         array = self._array
-        regional, active_nodes = native.regions(
-            values, self.graph.regions, self.region_count
+        channel_values = array.asarray(
+            [frame.regions.get(name, 0.0) for name in self.graph.region_names],
+            dtype="f4",
         )
-        counts = (
-            array.bincount(self.graph.regions, minlength=self.region_count)
-            .clip(1)
-            .astype("f4")
-        )
-        regional_mean = regional / counts
-        # Remove static cluster population/topology bias: each region is
-        # compared with the current graph-wide activity, not raw node totals.
-        global_mean = max(float(values.mean()), 1e-6)
-        relative_regional_density = regional_mean / global_mean
-        distribution = relative_regional_density / (1.0 + relative_regional_density)
-        active_ratio = float(array.count_nonzero(values > 0.1) / len(values))
-        mean_delta = abs(float(values.mean()) - self._previous_mean)
-        self._previous_mean = float(values.mean())
+        active_channels = int(array.count_nonzero(channel_values > 0.1))
+        active_ratio = float(active_channels / max(1, self.region_count))
+        current_mean = float(channel_values.mean())
+        mean_delta = abs(current_mean - self._previous_mean)
+        self._previous_mean = current_mean
         features = array.concatenate(
             (
-                distribution,
+                channel_values,
                 array.array(
                     (
                         active_ratio,
                         mean_delta,
-                        float(values.max()),
-                        float(values.std()),
+                        float(channel_values.max()),
+                        float(channel_values.std()),
                     ),
                     dtype="f4",
                 ),
@@ -168,19 +151,21 @@ class ConnectomeAnalyzer:
         coherence = float(1.0 / (1.0 + reconstruction_error * 40.0))
         update_magnitude = self._train(features, embedding, reconstruction)
         self.embedding_centroid += 0.04 * (embedding - self.embedding_centroid)
-        dominant = int(array.argmax(regional))
+        dominant = int(array.argmax(channel_values))
         record = AnalysisRecord(
             frame.step,
-            frame.token_text,
-            active_nodes,
-            float(values.mean()),
-            float(values.max()),
+            frame.chunk_text,
+            active_channels,
+            current_mean,
+            float(channel_values.max()),
             self.graph.region_names[dominant],
             novelty,
             reconstruction_error,
             coherence,
             tuple(float(value) for value in embedding),
-            tuple(float(value) for value in regional_mean),
+            tuple(float(value) for value in channel_values),
+            frame.source.value,
+            {name: float(value) for name, value in frame.metrics.items()},
         )
         self.records.append(record)
         self.frames_seen += 1
@@ -193,17 +178,17 @@ class ConnectomeAnalyzer:
         return record
 
     def _load_persistent_model(self) -> None:
-        if self._load_model(self.model_path):
-            return
-        legacy_path = self.legacy_model_path()
-        if legacy_path != self.model_path and self._load_model(legacy_path):
-            # Preserve learning from older installs while moving it out of the
-            # application directory, which is often read-only for releases.
-            self.save_model()
+        self._load_model(self.model_path)
 
     def _load_model(self, path: Path) -> bool:
         try:
             with _numpy.load(path, allow_pickle=False) as stored:
+                feature_schema = str(
+                    _numpy.asarray(stored.get("feature_schema", _numpy.array("")))
+                    .reshape(-1)[0]
+                )
+                if feature_schema != FEATURE_SCHEMA:
+                    return False
                 tensors = {
                     "encoder_weights": self.encoder_weights,
                     "encoder_bias": self.encoder_bias,
@@ -284,9 +269,9 @@ class ConnectomeAnalyzer:
             self.transition_count = transition_count
             self.weights_frozen = weights_frozen
         else:
-            # A legacy NPZ did not observe the conditions required for state
-            # promotion.  Retain its weights and frame counter, but require
-            # fresh evidence instead of inferring Adult/Elder from age alone.
+            # An early real-time NPZ may not have persisted its rolling health
+            # history. Retain compatible weights while requiring fresh
+            # evidence instead of inferring Adult/Elder from age alone.
             self.reconstruction_history = []
             self.novelty_history = []
             self.update_magnitude_history = []
@@ -310,6 +295,7 @@ class ConnectomeAnalyzer:
                 temporary_path = Path(handle.name)
                 _numpy.savez_compressed(
                     handle,
+                    feature_schema=_numpy.array(FEATURE_SCHEMA),
                     encoder_weights=to_numpy(self.encoder_weights),
                     encoder_bias=to_numpy(self.encoder_bias),
                     decoder_weights=to_numpy(self.decoder_weights),
@@ -532,24 +518,24 @@ class ConnectomeAnalyzer:
         peak_novelty = 0.0
         reconstruction_total = 0.0
         coherence_total = 0.0
-        most_active: AnalysisRecord | None = None
+        channel_totals = _numpy.zeros(self.region_count, dtype="f8")
         for record in _record_iterator(records):
             count += 1
             novelty_total += record.novelty
             peak_novelty = max(peak_novelty, record.novelty)
             reconstruction_total += record.reconstruction_error
             coherence_total += record.coherence
-            if most_active is None or record.active_nodes > most_active.active_nodes:
-                most_active = record
-        if not count or most_active is None:
+            channel_totals += _numpy.asarray(record.channel_values, dtype="f4")
+        if not count:
             return {"frames": 0, "maturity": maturity}
+        strongest_channel = self.graph.region_names[int(channel_totals.argmax())]
         return {
             "frames": count,
             "mean_novelty": novelty_total / count,
             "peak_novelty": peak_novelty,
             "mean_reconstruction_error": reconstruction_total / count,
             "mean_coherence": coherence_total / count,
-            "most_active_region": most_active.dominant_region,
+            "most_active_channel": strongest_channel,
             "maturity": maturity,
         }
 
@@ -561,7 +547,6 @@ class ConnectomeAnalyzer:
         peak_novelty = 0.0
         reconstruction_total = 0.0
         coherence_total = 0.0
-        most_active: AnalysisRecord | None = None
         region_totals = _numpy.zeros(self.region_count, dtype="f8")
         region_peaks = _numpy.zeros(self.region_count, dtype="f4")
         key_events: list[AnalysisRecord] = []
@@ -574,11 +559,9 @@ class ConnectomeAnalyzer:
             peak_novelty = max(peak_novelty, record.novelty)
             reconstruction_total += record.reconstruction_error
             coherence_total += record.coherence
-            if most_active is None or record.active_nodes > most_active.active_nodes:
-                most_active = record
-            regional = _numpy.asarray(record.regional_activity, dtype="f4")
-            region_totals += regional
-            region_peaks = _numpy.maximum(region_peaks, regional)
+            channels = _numpy.asarray(record.channel_values, dtype="f4")
+            region_totals += channels
+            region_peaks = _numpy.maximum(region_peaks, channels)
             key_events.append(record)
             key_events.sort(
                 key=lambda item: item.novelty + item.reconstruction_error * 3,
@@ -587,7 +570,7 @@ class ConnectomeAnalyzer:
             del key_events[24:]
             if segments_complete:
                 continue
-            if not segments or segments[-1]["dominant_region"] != record.dominant_region:
+            if not segments or segments[-1]["dominant_channel"] != record.dominant_channel:
                 if len(segments) >= 40:
                     segments_complete = True
                     continue
@@ -595,7 +578,7 @@ class ConnectomeAnalyzer:
                     {
                         "start_step": record.step,
                         "end_step": record.step,
-                        "dominant_region": record.dominant_region,
+                        "dominant_channel": record.dominant_channel,
                         "frames": 1,
                         "mean_novelty": record.novelty,
                     }
@@ -609,7 +592,7 @@ class ConnectomeAnalyzer:
                 group["mean_novelty"] * frame_count + record.novelty
             ) / (frame_count + 1)
 
-        if not count or most_active is None:
+        if not count:
             return {"frames_processed": 0, "maturity": self.maturity_report()}
         region_means = region_totals / count
         top_region = self.graph.region_names[int(region_means.argmax())]
@@ -619,7 +602,7 @@ class ConnectomeAnalyzer:
             "peak_novelty": peak_novelty,
             "mean_reconstruction_error": reconstruction_total / count,
             "mean_coherence": coherence_total / count,
-            "most_active_region": most_active.dominant_region,
+            "most_active_channel": top_region,
             "maturity": self.maturity_report(),
         }
         return {
@@ -627,7 +610,7 @@ class ConnectomeAnalyzer:
             "neural_network": {
                 "architecture": f"{self.input_width} → {self.hidden_width} → {self.input_width} autoencoder",
                 "activation": "tanh encoder / sigmoid decoder",
-                "training": "online gradient descent for each visual frame",
+                "training": "online gradient descent for each real-time telemetry frame",
                 "learned_parameters": int(
                     self.encoder_weights.size
                     + self.encoder_bias.size
@@ -635,28 +618,31 @@ class ConnectomeAnalyzer:
                     + self.decoder_bias.size
                 ),
                 "lifetime_frames_seen": self.frames_seen,
-                "feature_calibration": "Region-density and temporal-change features remove fixed cluster size and "
-                "global renderer-amplitude bias.",
+                "feature_schema": FEATURE_SCHEMA,
+                "feature_calibration": "Nine normalized llama.cpp logit, context, token, latency, and throughput "
+                "channels plus four temporal summary values.",
                 "maturity": self.maturity_report(),
             },
             "session_findings": {
                 **summary,
-                "primary_pattern": f"Highest mean visual activity was in {top_region}.",
+                "primary_pattern": f"Highest mean normalized measurement was {top_region}.",
                 "pattern_segments": segments,
             },
-            "regional_profile": [
+            "channel_profile": [
                 {
-                    "region": name,
-                    "mean_activity": float(region_means[index]),
-                    "peak_activity": float(region_peaks[index]),
+                    "channel": name,
+                    "mean_signal": float(region_means[index]),
+                    "peak_signal": float(region_peaks[index]),
                 }
                 for index, name in enumerate(self.graph.region_names)
             ],
             "key_events": [
                 {
                     "step": record.step,
-                    "token": record.token,
-                    "dominant_region": record.dominant_region,
+                    "output_text": record.output_text,
+                    "dominant_channel": record.dominant_channel,
+                    "source": record.source,
+                    "telemetry": record.telemetry,
                     "novelty": record.novelty,
                     "reconstruction_error": record.reconstruction_error,
                     "coherence": record.coherence,
@@ -671,14 +657,14 @@ class ConnectomeAnalyzer:
         groups: list[PatternSegment] = []
 
         for record in _record_iterator(records):
-            if not groups or groups[-1]["dominant_region"] != record.dominant_region:
+            if not groups or groups[-1]["dominant_channel"] != record.dominant_channel:
                 if len(groups) >= 40:
                     break
                 groups.append(
                     {
                         "start_step": record.step,
                         "end_step": record.step,
-                        "dominant_region": record.dominant_region,
+                        "dominant_channel": record.dominant_channel,
                         "frames": 1,
                         "mean_novelty": record.novelty,
                     }

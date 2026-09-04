@@ -6,6 +6,11 @@ from unittest.mock import patch
 
 from src.models.infinite_simulation import InfiniteSimulationWorker, WORLD_OPENINGS, _CONTEXT_TURNS, \
     infinite_generation_config, random_world_opening
+from src.models.instrumented_backend import (
+    ActivitySource,
+    GenerationChunk,
+    LogitMetrics,
+)
 from src.models.llama_backend import GenerationConfig
 
 
@@ -21,7 +26,12 @@ class FakeBackend:
 
     def stream_chat(self, messages: list[dict[str, str]], _config: GenerationConfig):  # type: ignore[no-untyped-def]
         self.calls.append([dict(message) for message in messages])
-        yield from self.chunks
+        for index, text in enumerate(self.chunks, 1):
+            yield GenerationChunk(
+                text,
+                (len(text),),
+                LogitMetrics(32_000, 20 + index, 6.0, 0.4, 0.3, 0.6, 0.1),
+            )
 
     def tokenize(self, text: str) -> list[int]:
         return [len(text)]
@@ -84,6 +94,9 @@ class InfiniteSimulationContextTests(unittest.TestCase):
         self.assertIn("[PARTICIPANT RESPONSE]", world.calls[0][-1]["content"])
         self.assertNotIn("[WORLD EVENT]", world.calls[0][-1]["content"])
         self.assertEqual(frames[0].step, 1)
+        self.assertEqual(frames[0].source, ActivitySource.REAL_TIME)
+        self.assertEqual(frames[0].metrics["context_tokens"], 21)
+        self.assertAlmostEqual(frames[0].regions["Raw-logit entropy"], 0.4)
         self.assertTrue(finished[0]["cancelled"])
         self.assertTrue(world.unloaded and participant.unloaded)
 

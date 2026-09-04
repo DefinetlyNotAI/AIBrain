@@ -14,13 +14,13 @@ class VisualizerModeTests(unittest.TestCase):
     def test_renderer_caps_continuous_repaints_at_thirty_frames_per_second(self) -> None:
         self.assertIn("self.timer.start(33)", inspect.getsource(ConnectomeRenderer.__init__))
 
-    def test_neuron_border_width_uses_backend_independent_scalar_clamping(self) -> None:
+    def test_node_border_width_uses_backend_independent_scalar_clamping(self) -> None:
         renderer = SimpleNamespace(update=lambda: None)
 
-        ConnectomeRenderer.set_neuron_borders(renderer, True, 1.5)  # type: ignore[arg-type]
+        ConnectomeRenderer.set_node_borders(renderer, True, 1.5)  # type: ignore[arg-type]
 
-        self.assertTrue(renderer.show_neuron_borders)
-        self.assertEqual(renderer.neuron_border_width, 1.0)
+        self.assertTrue(renderer.show_node_borders)
+        self.assertEqual(renderer.node_border_width, 1.0)
 
     def test_flat_projection_drops_depth_rotation(self) -> None:
         renderer = SimpleNamespace(view_mode="2d", zoom=1.0, width=lambda: 800, height=lambda: 600)
@@ -54,7 +54,7 @@ class VisualizerModeTests(unittest.TestCase):
         self.assertIsInstance(matrix, host_np.ndarray)
         self.assertTrue(matrix.flags.c_contiguous)
 
-    def test_sector_mode_limits_visible_neurons_and_rejects_invalid_regions(self) -> None:
+    def test_sector_mode_limits_visible_nodes_and_rejects_invalid_regions(self) -> None:
         renderer = SimpleNamespace(
             graph=SimpleNamespace(
                 positions=np.zeros((4, 3), dtype="f4"),

@@ -19,6 +19,7 @@ from src.app.analysis_window import (
     inspect_npz_contents,
     inspect_npz_model,
 )
+from src.connectome.analysis import FEATURE_SCHEMA
 
 
 class AnalysisCliTests(unittest.TestCase):
@@ -80,6 +81,7 @@ class AnalysisCliTests(unittest.TestCase):
             path = Path(directory) / "analysis.npz"
             np.savez(
                 path,
+                feature_schema=np.array(FEATURE_SCHEMA),
                 encoder_weights=np.ones((2, 3)),
                 encoder_bias=np.ones(3),
                 decoder_weights=np.ones((3, 2)),
@@ -173,7 +175,7 @@ class AnalysisCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "analysis.json"
             payload = {
-                "schema": "aibrain.infinite-analysis-plus.v1",
+                "schema": "aibrain.infinite-analysis-plus.v2",
                 "created_at": "2026-09-04T00:00:00+00:00",
                 "conversation": [{"role": "world", "content": "Rain begins."}],
                 "recorded_frame_summary": {"frames": 12},
@@ -246,6 +248,7 @@ class AnalysisCliTests(unittest.TestCase):
             weights[0, 0] = np.nan
             np.savez(
                 path,
+                feature_schema=np.array(FEATURE_SCHEMA),
                 encoder_weights=weights,
                 encoder_bias=np.ones(3),
                 decoder_weights=np.ones((3, 2)),
@@ -266,6 +269,7 @@ class AnalysisCliTests(unittest.TestCase):
             path = Path(directory) / "analysis.npz"
             np.savez(
                 path,
+                feature_schema=np.array(FEATURE_SCHEMA),
                 encoder_weights=np.ones((2, 3)),
                 encoder_bias=np.ones(2),
                 decoder_weights=np.ones((3, 2)),
@@ -274,6 +278,22 @@ class AnalysisCliTests(unittest.TestCase):
                 frames_seen=np.array(7),
             )
             with self.assertRaisesRegex(ValueError, "incompatible tensor shapes"):
+                inspect_npz_model(path)
+
+    def test_npz_inspector_rejects_legacy_simulation_features(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.npz"
+            np.savez(
+                path,
+                encoder_weights=np.ones((2, 3)),
+                encoder_bias=np.ones(3),
+                decoder_weights=np.ones((3, 2)),
+                decoder_bias=np.ones(2),
+                embedding_centroid=np.ones(3),
+                frames_seen=np.array(7),
+            )
+
+            with self.assertRaisesRegex(ValueError, "may contain legacy simulated features"):
                 inspect_npz_model(path)
 
 

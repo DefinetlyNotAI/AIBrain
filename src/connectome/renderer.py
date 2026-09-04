@@ -92,8 +92,8 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._render_edges = self._select_render_edges()
         self._edge_activity_values = np.zeros(len(self._render_edges) * 2, dtype="f4")
         self._gpu_error: str | None = None
-        self.show_neuron_borders = True
-        self.neuron_border_width = 0.12
+        self.show_node_borders = True
+        self.node_border_width = 0.12
         self.view_mode = "3d"
         self.region_filter: int | None = None
         self.background_colour = "#071018"
@@ -303,7 +303,7 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._edge_program["u_mvp"].write(matrix)
             self._point_program["u_mvp"].write(matrix)
             self._point_program["u_border_width"].value = (
-                self.neuron_border_width if self.show_neuron_borders else 0.0
+                self.node_border_width if self.show_node_borders else 0.0
             )
             idle_strength = 0.58 if self.view_mode == "2d" else 0.42
             self._point_program["u_idle_strength"].value = idle_strength
@@ -423,9 +423,9 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.pan_x, self.pan_y = 0.0, 0.0
         self.update()
 
-    def set_neuron_borders(self, visible: bool, width: float) -> None:
-        self.show_neuron_borders = visible
-        self.neuron_border_width = min(1.0, max(0.0, width))
+    def set_node_borders(self, visible: bool, width: float) -> None:
+        self.show_node_borders = visible
+        self.node_border_width = min(1.0, max(0.0, width))
         self.update()
 
     def set_background_colour(self, colour: str) -> None:

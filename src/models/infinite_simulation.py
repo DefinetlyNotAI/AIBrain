@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from pathlib import Path
 from secrets import choice
 from threading import Event
@@ -8,7 +9,7 @@ from time import monotonic
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from .instrumented_backend import ActivationFrame, ActivitySource
+from .instrumented_backend import realtime_activation_frame, retokenized_throughput
 from .llama_backend import GenerationConfig, LlamaBackend, reached_sentence_end, sentence_grace_config
 
 LOG = logging.getLogger(__name__)
@@ -148,40 +149,45 @@ class InfiniteSimulationWorker(QObject):
         self.turnStarted.emit(role, turn)
         chunks: list[str] = []
         token_count = 0
-        for text in backend.stream_chat(messages, sentence_grace_config(config)):
+        previous_token_at = monotonic()
+        recent_output: deque[str] = deque(maxlen=32)
+        for chunk in backend.stream_chat(messages, sentence_grace_config(config)):
             if self._cancelled.is_set():
                 break
+            now = monotonic()
+            latency = now - previous_token_at
+            text = chunk.text
             chunks.append(text)
-            token_ids = backend.tokenize(text)
-            token_count += max(1, len(token_ids))
-            frame = ActivationFrame(token_ids[-1] if token_ids else None, text, step_offset + token_count,
-                                    ActivitySource.SIMULATION)
+            retokenized_ids = chunk.retokenized_ids
+            retokenized_count = len(retokenized_ids)
+            token_count += max(1, retokenized_count)
+            recent_output_occurrences = recent_output.count(text)
+            frame = realtime_activation_frame(
+                chunk,
+                step_offset + token_count,
+                output_tokens=token_count,
+                max_tokens=config.max_tokens,
+                context_limit=config.context_length,
+                stream_latency_seconds=latency,
+                retokenized_tokens_per_second=retokenized_throughput(
+                    retokenized_count, latency
+                ),
+                recent_output_occurrences=recent_output_occurrences,
+            )
+            recent_output.append(text)
             self.token.emit(role, turn, text, frame)
             if reached_sentence_end("".join(chunks), token_count, config.max_tokens):
                 break
+            previous_token_at = monotonic()
         output = "".join(chunks)
         self.turnFinished.emit(role, output, turn)
         return output, token_count
 
     def _generate_participant(self, messages: list[dict[str, str]], config: GenerationConfig, turn: int,
                               step_offset: int) -> tuple[str, int]:
-        self.turnStarted.emit("participant", turn)
-        chunks: list[str] = []
-        token_count = 0
-        for text in self.participant.stream_chat(messages, sentence_grace_config(config)):
-            if self._cancelled.is_set():
-                break
-            chunks.append(text)
-            token_ids = self.participant.tokenize(text)
-            token_count += max(1, len(token_ids))
-            frame = ActivationFrame(token_ids[-1] if token_ids else None, text, step_offset + token_count,
-                                    ActivitySource.SIMULATION)
-            self.token.emit("participant", turn, text, frame)
-            if reached_sentence_end("".join(chunks), token_count, config.max_tokens):
-                break
-        output = "".join(chunks)
-        self.turnFinished.emit("participant", output, turn)
-        return output, token_count
+        return self._generate(
+            "participant", self.participant, messages, config, turn, step_offset
+        )
 
     @staticmethod
     def _trim(messages: list[dict[str, str]]) -> list[dict[str, str]]:

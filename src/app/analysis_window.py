@@ -29,6 +29,7 @@ from ..connectome.analysis import (
     ADULT_FRAME_FLOOR,
     BABY_FRAME_FLOOR,
     CONSISTENCY_WINDOW,
+    FEATURE_SCHEMA,
     ConnectomeAnalyzer,
 )
 from ..utils.array_api import BACKEND_NAME
@@ -41,7 +42,7 @@ _TENSOR_NAMES = (
     "decoder_bias",
     "embedding_centroid",
 )
-_REQUIRED_NAMES = (*_TENSOR_NAMES, "frames_seen")
+_REQUIRED_NAMES = (*_TENSOR_NAMES, "frames_seen", "feature_schema")
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,11 +86,18 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
     with np.load(path, allow_pickle=False) as stored:
         missing = [name for name in _REQUIRED_NAMES if name not in stored]
         if missing:
+            if "feature_schema" in missing:
+                raise ValueError(
+                    "The analysis NPZ has no real-time feature schema and may contain "
+                    "legacy simulated features. Generate a new response to create "
+                    "real-time telemetry analysis memory."
+                )
             raise ValueError(
                 f"The analysis NPZ is missing required tensors: {', '.join(missing)}"
             )
         tensors = {name: np.asarray(stored[name]) for name in _TENSOR_NAMES}
         raw_frames = np.asarray(stored["frames_seen"])
+        feature_schema = str(np.asarray(stored["feature_schema"]).reshape(-1)[0])
         histories = {
             name: (
                 np.asarray(stored[name])
@@ -116,6 +124,10 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
     if raw_frames.size != 1:
         raise ValueError("The analysis NPZ has an invalid frames_seen value")
     frames_seen = int(raw_frames.reshape(-1)[0])
+    if feature_schema != FEATURE_SCHEMA:
+        raise ValueError(
+            f"Unsupported analysis feature schema: {feature_schema or 'missing'}"
+        )
     if frames_seen < 0:
         raise ValueError("The analysis NPZ has a negative frames_seen value")
     non_finite = [
@@ -186,7 +198,7 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
             "ready" if state in {"Adult", "Elder"} and history_present else "caution"
         ),
         "note": (
-            "Legacy files retain their learned tensors but are conservatively treated as Baby until new rolling metrics are observed."
+            "This compatible early real-time file has no rolling histories and is treated as Baby until new evidence is observed."
             if not history_present
             else "Maturity is a persisted learning-health signal, not an accuracy guarantee."
         ),
@@ -280,6 +292,7 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
         },
         "architecture": {
             "type": "online autoencoder",
+            "feature_schema": feature_schema,
             "input_features": input_width,
             "latent_features": latent_width,
             "shape": f"{input_width} -> {latent_width} -> {input_width}",
@@ -436,7 +449,7 @@ class AnalysisWindow(QMainWindow):
         card_tooltips = {
             health: "Overall integrity score for the persisted Analysis+ model",
             self.state_card: "Current learning stage and whether training is active",
-            self.frame_card: "Total visual-activity frames retained across sessions",
+            self.frame_card: "Total real-time inference frames retained across sessions",
             progress: "Evidence and frame progress required for the next maturity stage",
             self.architecture_card: "Autoencoder input, latent, and output dimensions",
             self.quality_card: "Stability of recent reconstruction and weight updates",
