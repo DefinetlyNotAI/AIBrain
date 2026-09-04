@@ -48,7 +48,7 @@ been enabled.
 # Rebuild and verify the native DLL after editing its C source.
 py cli\build_native.py --clean
 
-# Build self-contained ai_brain, diagnostic, and analysis application folders.
+# Build merged AIBrain plus independent main, diagnostic, and analysis folders.
 .\.venv\Scripts\python.exe cli\build_dist.py
 
 # Verify Python syntax from the managed environment.

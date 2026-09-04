@@ -120,10 +120,14 @@ Build a normal, self-contained directory distribution—never a single-file exec
 .\.venv\Scripts\python.exe cli\build_dist.py
 ```
 
-The result is `dist\AIBrain_YYYYMMDD_HHMMSS\` with three self-contained application folders:
-`ai_brain\ai_brain.exe`, `diagnostic\diagnostic.exe`, and `analysis\analysis.exe`. Each contains its Qt, Python,
-llama.cpp, native connectome, and required Visual C++ runtime files, and runs without activating the development
-`.venv`.
+The result is `dist\AIBrain_YYYYMMDD_HHMMSS\` with four folders. Use `AIBrain\` for the complete suite: it contains
+`ai_brain.exe`, `diagnostic.exe`, and `analysis.exe` together so the applications can open one another. The three
+independently compiled distributions are retained as `main\`, `diagnostic\`, and `analysis\`. Every folder includes
+the Qt, Python, llama.cpp, native connectome, and required Visual C++ runtime files needed by its executable and runs
+without activating the development `.venv`.
+
+The merged folder is assembled as a byte-safe union after all three standalone builds pass verification. If two builds
+produce different files at the same relative path, packaging stops instead of overwriting one application's runtime.
 
 The builder enables Nuitka's native Rich progress bars, showing the bar, percentage, counts, and current module.
 Bars update in place in interactive terminals; captured consoles receive snapshots at most every three seconds.

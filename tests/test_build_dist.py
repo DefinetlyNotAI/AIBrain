@@ -565,6 +565,69 @@ class BuildDistributionTests(unittest.TestCase):
             self.assertNotIn("--include-package=src", command)
             self.assertEqual(command[1:3], ["-u", "-m"])
 
+        self.assertEqual(targets["ai_brain.exe"].directory, "main")
+
+    def test_focused_main_build_retains_the_ai_brain_cli_alias(self) -> None:
+        expected = (build_dist.APPLICATIONS[0],)
+
+        self.assertEqual(build_dist._selected_application_targets("main"), expected)
+        self.assertEqual(build_dist._selected_application_targets("ai_brain"), expected)
+        self.assertEqual(
+            build_dist._selected_application_targets(None),
+            build_dist.APPLICATIONS,
+        )
+
+    def test_merged_distribution_contains_all_apps_and_keeps_individual_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory)
+
+            for target in build_dist.APPLICATIONS:
+                application = release / target.directory
+                (application / "dll").mkdir(parents=True)
+                (application / target.executable).write_bytes(b"MZ" + b"x" * 100_000)
+                (application / "dll" / build_dist.NATIVE_LIBRARY.name).write_bytes(b"native")
+                (application / "msvcp140.dll").write_bytes(b"runtime")
+                (application / "vcomp140.dll").write_bytes(b"runtime")
+                (application / "shared-runtime.dll").write_bytes(b"shared")
+                (application / f"{target.directory}.data").write_text(
+                    target.executable,
+                    encoding="utf-8",
+                )
+
+            with patch.object(build_dist, "set_windows_executable_gpu_preference") as gpu:
+                merged = build_dist.merge_application_distributions(
+                    release,
+                    build_dist.APPLICATIONS,
+                )
+
+            self.assertEqual(merged, release / "AIBrain")
+            self.assertEqual(
+                {path.name for path in merged.glob("*.exe")},
+                {"ai_brain.exe", "diagnostic.exe", "analysis.exe"},
+            )
+            for target in build_dist.APPLICATIONS:
+                self.assertTrue((release / target.directory / target.executable).is_file())
+                self.assertTrue((merged / f"{target.directory}.data").is_file())
+            gpu.assert_called_once_with(merged / "ai_brain.exe")
+
+    def test_merged_distribution_rejects_different_shared_runtime_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory)
+            first, second = build_dist.APPLICATIONS[:2]
+            for target, contents in ((first, b"first"), (second, b"second")):
+                application = release / target.directory
+                application.mkdir()
+                (application / "shared-runtime.dll").write_bytes(contents)
+
+            with self.assertRaisesRegex(RuntimeError, "copies of shared-runtime.dll differ"):
+                build_dist.merge_application_distributions(
+                    release,
+                    (first, second),
+                )
+
+            self.assertFalse((release / "AIBrain").exists())
+            self.assertFalse((release / "_AIBrain.merge").exists())
+
     def test_target_sections_follow_the_build_session_section(self) -> None:
         source = Path(build_dist.__file__).read_text(encoding="utf-8")
 

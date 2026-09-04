@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import codecs
 import ctypes
+import filecmp
 import logging
 import os
 import queue
@@ -131,7 +132,7 @@ class BuildStallState:
 
 APPLICATIONS = (
     ApplicationTarget(
-        "ai_brain",
+        "main",
         "ai_brain.exe",
         ROOT / "cli" / "main.py",
         ROOT / "ico" / "brain.ico",
@@ -152,6 +153,8 @@ APPLICATIONS = (
         "attach",
     ),
 )
+
+MERGED_APPLICATION_DIRECTORY = "AIBrain"
 
 
 class _ConsoleCoord(ctypes.Structure):
@@ -1243,6 +1246,125 @@ def _verify_application(
     return executable
 
 
+def _merge_application_tree(source: Path, destination: Path) -> None:
+    """Add one standalone application tree without overwriting conflicts."""
+    for source_path in source.rglob("*"):
+        relative_path = source_path.relative_to(source)
+        destination_path = destination / relative_path
+
+        if source_path.is_dir():
+            if destination_path.exists() and not destination_path.is_dir():
+                raise RuntimeError(
+                    "Cannot merge standalone applications because "
+                    f"{relative_path} is both a file and a directory"
+                )
+            destination_path.mkdir(parents=True, exist_ok=True)
+            continue
+
+        if destination_path.is_dir():
+            raise RuntimeError(
+                "Cannot merge standalone applications because "
+                f"{relative_path} is both a directory and a file"
+            )
+
+        if destination_path.exists():
+            if not filecmp.cmp(source_path, destination_path, shallow=False):
+                raise RuntimeError(
+                    "Cannot safely merge standalone applications because "
+                    f"their copies of {relative_path} differ"
+                )
+            continue
+
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination_path)
+
+
+def merge_application_distributions(
+        release: Path,
+        targets: tuple[ApplicationTarget, ...],
+) -> Path:
+    """Create one verified folder containing every independently built app."""
+    merged = release / MERGED_APPLICATION_DIRECTORY
+    staging = release / f"_{MERGED_APPLICATION_DIRECTORY}.merge"
+
+    if merged.exists() or staging.exists():
+        raise RuntimeError(
+            "Refusing to overwrite an existing merged distribution: "
+            f"{merged}"
+        )
+
+    info(f"Creating merged application folder: {merged}")
+    staging.mkdir()
+
+    try:
+        for target in targets:
+            source = release / target.directory
+            if not source.is_dir():
+                raise RuntimeError(
+                    "Cannot merge missing standalone application folder: "
+                    f"{source}"
+                )
+            info(f"Merging {target.directory} into {MERGED_APPLICATION_DIRECTORY}")
+            _merge_application_tree(source, staging)
+
+        info("Verifying all executables and required DLLs in the merged folder")
+        for target in targets:
+            _verify_application(staging, target)
+
+        staging.rename(merged)
+
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    main_target = next(
+        (
+            target
+            for target in targets
+            if target.executable == "ai_brain.exe"
+        ),
+        None,
+    )
+    if main_target is not None:
+        info("Setting the merged application's Windows GPU preference")
+        set_windows_executable_gpu_preference(
+            merged / main_target.executable
+        )
+
+    info(f"Merged application folder complete: {merged}")
+    return merged
+
+
+def _is_full_application_build(
+        targets: tuple[ApplicationTarget, ...],
+) -> bool:
+    return (
+        len(targets) == len(APPLICATIONS)
+        and {
+            target.executable
+            for target in targets
+        } == {
+            target.executable
+            for target in APPLICATIONS
+        }
+    )
+
+
+def _selected_application_targets(
+        selection: str | None,
+) -> tuple[ApplicationTarget, ...]:
+    """Resolve a focused target while retaining the former CLI alias."""
+    if selection is None:
+        return APPLICATIONS
+
+    directory = "main" if selection == "ai_brain" else selection
+    return tuple(
+        target
+        for target in APPLICATIONS
+        if target.directory == directory
+    )
+
+
 def build(
         timestamp: str | None = None,
         targets: tuple[
@@ -1340,6 +1462,16 @@ def build(
                 )
             info(f"Completed {target.executable} in {time.monotonic() - target_started:.1f}s")
 
+        if _is_full_application_build(targets):
+            section(
+                "Merge standalone applications",
+                len(targets) + 2,
+            )
+            merge_application_distributions(
+                release,
+                targets,
+            )
+
     finally:
         info(f"Removing intermediate build files: {release / '_nuitka'}")
         shutil.rmtree(
@@ -1379,10 +1511,11 @@ def main() -> int:
         choices=[
             target.directory
             for target in APPLICATIONS
-        ],
+        ] + ["ai_brain"],
         help=(
             "Build one application target "
-            "for focused package verification"
+            "for focused package verification "
+            "(ai_brain remains an alias for main)"
         ),
     )
 
@@ -1398,15 +1531,13 @@ def main() -> int:
     info("Native Nuitka progress bars, build stages, warnings, and results appear below")
 
     try:
-        selected = tuple(
-            target
-            for target in APPLICATIONS
-            if target.directory == arguments.only
+        selected = _selected_application_targets(
+            arguments.only
         )
 
         release = build(
             arguments.timestamp,
-            selected or APPLICATIONS,
+            selected,
         )
 
     except (
@@ -1417,7 +1548,7 @@ def main() -> int:
         error(str(exc))
         return 1
 
-    targets = selected or APPLICATIONS
+    targets = selected
 
     distribution_rows = [
         (
@@ -1427,10 +1558,22 @@ def main() -> int:
         for target in targets
     ]
 
+    if _is_full_application_build(targets):
+        distribution_rows.insert(
+            0,
+            (
+                "AIBrain (all applications)",
+                str(release / MERGED_APPLICATION_DIRECTORY),
+            ),
+        )
+
     panel(
         "DISTRIBUTION COMPLETE",
         distribution_rows,
-        footer="Each application folder is self-contained and ready to launch.",
+        footer=(
+            "Use the merged AIBrain folder for the complete suite; "
+            "the three independent builds are retained beside it."
+        ),
         tone=Color.GREEN,
     )
 
