@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import inspect
 import os
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from cli import analysis, diagnostic, main
-from src.utils import gpu
 from src.connectome.renderer import ConnectomeRenderer
+from src.utils import gpu
 from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE, can_request_gpu_relaunch
 
 

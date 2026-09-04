@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 
 from cli import test
@@ -85,9 +85,8 @@ class TestLauncherTests(unittest.TestCase):
 
     @patch("builtins.input", side_effect=KeyboardInterrupt)
     def test_menu_propagates_keyboard_interrupt_to_the_cli_exit_handler(self, _input_mock) -> None:  # type: ignore[no-untyped-def]
-        with redirect_stdout(StringIO()):
-            with self.assertRaises(KeyboardInterrupt):
-                test.choose_suite()
+        with redirect_stdout(StringIO()), self.assertRaises(KeyboardInterrupt):
+            test.choose_suite()
 
 
 if __name__ == "__main__":

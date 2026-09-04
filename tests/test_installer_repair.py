@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import tempfile
-import unittest
-import subprocess
-import sys
 import json
 import struct
+import subprocess
+import sys
+import tempfile
+import unittest
 import venv
 from contextlib import ExitStack, redirect_stdout
 from io import StringIO
@@ -211,10 +211,9 @@ class InstallerRepairTests(unittest.TestCase):
             patch(
                 "cli.installer.probe_llama_runtime",
                 return_value=(False, "RuntimeError: missing llama.dll"),
-            ),
+            ),self.assertRaisesRegex(installer.LlamaRuntimeError, "missing llama.dll")
         ):
-            with self.assertRaisesRegex(installer.LlamaRuntimeError, "missing llama.dll"):
-                installer.install_llama("managed-python", None)
+            installer.install_llama("managed-python", None)
 
     def test_repair_is_unavailable_before_the_first_install(self) -> None:
         with self.assertRaisesRegex(ValueError, "unavailable"):
@@ -478,9 +477,8 @@ class InstallerBootstrapTests(unittest.TestCase):
     def test_managed_interpreter_check_rejects_a_different_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.object(
             installer, "VENV_DIR", Path(directory) / ".venv"
-        ):
-            with self.assertRaises(subprocess.CalledProcessError):
-                installer.verify_managed_python(sys.executable)
+        ), self.assertRaises(subprocess.CalledProcessError):
+            installer.verify_managed_python(sys.executable)
 
     def test_cuda_probe_rejects_a_cpu_wheel_that_imports_successfully(self) -> None:
         def probe(command, **_kwargs):

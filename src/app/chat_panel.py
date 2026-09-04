@@ -4,13 +4,25 @@ import html
 import re
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit,
-                               QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QScrollArea,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
-from .advanced_settings import AdvancedSettingsDialog
 from ..models.infinite_simulation import random_world_opening
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
+from .advanced_settings import AdvancedSettingsDialog
 
 _SELECTABLE_TEXT_FLAGS = Qt.TextInteractionFlag(
     Qt.TextInteractionFlag.TextSelectableByMouse.value

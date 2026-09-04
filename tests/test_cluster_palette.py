@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import unittest
 
-from src.connectome.generator import CLUSTER_COLOR_MAP, LIGHT_BACKGROUND_CLUSTER_COLOR_MAP, REGIONS, \
-    cluster_colour_map_for_background
+from src.connectome.generator import (
+    CLUSTER_COLOR_MAP,
+    LIGHT_BACKGROUND_CLUSTER_COLOR_MAP,
+    REGIONS,
+    cluster_colour_map_for_background,
+)
 
 
 class ClusterPaletteTests(unittest.TestCase):

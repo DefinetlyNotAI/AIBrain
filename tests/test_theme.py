@@ -10,7 +10,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from src.app.theme import ColourSettingsDialog, DEFAULT_COLOURS, load_colours, save_colours, stylesheet
+from src.app.theme import (
+    DEFAULT_COLOURS,
+    ColourSettingsDialog,
+    load_colours,
+    save_colours,
+    stylesheet,
+)
 
 
 class ThemeTests(unittest.TestCase):

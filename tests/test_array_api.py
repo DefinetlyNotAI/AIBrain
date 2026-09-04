@@ -5,8 +5,8 @@ import importlib
 import unittest
 from unittest.mock import patch
 
-from src.utils.array_api import BACKEND_NAME, array_api, to_numpy
 from src.connectome.analysis import _normal
+from src.utils.array_api import BACKEND_NAME, array_api, to_numpy
 
 
 class ArrayApiTests(unittest.TestCase):

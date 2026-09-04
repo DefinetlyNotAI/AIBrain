@@ -6,7 +6,8 @@ from pathlib import Path
 
 import numpy as _numpy
 
-from ...utils.array_api import GPU_ACCELERATED, array_api as np
+from ...utils.array_api import GPU_ACCELERATED
+from ...utils.array_api import array_api as np
 
 _APP_ROOT = (
     Path(sys.argv[0]).resolve().parent

@@ -12,13 +12,13 @@ from PySide6.QtCore import (
     QProcess,
     QProcessEnvironment,
     QSettings,
+    Qt,
     QThread,
     QTimer,
-    Qt,
+    QUrl,
     Signal,
     Slot,
 )
-from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -39,13 +39,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .dashboard import metric_card
-from .loading_window import GpuProbe
-from .theme import load_colours, stylesheet
 from ..models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from ..utils.console_ui import strip_ansi
 from ..utils.gpu import discover_render_adapters, should_prefer_high_performance_gpu
 from ..utils.logging import PROJECT_ROOT
+from .dashboard import metric_card
+from .loading_window import GpuProbe
+from .theme import load_colours, stylesheet
 
 LOG = logging.getLogger(__name__)
 

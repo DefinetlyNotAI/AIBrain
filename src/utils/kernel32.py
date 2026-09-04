@@ -30,39 +30,27 @@ class Kernel32:
             use_last_error=True,
         )
 
-        self._wait_for_single_object = getattr(
-            self._dll,
-            "WaitForSingleObject",
-        )
+        self._wait_for_single_object = self._dll.WaitForSingleObject
         self._wait_for_single_object.argtypes = [
             wintypes.HANDLE,
             wintypes.DWORD,
         ]
         self._wait_for_single_object.restype = wintypes.DWORD
 
-        self._get_exit_code_process = getattr(
-            self._dll,
-            "GetExitCodeProcess",
-        )
+        self._get_exit_code_process = self._dll.GetExitCodeProcess
         self._get_exit_code_process.argtypes = [
             wintypes.HANDLE,
             ctypes.POINTER(wintypes.DWORD),
         ]
         self._get_exit_code_process.restype = wintypes.BOOL
 
-        self._close_handle = getattr(
-            self._dll,
-            "CloseHandle",
-        )
+        self._close_handle = self._dll.CloseHandle
         self._close_handle.argtypes = [
             wintypes.HANDLE,
         ]
         self._close_handle.restype = wintypes.BOOL
 
-        self._create_pipe = getattr(
-            self._dll,
-            "CreatePipe",
-        )
+        self._create_pipe = self._dll.CreatePipe
         self._create_pipe.argtypes = [
             ctypes.POINTER(wintypes.HANDLE),
             ctypes.POINTER(wintypes.HANDLE),
@@ -71,10 +59,7 @@ class Kernel32:
         ]
         self._create_pipe.restype = wintypes.BOOL
 
-        self._read_file = getattr(
-            self._dll,
-            "ReadFile",
-        )
+        self._read_file = self._dll.ReadFile
         self._read_file.argtypes = [
             wintypes.HANDLE,
             wintypes.LPVOID,
@@ -84,10 +69,7 @@ class Kernel32:
         ]
         self._read_file.restype = wintypes.BOOL
 
-        self._create_process_w = getattr(
-            self._dll,
-            "CreateProcessW",
-        )
+        self._create_process_w = self._dll.CreateProcessW
         self._create_process_w.argtypes = [
             wintypes.LPCWSTR,
             wintypes.LPWSTR,
@@ -102,37 +84,22 @@ class Kernel32:
         ]
         self._create_process_w.restype = wintypes.BOOL
 
-        self._initialize_proc_thread_attribute_list = getattr(
-            self._dll,
-            "InitializeProcThreadAttributeList",
-        )
+        self._initialize_proc_thread_attribute_list = self._dll.InitializeProcThreadAttributeList
         self._initialize_proc_thread_attribute_list.restype = wintypes.BOOL
 
-        self._update_proc_thread_attribute = getattr(
-            self._dll,
-            "UpdateProcThreadAttribute",
-        )
+        self._update_proc_thread_attribute = self._dll.UpdateProcThreadAttribute
         self._update_proc_thread_attribute.restype = wintypes.BOOL
 
-        self._delete_proc_thread_attribute_list = getattr(
-            self._dll,
-            "DeleteProcThreadAttributeList",
-        )
+        self._delete_proc_thread_attribute_list = self._dll.DeleteProcThreadAttributeList
         self._delete_proc_thread_attribute_list.argtypes = [
             wintypes.LPVOID,
         ]
         self._delete_proc_thread_attribute_list.restype = None
 
-        self._create_pseudo_console = getattr(
-            self._dll,
-            "CreatePseudoConsole",
-        )
+        self._create_pseudo_console = self._dll.CreatePseudoConsole
         self._create_pseudo_console.restype = ctypes.c_long
 
-        self._close_pseudo_console = getattr(
-            self._dll,
-            "ClosePseudoConsole",
-        )
+        self._close_pseudo_console = self._dll.ClosePseudoConsole
         self._close_pseudo_console.argtypes = [
             wintypes.HANDLE,
         ]

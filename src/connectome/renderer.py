@@ -7,12 +7,12 @@ from PySide6.QtCore import QPointF, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
-from .activity import ActivityField
-from .generator import CLUSTER_COLOR_MAP, cluster_colour_map_for_background
-from .graph import ConnectomeGraph
 from ..native.wrapper.connectome_kernels import native
 from ..utils.array_api import to_numpy
 from ..utils.gpu import can_request_gpu_relaunch, should_prefer_high_performance_gpu
+from .activity import ActivityField
+from .generator import CLUSTER_COLOR_MAP, cluster_colour_map_for_background
+from .graph import ConnectomeGraph
 
 LOG = logging.getLogger(__name__)
 

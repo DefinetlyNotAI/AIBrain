@@ -11,17 +11,17 @@ from unittest.mock import patch
 
 from src.utils import console_ui
 from src.utils.logging import (
+    FILE_LOG_LINE_WIDTH,
+    MAX_LOG_BYTES,
     AlignedFormatter,
     BoundedFileHandler,
     ConsoleFormatter,
-    FILE_LOG_LINE_WIDTH,
-    MAX_LOG_BYTES,
+    _start_fresh_log,
     _uncaught_exception,
     configure_cli_logging,
     configure_logging,
     log_completed_command,
     report_exception,
-    _start_fresh_log,
     restore_cli_output,
 )
 

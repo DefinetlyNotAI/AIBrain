@@ -53,9 +53,9 @@ class UnifiedArrayAPI:
 array_api = UnifiedArrayAPI()
 
 __all__ = [
-    "array_api",
     "BACKEND_NAME",
     "CUDA_FALLBACK_REASON",
     "GPU_ACCELERATED",
+    "array_api",
     "to_numpy",
 ]

@@ -10,7 +10,12 @@ from time import monotonic
 from PySide6.QtCore import QObject, Signal, Slot
 
 from .instrumented_backend import realtime_activation_frame, retokenized_throughput
-from .llama_backend import GenerationConfig, LlamaBackend, reached_sentence_end, sentence_grace_config
+from .llama_backend import (
+    GenerationConfig,
+    LlamaBackend,
+    reached_sentence_end,
+    sentence_grace_config,
+)
 
 LOG = logging.getLogger(__name__)
 

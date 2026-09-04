@@ -497,11 +497,10 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_redirected_command_output_has_no_cursor_redraws_or_duplicate_progress(self) -> None:
         output = StringIO()
-        with redirect_stdout(output):
-            with console_ui.CommandOutputBox() as box:
-                box.write_partial("Downloading: 25%")
-                box.write_partial("Downloading: 50%")
-                box.write("Download complete")
+        with redirect_stdout(output), console_ui.CommandOutputBox() as box:
+            box.write_partial("Downloading: 25%")
+            box.write_partial("Downloading: 50%")
+            box.write("Download complete")
         rendered = console_ui.strip_ansi(output.getvalue())
         self.assertEqual(len(rendered.splitlines()), 3)
         self.assertIn("Download complete", rendered)

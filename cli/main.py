@@ -20,7 +20,11 @@ from src.utils.console_ui import (
     section,
     status,
 )
-from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE, configure_opengl_surface, prepare_gpu_launch
+from src.utils.gpu import (
+    GPU_RELAUNCH_EXIT_CODE,
+    configure_opengl_surface,
+    prepare_gpu_launch,
+)
 from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
 
@@ -64,6 +68,7 @@ def main() -> int:
     from PySide6.QtCore import QCoreApplication, QObject, QThread, QTimer, Slot
     from PySide6.QtGui import QFont
     from PySide6.QtWidgets import QApplication
+
     from src.app.loading_window import GpuProbe, LoadingWindow
     from src.app.main_window import MainWindow
     from src.models.model_validator import StartupWorker

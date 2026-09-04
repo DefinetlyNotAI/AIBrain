@@ -25,9 +25,12 @@ from src.utils.console_ui import (
     section,
     status,
 )
-from src.utils.runtime import require_managed_runtime
-from src.utils.runtime import in_managed_virtual_environment
-from src.utils.logging import configure_cli_logging, log_completed_command, report_exception
+from src.utils.logging import (
+    configure_cli_logging,
+    log_completed_command,
+    report_exception,
+)
+from src.utils.runtime import in_managed_virtual_environment, require_managed_runtime
 
 SUITES: dict[str, tuple[str, list[str]]] = {
     "1": (
@@ -94,8 +97,7 @@ def module_title(module: str) -> str:
     """Convert a test module name into a readable section title."""
     name = module.rsplit(".", 1)[-1]
 
-    if name.startswith("test_"):
-        name = name[5:]
+    name = name.removeprefix("test_")
 
     return name.replace("_", " ").title()
 

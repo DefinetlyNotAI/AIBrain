@@ -23,8 +23,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .dashboard import metric_card, metric_grid, progress_card
-from .theme import load_colours, stylesheet
 from ..connectome.analysis import (
     ADULT_FRAME_FLOOR,
     BABY_FRAME_FLOOR,
@@ -33,6 +31,8 @@ from ..connectome.analysis import (
     ConnectomeAnalyzer,
 )
 from ..utils.array_api import BACKEND_NAME
+from .dashboard import metric_card, metric_grid, progress_card
+from .theme import load_colours, stylesheet
 
 LOG = logging.getLogger(__name__)
 _TENSOR_NAMES = (

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import struct
 import hashlib
+import struct
 import tempfile
 import unittest
 from pathlib import Path
 from threading import Event
 from unittest.mock import patch
 
-from src.models.model_info import ModelInfo
 from src.models import model_validator
+from src.models.model_info import ModelInfo
 from src.models.model_validator import ModelValidator
 
 

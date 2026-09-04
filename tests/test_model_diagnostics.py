@@ -15,8 +15,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication, QDialog, QPlainTextEdit, QPushButton
 
-from src.app.loading_window import LoadingWindow
-from src.models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from src.app.analysis_window import AnalysisWindow
 from src.app.diagnostics_window import (
     DiagnosticsWindow,
@@ -24,6 +22,8 @@ from src.app.diagnostics_window import (
     LiveOutputBuffer,
     normalize_process_output,
 )
+from src.app.loading_window import LoadingWindow
+from src.models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from src.models.model_info import ModelInfo
 
 

@@ -19,8 +19,8 @@ from src.utils.console_ui import (
     section,
     status,
 )
-from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.gpu import configure_opengl_surface, prepare_gpu_launch
+from src.utils.logging import configure_cli_logging, report_exception
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
@@ -46,8 +46,9 @@ def main() -> int:
         return gpu_exit
     if not _consume_preserve_console_flag():
         clear_screen()
-    from PySide6.QtCore import QTimer, Qt
+    from PySide6.QtCore import Qt, QTimer
     from PySide6.QtWidgets import QApplication
+
     from src.app.diagnostics_window import DiagnosticsWindow
     from src.app.loading_window import LoadingWindow
 

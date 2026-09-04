@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import unittest
+
 from src.app.main_window import MainWindow
 
 

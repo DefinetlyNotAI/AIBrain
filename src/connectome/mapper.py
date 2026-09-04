@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .activity import ActivityField
 from ..models.instrumented_backend import ActivationFrame
+from .activity import ActivityField
 
 
 class ActivityMapper:

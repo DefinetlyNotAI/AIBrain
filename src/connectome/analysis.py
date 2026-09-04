@@ -12,9 +12,10 @@ from typing import TypedDict
 
 import numpy as _numpy
 
-from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
-from ..utils.array_api import array_api as np, to_numpy
+from ..utils.array_api import array_api as np
+from ..utils.array_api import to_numpy
+from .graph import ConnectomeGraph
 
 LOG = logging.getLogger(__name__)
 MODEL_FILENAME = "aibrain.analyser.npz"

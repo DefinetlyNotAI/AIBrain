@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import inspect
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 
 import numpy as host_np
 

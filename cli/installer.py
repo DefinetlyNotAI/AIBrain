@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from cli.build_dist import run as run_with_live_output
+from src.models.diagnostics import OllamaDiagnostics
 from src.utils.console_ui import (
     Color,
     ask_choice,
@@ -39,8 +41,6 @@ from src.utils.console_ui import (
     success,
     warning,
 )
-from cli.build_dist import run as run_with_live_output
-from src.models.diagnostics import OllamaDiagnostics
 from src.utils.logging import configure_cli_logging, report_exception
 
 VENV_DIR = ROOT / ".venv"

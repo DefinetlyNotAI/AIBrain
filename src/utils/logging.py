@@ -5,8 +5,8 @@ import logging
 import re
 import subprocess
 import sys
-import threading
 import textwrap
+import threading
 import traceback as traceback_module
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +30,7 @@ def _strip_ansi(text: str) -> str:
 
 def restore_cli_output() -> None:
     """Compatibility hook for callers that previously restored console tees."""
-    return None
+    return
 
 
 class AlignedFormatter(logging.Formatter):

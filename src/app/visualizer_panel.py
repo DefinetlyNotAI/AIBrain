@@ -5,7 +5,7 @@ from pathlib import Path
 from time import monotonic
 
 import numpy as np
-from PySide6.QtCore import QSettings, QTimer, Qt, Signal
+from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -22,7 +23,6 @@ from PySide6.QtWidgets import (
     QSlider,
     QVBoxLayout,
     QWidget,
-    QInputDialog,
 )
 
 from ..connectome.activity import ActivityField
@@ -363,7 +363,7 @@ class VisualizerPanel(QWidget):
         for index, name in enumerate(self.graph.region_names):
             self.region_selector.addItem(name, index)
         restored = self.region_selector.findData(selected)
-        self.region_selector.setCurrentIndex(restored if restored >= 0 else 0)
+        self.region_selector.setCurrentIndex(max(restored, 0))
         self.region_selector.blockSignals(False)
 
     def _set_view_mode(self, two_dimensional: bool) -> None:
@@ -763,7 +763,7 @@ class VisualizerPanel(QWidget):
             if selected_value is None and "nvidia" in adapter.name.lower():
                 selected = adapter.identifier
         index = self.render_gpu.findData(selected)
-        self.render_gpu.setCurrentIndex(index if index >= 0 else 0)
+        self.render_gpu.setCurrentIndex(max(index, 0))
         self.render_gpu.blockSignals(False)
         if selected != "system":
             set_windows_gpu_preference(True)

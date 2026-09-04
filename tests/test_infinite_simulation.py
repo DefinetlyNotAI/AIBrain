@@ -4,8 +4,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.models.infinite_simulation import InfiniteSimulationWorker, WORLD_OPENINGS, _CONTEXT_TURNS, \
-    infinite_generation_config, random_world_opening
+from src.models.infinite_simulation import (
+    _CONTEXT_TURNS,
+    WORLD_OPENINGS,
+    InfiniteSimulationWorker,
+    infinite_generation_config,
+    random_world_opening,
+)
 from src.models.instrumented_backend import (
     ActivitySource,
     GenerationChunk,

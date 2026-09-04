@@ -1,7 +1,14 @@
 """Small, reusable dashboard primitives shared by AIBrain Qt surfaces."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QLabel,
+    QProgressBar,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 def status_badge(text: str, tone: str = "neutral") -> QLabel:

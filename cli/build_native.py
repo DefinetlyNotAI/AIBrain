@@ -29,6 +29,8 @@ if str(ROOT) not in sys.path:
 
 from src.utils.console_ui import (
     Color as Colour,
+)
+from src.utils.console_ui import (
     CommandOutputBox,
     clear_screen,
     command_preview,
@@ -39,8 +41,12 @@ from src.utils.console_ui import (
     section,
     status,
 )
+from src.utils.logging import (
+    configure_cli_logging,
+    log_completed_command,
+    report_exception,
+)
 from src.utils.runtime import require_managed_runtime
-from src.utils.logging import configure_cli_logging, log_completed_command, report_exception
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"

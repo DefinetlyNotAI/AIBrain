@@ -9,10 +9,10 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from ctypes import wintypes
 from pathlib import Path
-from typing import Callable, TextIO, cast
+from typing import TextIO, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WIDTH = 82

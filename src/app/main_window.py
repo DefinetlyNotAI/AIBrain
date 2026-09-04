@@ -10,9 +10,9 @@ from PySide6.QtCore import (
     QCoreApplication,
     QProcess,
     QSettings,
+    Qt,
     QThread,
     QTimer,
-    Qt,
     Signal,
 )
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
@@ -25,16 +25,16 @@ from PySide6.QtWidgets import (
     QSplitter,
 )
 
-from .chat_panel import ChatPanel
-from .chat_export import write_chat_export
-from .settings import load_generation_settings, save_generation_settings
-from .theme import load_colours, stylesheet
-from .visualizer_panel import VisualizerPanel
 from ..models.generation_worker import GenerationWorker
 from ..models.infinite_simulation import InfiniteSimulationWorker
 from ..models.llama_backend import LlamaBackend
 from ..models.model_info import ModelInfo
 from ..utils.gpu import GPU_RELAUNCH_EXIT_CODE
+from .chat_export import write_chat_export
+from .chat_panel import ChatPanel
+from .settings import load_generation_settings, save_generation_settings
+from .theme import load_colours, stylesheet
+from .visualizer_panel import VisualizerPanel
 
 LOG = logging.getLogger(__name__)
 

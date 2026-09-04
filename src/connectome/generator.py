@@ -4,8 +4,8 @@ import hashlib
 
 import numpy as np
 
-from .graph import ConnectomeGraph
 from ..models.instrumented_backend import REALTIME_REGIONS
+from .graph import ConnectomeGraph
 
 REGIONS = REALTIME_REGIONS
 

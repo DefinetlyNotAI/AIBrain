@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-import numpy as np
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
