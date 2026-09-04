@@ -45,6 +45,13 @@ class _OutputBox:
     def write(self, output: str) -> None:
         self._events.append(f"write:{output.rstrip()}")
 
+    @property
+    def is_live(self) -> bool:
+        return True
+
+    def write_progress(self, output: str) -> None:
+        self._events.append(f"progress:{output}")
+
 
 class NativeBuildCommandTests(unittest.TestCase):
     def test_command_output_is_rendered_before_process_completion(self) -> None:
@@ -61,15 +68,11 @@ class NativeBuildCommandTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(
-            events,
-            [
-                "read:compiling source",
-                "write:compiling source",
-                "read:linking library",
-                "write:linking library",
-                "wait",
-            ],
+            [event for event in events if event.startswith("write:")],
+            ["write:compiling source", "write:linking library"],
         )
+        self.assertLess(events.index("write:compiling source"), events.index("wait"))
+        self.assertLess(events.index("write:linking library"), events.index("wait"))
 
     def test_silent_command_does_not_invent_exit_code_output(self) -> None:
         events: list[str] = []
@@ -104,6 +107,18 @@ class NativeBuildCommandTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.returncode, 2)
         self.assertEqual(raised.exception.output, "compile failed")
+
+    def test_compiler_commands_enable_verbose_toolchain_output(self) -> None:
+        gnu = build_native.command_for(
+            build_native.Compiler(build_native.Path("gcc.exe"), "gnu"), False
+        )
+        msvc = build_native.command_for(
+            build_native.Compiler(build_native.Path("cl.exe"), "msvc"), False
+        )
+
+        self.assertIn("-v", gnu)
+        self.assertIn("/Bt+", msvc)
+        self.assertEqual(msvc[-2:], ["/link", "/VERBOSE"])
 
 
 if __name__ == "__main__":

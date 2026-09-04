@@ -13,9 +13,12 @@ from __future__ import annotations
 import argparse
 import ctypes
 import os
+import queue
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +44,8 @@ from src.utils.logging import configure_cli_logging, log_completed_command, repo
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
+LIVE_HEARTBEAT_SECONDS = 1.0
+CAPTURED_HEARTBEAT_SECONDS = 15.0
 
 EXPECTED_EXPORTS = (
     "decay_and_count",
@@ -73,6 +78,7 @@ def run_command(
     """Run an external command and render each output line as it arrives."""
     command_preview(command_line)
     process: subprocess.Popen[str] | None = None
+    reader: threading.Thread | None = None
     captured: list[str] = []
     try:
         process = subprocess.Popen(
@@ -87,9 +93,47 @@ def run_command(
         )
         if process.stdout is None:
             raise RuntimeError("Could not capture command output")
+        output_queue: queue.Queue[str | None] = queue.Queue()
+
+        def read_output() -> None:
+            try:
+                for output_line in process.stdout:
+                    output_queue.put(output_line)
+            finally:
+                output_queue.put(None)
+
+        reader = threading.Thread(
+            target=read_output,
+            name="native-build-output-reader",
+            daemon=True,
+        )
+        reader.start()
         with CommandOutputBox() as output_box:
-            for output_line in process.stdout:
+            last_output = time.monotonic()
+            last_heartbeat = last_output
+            while True:
+                try:
+                    output_line = output_queue.get(timeout=0.1)
+                except queue.Empty:
+                    now = time.monotonic()
+                    interval = (
+                        LIVE_HEARTBEAT_SECONDS
+                        if output_box.is_live
+                        else CAPTURED_HEARTBEAT_SECONDS
+                    )
+                    if show_output and now - last_heartbeat >= interval:
+                        elapsed = max(0, int(now - last_output))
+                        output_box.write_progress(
+                            "Compiler is still running without new output "
+                            f"({elapsed}s since the last line)"
+                        )
+                        last_heartbeat = now
+                    continue
+                if output_line is None:
+                    break
                 captured.append(output_line)
+                last_output = time.monotonic()
+                last_heartbeat = last_output
                 if show_output:
                     output_box.write(output_line)
         return_code = process.wait()
@@ -101,6 +145,9 @@ def run_command(
             command_line, "".join(captured).rstrip(), return_code=None, interrupted=True
         )
         raise
+    finally:
+        if reader is not None:
+            reader.join(timeout=1.0)
 
     output = "".join(captured).rstrip()
     log_completed_command(command_line, output, return_code=return_code)
@@ -157,6 +204,7 @@ def command_for(
     if compiler.family == "msvc":
         flags = [
             "/nologo",
+            "/Bt+",
             "/std:c11",
             "/W4",
             "/LD",
@@ -173,9 +221,12 @@ def command_for(
         return [
             str(compiler.path),
             *flags,
+            "/link",
+            "/VERBOSE",
         ]
 
     flags = [
+        "-v",
         "-std=c11",
         "-shared",
         "-Wall",
