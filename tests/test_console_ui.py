@@ -105,7 +105,7 @@ class ConsoleUiTests(unittest.TestCase):
                 content = source_file.read_text(encoding="utf-8")
                 self.assertFalse(any(marker in content for marker in markers))
 
-    def test_every_cli_entry_point_uses_the_native_clear_screen_api(self) -> None:
+    def test_every_cli_entry_point_controls_the_native_clear_screen_api(self) -> None:
         root = Path(__file__).resolve().parents[1]
 
         for source_file in sorted(
@@ -117,6 +117,9 @@ class ConsoleUiTests(unittest.TestCase):
                 content = source_file.read_text(encoding="utf-8")
                 self.assertIn("clear_screen", content)
                 self.assertIn("clear_screen()", content)
+
+        diagnostics = (root / "cli" / "diagnostic.py").read_text(encoding="utf-8")
+        self.assertIn("if not _consume_preserve_console_flag():", diagnostics)
 
     def test_every_cli_entry_point_handles_keyboard_interrupt(self) -> None:
         root = Path(__file__).resolve().parents[1]

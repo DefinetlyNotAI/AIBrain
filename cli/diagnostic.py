@@ -25,6 +25,16 @@ from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
 
+PRESERVE_CONSOLE_FLAG = "--preserve-console"
+
+
+def _consume_preserve_console_flag() -> bool:
+    """Remove the desktop-launch marker before Qt parses command-line options."""
+    preserve_console = PRESERVE_CONSOLE_FLAG in sys.argv[1:]
+    if preserve_console:
+        sys.argv[:] = [argument for argument in sys.argv if argument != PRESERVE_CONSOLE_FLAG]
+    return preserve_console
+
 def main() -> int:
     runtime_log, _ = configure_cli_logging("diagnostic")
     LOG.info("Starting AIBrain Diagnostics CLI (runtime log: %s)", runtime_log)
@@ -34,7 +44,8 @@ def main() -> int:
     gpu_exit = prepare_gpu_launch(compiled="__compiled__" in globals())
     if gpu_exit is not None:
         return gpu_exit
-    clear_screen()
+    if not _consume_preserve_console_flag():
+        clear_screen()
     from PySide6.QtCore import QTimer, Qt
     from PySide6.QtWidgets import QApplication
     from src.app.diagnostics_window import DiagnosticsWindow

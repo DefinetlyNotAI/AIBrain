@@ -237,10 +237,12 @@ class MainWindow(QMainWindow):
         root = Path(__file__).resolve().parents[2]
         packaged = Path(sys.executable).with_name("diagnostic.exe")
         if "__compiled__" in globals() and packaged.is_file():
-            started = QProcess.startDetached(str(packaged), [])
+            started = QProcess.startDetached(str(packaged), ["--preserve-console"])
         else:
             started = QProcess.startDetached(
-                sys.executable, [str(root / "cli" / "diagnostic.py")], str(root)
+                sys.executable,
+                [str(root / "cli" / "diagnostic.py"), "--preserve-console"],
+                str(root),
             )
         if not started:
             QMessageBox.critical(

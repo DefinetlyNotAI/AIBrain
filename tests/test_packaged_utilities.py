@@ -11,6 +11,7 @@ class PackagedUtilityTests(unittest.TestCase):
 
         self.assertIn('with_name("diagnostic.exe")', source)
         self.assertIn("QProcess.startDetached", source)
+        self.assertEqual(source.count('"--preserve-console"'), 2)
         self.assertNotIn("DiagnosticsWindow(", source)
 
 

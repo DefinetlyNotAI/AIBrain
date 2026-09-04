@@ -13,6 +13,20 @@ from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE, can_request_gpu_relaunch
 
 
 class GpuLaunchTests(unittest.TestCase):
+    def test_diagnostics_consumes_desktop_preserve_console_marker(self) -> None:
+        with patch.object(
+            diagnostic.sys,
+            "argv",
+            ["cli/diagnostic.py", "--preserve-console", "--example"],
+        ):
+            self.assertTrue(diagnostic._consume_preserve_console_flag())
+            self.assertEqual(diagnostic.sys.argv, ["cli/diagnostic.py", "--example"])
+
+    def test_direct_diagnostics_launch_does_not_preserve_console(self) -> None:
+        with patch.object(diagnostic.sys, "argv", ["cli/diagnostic.py"]):
+            self.assertFalse(diagnostic._consume_preserve_console_flag())
+            self.assertEqual(diagnostic.sys.argv, ["cli/diagnostic.py"])
+
     def test_startup_coordinator_uses_its_declared_constructor(self) -> None:
         source = inspect.getsource(main.main)
 
