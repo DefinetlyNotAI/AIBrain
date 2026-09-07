@@ -196,9 +196,11 @@ class MainWindow(QMainWindow):
     def select_model(self, model: ModelInfo | None) -> None:
         if model == self.current_model:
             return
+
         self.unloadModel.emit()
         self.simulation_worker.unload()
         self.current_model = model
+
         self.chat.set_model_available(
             bool(model and model.available and model.blob_path)
         )
@@ -206,16 +208,27 @@ class MainWindow(QMainWindow):
         self.chat.set_regenerate_available(False)
         self.chat.set_rewind_available(False)
         self.chat.set_chat_export_available(False)
+
         if model is not None:
             self.visualizer.set_model(f"{model.name}:{model.tag}")
             self.history.clear()
             self.visualizer.set_conversation(self.history)
             self.chat.clear_messages()
+
+            blob_path = (
+                str(model.blob_path)
+                if model.blob_path is not None
+                else "Unavailable"
+            )
+
             self.chat.models.setToolTip(
-                f"{model.label}\n{model.blob_path}"
+                f"{model.label}\n{blob_path}"
                 + (f"\n{model.error}" if model.error else "")
             )
-            self.chat.stats.setText("Conversation and connectome refreshed.")
+
+            self.chat.stats.setText(
+                "Conversation and connectome refreshed."
+            )
 
     def _handle_escape(self) -> None:
         if self.chat.send.text() == "Stop":
