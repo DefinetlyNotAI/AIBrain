@@ -1,4 +1,4 @@
-"""Persistent, user-editable colours for the AIBrain desktop interface."""
+"""Persistent, user-editable colors for the AIBrain desktop interface."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _valid_colour(value: object) -> str | None:
 
 
 def load_colours() -> dict[str, str]:
-    """Load valid custom colours while retaining safe defaults for omissions."""
+    """Load valid custom colors while retaining safe defaults for omissions."""
     colours = DEFAULT_COLOURS.copy()
     try:
         payload = json.loads(COLOUR_FILE.read_text(encoding="utf-8"))
@@ -126,7 +126,7 @@ QScrollArea {{ background: transparent; }} QSplitter::handle {{ background: {col
 
 
 class ColourSettingsDialog(QDialog):
-    """A semantic colour picker with Qt's wheel, RGB, and hexadecimal editor."""
+    """A semantic color picker with Qt's wheel, RGB, and hexadecimal editor."""
 
     def __init__(self, colours: dict[str, str], parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -164,8 +164,10 @@ class ColourSettingsDialog(QDialog):
             self._palette_grid.addWidget(item, index // 2, index % 2)
             self._refresh_button(name)
         controls = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton(
+                QDialogButtonBox.StandardButton.Save.value
+                | QDialogButtonBox.StandardButton.Cancel.value
+            )
         )
         controls.accepted.connect(self.accept)
         controls.rejected.connect(self.reject)
@@ -173,11 +175,9 @@ class ColourSettingsDialog(QDialog):
         self.resize(720, 500)
 
     def showEvent(self, event: QShowEvent) -> None:
-        """Fit and centre the palette inside the active display."""
+        """Fit and center the palette inside the active display."""
         super().showEvent(event)
         screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is None:
-            return
         available = screen.availableGeometry()
         self.resize(
             min(720, max(360, available.width() - 40)),
