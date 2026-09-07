@@ -691,13 +691,5 @@ class CommandOutputBox:
         self._is_open = False
 
 
-def command_output_box(output: str, *, indent: int = COMMAND_INDENT) -> None:
-    """Render complete subprocess output in an indented gray box."""
-    if not output.strip():
-        return
-    with CommandOutputBox(indent=indent) as box:
-        box.write(output)
-
-
 def command(command_line: list[str]) -> None:
     command_preview(command_line)
