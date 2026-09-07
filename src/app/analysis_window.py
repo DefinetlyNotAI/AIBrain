@@ -137,7 +137,7 @@ def _tensor_summary(value: np.ndarray) -> TensorSummary:
     finite = value[np.isfinite(value)]
     return {
         "shape": list(value.shape),
-        "dtype": str(value.dtype),
+        "dtype": value.dtype.name,
         "values": int(value.size),
         "bytes": int(value.nbytes),
         "finite_values": int(finite.size),
@@ -398,7 +398,7 @@ def inspect_npz_contents(path: Path) -> str:
             (
                 "",
                 f"[{name}]",
-                f"dtype: {value.dtype}",
+                f"dtype: {value.dtype.name}",
                 f"shape: {value.shape}",
                 f"values ({value.size}):",
                 rendered,
@@ -696,6 +696,18 @@ class AnalysisWindow(QMainWindow):
             if not isinstance(payload, dict):
                 raise TypeError("Analysis export root must be a JSON object")
             conversation = payload.get("conversation", [])
+            smart_analysis = payload.get("smart_analysis")
+
+            has_smart_analysis = isinstance(smart_analysis, dict)
+            has_analysis_plus = "analysis_plus" in payload
+            has_neural_network = "neural_network" in payload
+
+            has_nn_findings = (
+                    has_smart_analysis
+                    or has_analysis_plus
+                    or has_neural_network
+            )
+
             summary = {
                 "path": str(selected),
                 "schema": payload.get("schema"),
@@ -703,9 +715,7 @@ class AnalysisWindow(QMainWindow):
                 "conversation_turns": (
                     len(conversation) if isinstance(conversation, list) else 0
                 ),
-                "has_nn_findings": isinstance(payload.get("smart_analysis"), dict)
-                                   or "analysis_plus" in payload
-                                   or "neural_network" in payload,
+                "has_nn_findings": has_nn_findings,
                 "recorded_frame_summary": payload.get("recorded_frame_summary", {}),
             }
             LOG.info(
@@ -777,91 +787,82 @@ class AnalysisWindow(QMainWindow):
         )
 
     def _show_metadata(self, metadata: AnalysisMetadata) -> None:
-        learning = metadata.get("learning", {})
-        architecture = metadata.get("architecture", {})
-        file_data = metadata.get("file", {})
-        health = metadata.get("health", {})
-        maturity = learning.get("maturity", {}) if isinstance(learning, dict) else {}
-        if not isinstance(maturity, dict):
-            maturity = {}
-        score = int(health.get("score_percent", 0)) if isinstance(health, dict) else 0
-        status = str(metadata.get("status", "Unknown"))
+        learning = metadata["learning"]
+        architecture = metadata["architecture"]
+        file_data = metadata["file"]
+        health = metadata["health"]
+        maturity = learning["maturity"]
+
+        score = health["score_percent"]
+        status = metadata["status"]
+
         self._last_healthy = status == "Healthy"
         self.health_value.setText(f"{score}%")
         self.health_detail.setText(
             f"{status}: required tensors, shapes, persistence, parameter magnitude, and "
             "NaN/infinity/divide-by-zero contamination are scored."
         )
-        state = str(maturity.get("state", "Baby"))
+
+        state = maturity["state"]
         self.state_value.setText(state.upper())
         self.state_detail.setText(
             "Weights frozen"
-            if maturity.get("weights_frozen")
+            if maturity["weights_frozen"]
             else "Training weights remain active"
         )
-        frames = (
-            int(learning.get("lifetime_frames_seen", 0))
-            if isinstance(learning, dict)
-            else 0
-        )
+
+        frames = learning["lifetime_frames_seen"]
         self.frame_value.setText(f"{frames:,} frames")
-        self.frame_detail.setText(
-            str(file_data.get("age", "Unknown persistence age"))
-            if isinstance(file_data, dict)
-            else ""
-        )
-        progress = int(maturity.get("progress_percent", 0))
+        self.frame_detail.setText(file_data["age"])
+
+        progress = maturity["progress_percent"]
         self.maturity_progress.setValue(progress)
-        next_state = maturity.get("next_state") or "terminal Elder state"
+
+        next_state = maturity["next_state"]
+        if next_state is None:
+            next_state = "terminal Elder state"
+
         self.maturity_detail.setText(
-            f"Toward {next_state}: {maturity.get('progress_detail', maturity.get('note', ''))}"
+            f"Toward {next_state}: {maturity['progress_detail']}"
         )
-        self.architecture_value.setText(
-            str(architecture.get("shape", "Unknown"))
-            if isinstance(architecture, dict)
-            else "Unknown"
-        )
+
+        self.architecture_value.setText(architecture["shape"])
         self.architecture_detail.setText(
-            f"{architecture.get('learned_parameters', 0):,} learned parameters"
-            if isinstance(architecture, dict)
-            else ""
+            f"{architecture['learned_parameters']:,} learned parameters"
         )
+
         self.quality_value.setText(
-            "Consistent" if maturity.get("consistency_sustained") else "Learning"
+            "Consistent" if maturity["consistency_sustained"] else "Learning"
         )
         self.quality_detail.setText(
             "Rolling reconstruction and update metrics are persisted."
         )
-        readiness = str(maturity.get("readiness", "caution")).upper()
+
+        readiness = maturity["readiness"].upper()
         self.export_value.setText(readiness)
         self.export_detail.setText(
             "Normal smart-analysis report"
             if readiness == "READY"
             else "Export remains valid with explicit readiness caution."
         )
-        self.backend_value.setText(
-            str(architecture.get("numerical_backend", BACKEND_NAME))
-            if isinstance(architecture, dict)
-            else BACKEND_NAME
-        )
+
+        self.backend_value.setText(architecture["numerical_backend"])
         self.backend_detail.setText(
             "CuPy is preferred when CUDA executes successfully; NumPy is the fallback."
         )
+
         evidence_count = (
             CONSISTENCY_WINDOW
-            if maturity.get("consistency_sustained")
+            if maturity["consistency_sustained"]
             else min(frames, CONSISTENCY_WINDOW)
         )
-        self.evidence_value.setText(f"{evidence_count:,} / {CONSISTENCY_WINDOW:,}")
+        self.evidence_value.setText(
+            f"{evidence_count:,} / {CONSISTENCY_WINDOW:,}"
+        )
         self.evidence_detail.setText(
             "Stable rolling reconstruction and update samples required for promotion."
         )
-        size_bytes = (
-            int(file_data.get("size_bytes", 0)) if isinstance(file_data, dict) else 0
-        )
+
+        size_bytes = file_data["size_bytes"]
         self.storage_value.setText(f"{size_bytes / 1024:.1f} KiB")
-        self.storage_detail.setText(
-            str(file_data.get("modified_at_utc", "Unknown update time"))
-            if isinstance(file_data, dict)
-            else ""
-        )
+        self.storage_detail.setText(file_data["modified_at_utc"])
