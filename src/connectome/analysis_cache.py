@@ -165,10 +165,14 @@ class AnalysisPageCache:
     def _flush(self) -> None:
         if not self._pending or not self.enabled:
             return
-        if self._directory is None:
-            self._directory = self.root / (f"analysis-{os.getpid()}-{uuid4().hex[:10]}")
-            self._directory.mkdir(parents=True, exist_ok=True)
-        page = self._directory / f"page-{self._next_page:08d}.jsonl.gz"
+        directory = self._directory
+
+        if directory is None:
+            directory = self.root / f"analysis-{os.getpid()}-{uuid4().hex[:10]}"
+            directory.mkdir(parents=True, exist_ok=True)
+            self._directory = directory
+
+        page = directory / f"page-{self._next_page:08d}.jsonl.gz"
         temporary = page.with_suffix(page.suffix + ".tmp")
         records = self._pending
         self._pending = []
