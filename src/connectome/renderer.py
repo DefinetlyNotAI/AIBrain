@@ -91,16 +91,23 @@ void main() { if (u_region_filter >= 0.0 && abs(in_region - u_region_filter) > .
 """
 
 
-def _shader_palette(colour_map: Mapping[str, str] = CLUSTER_COLOR_MAP) -> str:
+def _shader_palette(colour_map: Mapping[str, str] | None = None) -> str:
+    if colour_map is None:
+        colour_map = CLUSTER_COLOR_MAP
+
     colours = tuple(colour_map.values())
     clauses = []
+
     for index, colour in enumerate(colours):
         red, green, blue = (
-            int(colour[offset: offset + 2], 16) / 255 for offset in (1, 3, 5)
+            int(colour[offset: offset + 2], 16) / 255
+            for offset in (1, 3, 5)
         )
         clauses.append(
-            f"if (cluster == {index}) return vec3({red:.6f}, {green:.6f}, {blue:.6f});"
+            f"if (cluster == {index}) "
+            f"return vec3({red:.6f}, {green:.6f}, {blue:.6f});"
         )
+
     return "\n ".join((*clauses, "return vec3(.35, .65, .85);"))
 
 
@@ -192,43 +199,67 @@ class ConnectomeRenderer(QOpenGLWidget):
         try:
             import moderngl
 
-            self._ctx = moderngl.create_context(require=330)
+            ctx = moderngl.create_context(require=330)
+            self._ctx = ctx
+
             # QOpenGLWidget renders into a Qt-owned FBO, not OpenGL FBO 0.
             # Capturing this current FBO is essential: otherwise ModernGL draws
             # successfully but its output never reaches the widget.
-            self._framebuffer = self._ctx.detect_framebuffer()
-            self._ctx.enable(
-                moderngl.BLEND | moderngl.DEPTH_TEST | moderngl.PROGRAM_POINT_SIZE
+            framebuffer = ctx.detect_framebuffer()
+            self._framebuffer = framebuffer
+
+            ctx.enable(
+                moderngl.BLEND
+                | moderngl.DEPTH_TEST
+                | moderngl.PROGRAM_POINT_SIZE
             )
-            self._ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE)
+            ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE)
+
             self._build_gpu_resources()
-            renderer_name = str(self._ctx.info.get("GL_RENDERER", "OpenGL 3.3"))
-            vendor = str(self._ctx.info.get("GL_VENDOR", "unknown vendor"))
+
+            renderer_name = str(ctx.info.get("GL_RENDERER", "OpenGL 3.3"))
+            vendor = str(ctx.info.get("GL_VENDOR", "unknown vendor"))
+
             is_nvidia = "nvidia" in f"{vendor} {renderer_name}".lower()
+
             if not is_nvidia:
                 requested = should_prefer_high_performance_gpu()
+
                 if requested and can_request_gpu_relaunch():
-                    message = f"GPU mismatch: OpenGL selected {vendor} - {renderer_name}, expected NVIDIA"
+                    message = (
+                        f"GPU mismatch: OpenGL selected {vendor} - "
+                        f"{renderer_name}, expected NVIDIA"
+                    )
                     QSettings().setValue("opengl_gpu_mismatch_reason", message)
+
                     renderer_name += (
                         "; GPU mismatch; restarting through the startup loader"
                     )
+
                     LOG.warning(
                         "OpenGL context is not on NVIDIA: vendor=%s renderer=%s",
                         vendor,
                         renderer_name,
                     )
+
                     self.backendChanged.emit(
                         "GPU mismatch detected — restarting through the startup loader…"
                     )
                     self.gpuRestartRequested.emit(message)
                     return
+
                 if requested:
-                    renderer_name += "; GPU mismatch (NVIDIA retry already attempted)"
+                    renderer_name += (
+                        "; GPU mismatch (NVIDIA retry already attempted)"
+                    )
                     QSettings().setValue(
                         "opengl_gpu_mismatch_reason",
-                        f"OpenGL selected {vendor} - {renderer_name}; Windows or the driver ignored the preference",
+                        (
+                            f"OpenGL selected {vendor} - {renderer_name}; "
+                            "Windows or the driver ignored the preference"
+                        ),
                     )
+
                     LOG.warning(
                         "OpenGL context is not on NVIDIA: vendor=%s renderer=%s",
                         vendor,
@@ -237,13 +268,17 @@ class ConnectomeRenderer(QOpenGLWidget):
                 else:
                     renderer_name += " · Windows system-default GPU"
                     QSettings().remove("opengl_gpu_mismatch_reason")
+
             label = f"ModernGL GPU - {renderer_name}"
             LOG.info("Connectome renderer initialized: %s", label)
             self.backendChanged.emit(label)
+
         except Exception as exc:
             self._gpu_error = str(exc)
             LOG.exception("ModernGL renderer initialization failed")
-            self.backendChanged.emit("GPU unavailable — reduced fallback renderer")
+            self.backendChanged.emit(
+                "GPU unavailable — reduced fallback renderer"
+            )
 
     def _build_gpu_resources(self) -> None:
         assert self._ctx is not None
@@ -329,30 +364,38 @@ class ConnectomeRenderer(QOpenGLWidget):
         self._edge_activity_buffer.write(self._edge_activity_values.tobytes())
 
     def paintGL(self) -> None:
-        if self._ctx is None or self._gpu_error:
+        ctx = self._ctx
+        if ctx is None or self._gpu_error:
             self._paint_fallback()
             return
+
         try:
             import moderngl
 
-            self._framebuffer = self._ctx.detect_framebuffer()
-            self._framebuffer.use()
+            framebuffer = ctx.detect_framebuffer()
+            self._framebuffer = framebuffer
+            framebuffer.use()
+
             if self._palette_resources_pending:
                 self._build_gpu_resources()
                 self._palette_resources_pending = False
+
             ratio = self.devicePixelRatioF()
-            self._ctx.viewport = (
+            ctx.viewport = (
                 0,
                 0,
                 max(1, int(self.width() * ratio)),
                 max(1, int(self.height() * ratio)),
             )
+
             matrix = self._mvp().tobytes()
             self._upload_activity()
+
             point_program = self._point_program
             edge_program = self._edge_program
             point_vao = self._point_vao
             edge_vao = self._edge_vao
+
             if (
                     point_program is None
                     or edge_program is None
@@ -360,31 +403,63 @@ class ConnectomeRenderer(QOpenGLWidget):
                     or edge_vao is None
             ):
                 raise RuntimeError("ModernGL resources were not initialized")
+
             colour = QColor(self.background_colour)
-            self._ctx.clear(
-                colour.redF(), colour.greenF(), colour.blueF(), 1.0, depth=1.0
+            ctx.clear(
+                colour.redF(),
+                colour.greenF(),
+                colour.blueF(),
+                1.0,
+                depth=1.0,
             )
+
             self._write_uniform(edge_program, "u_mvp", matrix)
             self._write_uniform(point_program, "u_mvp", matrix)
+
             self._write_uniform_float(
                 point_program,
                 "u_border_width",
                 self.node_border_width if self.show_node_borders else 0.0,
             )
+
             idle_strength = 0.58 if self.view_mode == "2d" else 0.42
-            self._write_uniform_float(point_program, "u_idle_strength", idle_strength)
-            self._write_uniform_float(edge_program, "u_idle_strength", idle_strength)
-            region_filter = (
-                float(self.region_filter) if self.region_filter is not None else -1.0
+            self._write_uniform_float(
+                point_program,
+                "u_idle_strength",
+                idle_strength,
             )
-            self._write_uniform_float(point_program, "u_region_filter", region_filter)
-            self._write_uniform_float(edge_program, "u_region_filter", region_filter)
+            self._write_uniform_float(
+                edge_program,
+                "u_idle_strength",
+                idle_strength,
+            )
+
+            region_filter = (
+                float(self.region_filter)
+                if self.region_filter is not None
+                else -1.0
+            )
+
+            self._write_uniform_float(
+                point_program,
+                "u_region_filter",
+                region_filter,
+            )
+            self._write_uniform_float(
+                edge_program,
+                "u_region_filter",
+                region_filter,
+            )
+
             edge_vao.render(moderngl.LINES)
             point_vao.render(moderngl.POINTS)
+
         except Exception as exc:
             self._gpu_error = str(exc)
             LOG.exception("ModernGL frame failed; using fallback")
-            self.backendChanged.emit("GPU frame failed — reduced fallback renderer")
+            self.backendChanged.emit(
+                "GPU frame failed — reduced fallback renderer"
+            )
             self._paint_fallback()
 
     @staticmethod
