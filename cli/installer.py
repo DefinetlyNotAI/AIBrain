@@ -91,11 +91,11 @@ class LlamaRuntimeError(RuntimeError):
 
 
 def collect_final_health(
-    python: str,
-    gpu: GpuCapability | None,
-    root: Path = ROOT,
-    *,
-    libraries_verified: bool = False,
+        python: str,
+        gpu: GpuCapability | None,
+        root: Path = ROOT,
+        *,
+        libraries_verified: bool = False,
 ) -> list[InstallerHealth]:
     """Collect a read-only final health report for the installed runtime."""
     cuda_status = "Unavailable"
@@ -104,7 +104,6 @@ def collect_final_health(
         cuda_status = "CPU fallback"
         cuda_reason = "The array runtime requires CUDA 12 or newer; NumPy is selected."
     elif gpu and gpu.cuda_version:
-        cuda_status = "Detected"
         cuda_reason = (
             f"Driver supports CUDA {gpu.cuda_version[0]}.{gpu.cuda_version[1]}."
         )
@@ -216,7 +215,7 @@ def collect_final_health(
 
 
 def print_final_health(
-    python: str, gpu: GpuCapability | None, *, libraries_verified: bool = False
+        python: str, gpu: GpuCapability | None, *, libraries_verified: bool = False
 ) -> list[InstallerHealth]:
     checks = collect_final_health(python, gpu, libraries_verified=libraries_verified)
     panel(
@@ -239,12 +238,12 @@ def repair_validation_cache(root: Path = ROOT) -> None:
 
 
 def repair_selected_subsystem(
-    subsystem: str,
-    python: str,
-    gpu: GpuCapability | None,
-    *,
-    model: str | None = None,
-    preference: str = "auto",
+        subsystem: str,
+        python: str,
+        gpu: GpuCapability | None,
+        *,
+        model: str | None = None,
+        preference: str = "auto",
 ) -> str:
     """Run exactly one selected repair; destructive work is explicit and narrow."""
     if subsystem == "dependencies":
@@ -352,11 +351,11 @@ def _ask_choice(prompt: str, choices: dict[str, str], default: str) -> str:
 
 
 def select_install_action(
-    *,
-    runtime_exists: bool,
-    install_requested: bool = False,
-    repair_requested: bool = False,
-    assume_yes: bool = False,
+        *,
+        runtime_exists: bool,
+        install_requested: bool = False,
+        repair_requested: bool = False,
+        assume_yes: bool = False,
 ) -> str:
     """Select the top-level installer action before probing or changing the runtime."""
     if install_requested:
@@ -382,10 +381,10 @@ def select_install_action(
 
 
 def select_wheel(
-    gpu: GpuCapability | None,
-    *,
-    preference: str = "auto",
-    interactive: bool = False,
+        gpu: GpuCapability | None,
+        *,
+        preference: str = "auto",
+        interactive: bool = False,
 ) -> tuple[str, str]:
     if preference == "cpu":
         return "cpu", "CPU inference (selected by user)"
@@ -436,7 +435,7 @@ def verify_python() -> bool:
 
 
 def print_gpu(
-    gpu: GpuCapability | None,
+        gpu: GpuCapability | None,
 ) -> None:
     if gpu is None:
         warning("NVIDIA CUDA capability was not detected.")
@@ -546,10 +545,10 @@ def cleanup_invalid_distributions(venv_dir: Path | None = None) -> list[Path]:
 
 
 def install_dependencies(
-    python: str,
-    gpu: GpuCapability | None = None,
-    *,
-    force_reinstall: bool = False,
+        python: str,
+        gpu: GpuCapability | None = None,
+        *,
+        force_reinstall: bool = False,
 ) -> None:
     ensure_pip(python)
     if force_reinstall:
@@ -674,7 +673,7 @@ def cuda_runtime_packages(wheel_tag: str) -> tuple[str, ...]:
 
 
 def probe_llama_runtime(
-    python: str, *, require_cuda: bool = False, require_cpu: bool = False
+        python: str, *, require_cuda: bool = False, require_cpu: bool = False
 ) -> tuple[bool, str]:
     """Check the installed native backend without printing an import traceback."""
     if require_cuda and require_cpu:
@@ -737,12 +736,12 @@ def install_cpu_fallback(python: str, *, reason: str) -> str:
 
 
 def install_llama(
-    python: str,
-    gpu: GpuCapability | None,
-    *,
-    preference: str = "auto",
-    interactive: bool = False,
-    force_reinstall: bool = True,
+        python: str,
+        gpu: GpuCapability | None,
+        *,
+        preference: str = "auto",
+        interactive: bool = False,
+        force_reinstall: bool = True,
 ) -> str:
     wheel_tag, description = select_wheel(
         gpu, preference=preference, interactive=interactive
@@ -824,7 +823,7 @@ def install_llama(
 
 
 def verify_installation(
-    python: str,
+        python: str,
 ) -> None:
     info("Running import and runtime verification")
 
@@ -849,10 +848,10 @@ def verify_installation(
 
 
 def completion_screen(
-    gpu: GpuCapability | None,
-    wheel_tag: str,
-    *,
-    action: str,
+        gpu: GpuCapability | None,
+        wheel_tag: str,
+        *,
+        action: str,
 ) -> None:
     backend = (
         "Existing installed backend"
@@ -902,8 +901,8 @@ def print_help_banner() -> None:
 
 class BannerArgumentParser(argparse.ArgumentParser):
     def print_help(
-        self,
-        file=None,
+            self,
+            file=None,
     ) -> None:
         del file
         print_help_banner()
@@ -911,7 +910,7 @@ class BannerArgumentParser(argparse.ArgumentParser):
 
 def parse_args() -> argparse.Namespace:
     parser = BannerArgumentParser(
-        description=("Install and configure the AIBrain runtime."),
+        description="Install and configure the AIBrain runtime.",
         add_help=True,
     )
     action = parser.add_mutually_exclusive_group()

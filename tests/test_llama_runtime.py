@@ -62,7 +62,7 @@ class LlamaRuntimeTests(unittest.TestCase):
             handle.close.assert_not_called()
 
     def test_loader_installs_retained_logging_callback_before_runtime_probe(
-        self,
+            self,
     ) -> None:
         module = Mock()
         module.llama_log_callback.side_effect = lambda callback: callback

@@ -32,7 +32,7 @@ class FakeBackend:
         self.loaded.append(path)
 
     def stream_chat(
-        self, messages: Sequence[ChatMessage], _config: GenerationConfig
+            self, messages: Sequence[ChatMessage], _config: GenerationConfig
     ) -> Iterator[GenerationChunk]:
         self.calls.append([message.copy() for message in messages])
         for index, text in enumerate(self.chunks, 1):
@@ -117,7 +117,7 @@ class InfiniteSimulationContextTests(unittest.TestCase):
 
     def test_random_opening_uses_the_pregenerated_set(self) -> None:
         with patch(
-            "src.models.infinite_simulation.choice", return_value=WORLD_OPENINGS[-1]
+                "src.models.infinite_simulation.choice", return_value=WORLD_OPENINGS[-1]
         ) as chooser:
             self.assertEqual(random_world_opening(), WORLD_OPENINGS[-1])
         chooser.assert_called_once_with(WORLD_OPENINGS)

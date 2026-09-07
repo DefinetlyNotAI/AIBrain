@@ -36,7 +36,7 @@ class GenerationBackend(Protocol):
     def load(self, path: Path, config: GenerationConfig, /) -> None: ...
 
     def stream_chat(
-        self, messages: Sequence[ChatMessage], config: GenerationConfig, /
+            self, messages: Sequence[ChatMessage], config: GenerationConfig, /
     ) -> Iterator[GenerationChunk]: ...
 
     def tokenize(self, text: str, /) -> list[int]: ...
@@ -106,7 +106,7 @@ def sentence_grace_config(config: GenerationConfig) -> GenerationConfig:
 
 
 def reached_sentence_end(
-    text: str, token_count: int, requested_max_tokens: int
+        text: str, token_count: int, requested_max_tokens: int
 ) -> bool:
     return token_count >= requested_max_tokens and bool(_SENTENCE_END_RE.search(text))
 
@@ -162,9 +162,9 @@ class LlamaBackend:
         self.loaded_path = path
 
     def stream_chat(
-        self,
-        messages: Sequence[ChatMessage],
-        config: GenerationConfig,
+            self,
+            messages: Sequence[ChatMessage],
+            config: GenerationConfig,
     ) -> Iterator[GenerationChunk]:
         if self._llm is None:
             raise RuntimeError("No model is loaded")

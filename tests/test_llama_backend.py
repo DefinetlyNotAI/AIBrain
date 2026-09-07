@@ -82,7 +82,7 @@ class LlamaBackendLoggingTests(unittest.TestCase):
         self.assertIsNone(probe.take())
 
     def test_realtime_frame_keeps_session_step_separate_from_reply_progress(
-        self,
+            self,
     ) -> None:
         chunk = GenerationChunk(
             "token",

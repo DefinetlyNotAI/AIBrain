@@ -32,10 +32,10 @@ class GenerationWorker(QObject):
 
     @Slot(object, object, object)
     def generate(
-        self,
-        messages: list[ChatMessage],
-        config: GenerationConfig,
-        model_path: Path,
+            self,
+            messages: list[ChatMessage],
+            config: GenerationConfig,
+            model_path: Path,
     ) -> None:
         self._cancelled.clear()
         start = monotonic()
@@ -50,7 +50,7 @@ class GenerationWorker(QObject):
             response_chunks: list[str] = []
             recent_output: deque[str] = deque(maxlen=32)
             for chunk in self.backend.stream_chat(
-                messages, sentence_grace_config(config)
+                    messages, sentence_grace_config(config)
             ):
                 if self._cancelled.is_set():
                     break
@@ -77,7 +77,7 @@ class GenerationWorker(QObject):
                 recent_output.append(text)
                 self.token.emit(text, frame)
                 if reached_sentence_end(
-                    "".join(response_chunks), generated_tokens, config.max_tokens
+                        "".join(response_chunks), generated_tokens, config.max_tokens
                 ):
                     break
                 if config.speed < 1.0:

@@ -109,7 +109,7 @@ class AnalysisCliTests(unittest.TestCase):
             worker = AnalysisInspectionWorker(missing_model)
 
             with self.assertLogs(
-                "src.app.analysis_window", level="WARNING"
+                    "src.app.analysis_window", level="WARNING"
             ) as captured:
                 worker.run()
 
@@ -176,14 +176,14 @@ class AnalysisCliTests(unittest.TestCase):
             replaced = False
 
             def replace_while_formatting(
-                value: np.ndarray,
-                *,
-                separator: str = " ",
-                threshold: int | None = None,
-                max_line_width: int | None = None,
-                precision: int | None = None,
-                floatmode: Literal["fixed", "unique", "maxprec", "maxprec_equal"]
-                | None = None,
+                    value: np.ndarray,
+                    *,
+                    separator: str = " ",
+                    threshold: int | None = None,
+                    max_line_width: int | None = None,
+                    precision: int | None = None,
+                    floatmode: Literal["fixed", "unique", "maxprec", "maxprec_equal"]
+                               | None = None,
             ) -> str:
                 nonlocal replaced
                 if not replaced:
@@ -199,8 +199,8 @@ class AnalysisCliTests(unittest.TestCase):
                 )
 
             with patch(
-                "src.app.analysis_window.np.array2string",
-                side_effect=replace_while_formatting,
+                    "src.app.analysis_window.np.array2string",
+                    side_effect=replace_while_formatting,
             ):
                 contents = inspect_npz_contents(path)
 
@@ -244,8 +244,8 @@ class AnalysisCliTests(unittest.TestCase):
             window = AnalysisWindow(auto_refresh=False)
             try:
                 with patch(
-                    "src.app.analysis_window.QFileDialog.getOpenFileName",
-                    return_value=(str(path), "Analysis data (*.json *.json.gz)"),
+                        "src.app.analysis_window.QFileDialog.getOpenFileName",
+                        return_value=(str(path), "Analysis data (*.json *.json.gz)"),
                 ):
                     window.inspect_export()
 
@@ -285,8 +285,8 @@ class AnalysisCliTests(unittest.TestCase):
             window = AnalysisWindow(auto_refresh=False)
             try:
                 with patch(
-                    "src.app.analysis_window.QFileDialog.getOpenFileName",
-                    return_value=(str(path), "Analysis data (*.json *.json.gz)"),
+                        "src.app.analysis_window.QFileDialog.getOpenFileName",
+                        return_value=(str(path), "Analysis data (*.json *.json.gz)"),
                 ):
                     window.inspect_export()
 
@@ -354,7 +354,7 @@ class AnalysisCliTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(
-                ValueError, "may contain legacy simulated features"
+                    ValueError, "may contain legacy simulated features"
             ):
                 inspect_npz_model(path)
 

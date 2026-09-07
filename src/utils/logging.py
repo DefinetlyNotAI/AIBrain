@@ -39,7 +39,6 @@ _TIME_WIDTH = 19
 _SEVERITY_WIDTH = 8
 _SOURCE_WIDTH = 28
 
-
 _ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|][^\x07]*(?:\x07|\x1b\\))")
 
 
@@ -95,13 +94,13 @@ class AlignedFormatter(logging.Formatter):
             segment
             for line in lines
             for segment in (
-                textwrap.wrap(
-                    line,
-                    width=available,
-                    break_long_words=True,
-                    break_on_hyphens=False,
-                )
-                or [""]
+                    textwrap.wrap(
+                        line,
+                        width=available,
+                        break_long_words=True,
+                        break_on_hyphens=False,
+                    )
+                    or [""]
             )
         ]
         rendered = "\n".join(
@@ -154,7 +153,7 @@ class BoundedFileHandler(logging.FileHandler):
     """Keep the newest log data and discard old complete lines above the cap."""
 
     def __init__(
-        self, filename: Path, *, max_bytes: int = MAX_LOG_BYTES, delay: bool = False
+            self, filename: Path, *, max_bytes: int = MAX_LOG_BYTES, delay: bool = False
     ) -> None:
         super().__init__(filename, mode="a", encoding="utf-8", delay=delay)
         self.max_bytes = max_bytes
@@ -191,7 +190,7 @@ class CrashFileHandler(BoundedFileHandler):
 
 
 def _uncaught_exception(
-    exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
+        exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
 ) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         return
@@ -208,11 +207,11 @@ def format_exception(exception: BaseException) -> str:
 
 
 def log_completed_command(
-    command_line: list[str],
-    output: str,
-    *,
-    return_code: int | None,
-    interrupted: bool = False,
+        command_line: list[str],
+        output: str,
+        *,
+        return_code: int | None,
+        interrupted: bool = False,
 ) -> None:
     """Persist command output once its process has completed or been stopped."""
     state = "interrupted" if interrupted else "completed"
@@ -225,9 +224,9 @@ def log_completed_command(
 
 
 def report_exception(
-    context: str,
-    exception: BaseException,
-    traceback: TracebackType | None = None,
+        context: str,
+        exception: BaseException,
+        traceback: TracebackType | None = None,
 ) -> None:
     """Record a handled fatal exception once, including its complete traceback.
 
@@ -281,7 +280,7 @@ def _clear_previous_run_logs(directory: Path, feature: str) -> None:
 
 
 def configure_logging(
-    feature: str | Path = "main", log_directory: Path | None = None
+        feature: str | Path = "main", log_directory: Path | None = None
 ) -> tuple[Path, Path]:
     """Start fresh normal and crash logs for this application run.
 
@@ -327,7 +326,7 @@ def configure_logging(
 
 
 def configure_cli_logging(
-    feature: str, log_directory: Path | None = None
+        feature: str, log_directory: Path | None = None
 ) -> tuple[Path, Path]:
     """Configure file logging without copying decorative console presentation."""
     restore_cli_output()

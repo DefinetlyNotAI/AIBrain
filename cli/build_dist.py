@@ -176,7 +176,6 @@ NUMPY_RUNTIME_SUPPORT_MODULES = (
     "zipfile",
 )
 
-
 # ConPTY output can contain terminal control sequences. CommandOutputBox handles
 # the actual presentation, so terminal cursor manipulation must not leak into it.
 ANSI_ESCAPE_RE = re.compile(
@@ -322,12 +321,12 @@ class WindowsConPty:
     """Windows child process attached to a ConPTY terminal."""
 
     def __init__(
-        self,
-        process_handle: wintypes.HANDLE,
-        process_id: int,
-        pseudo_console: wintypes.HANDLE,
-        input_handle: wintypes.HANDLE,
-        output_handle: wintypes.HANDLE,
+            self,
+            process_handle: wintypes.HANDLE,
+            process_id: int,
+            pseudo_console: wintypes.HANDLE,
+            input_handle: wintypes.HANDLE,
+            output_handle: wintypes.HANDLE,
     ) -> None:
         self.process_handle = process_handle
         self.pid = process_id
@@ -407,9 +406,9 @@ def _is_option_echo(line: str) -> bool:
     """Keep Nuitka's command replay in the log without hiding its warnings."""
     prefix, separator, message = line.lstrip().partition("Nuitka-Options:")
     return (
-        bool(separator)
-        and not prefix
-        and not message.lstrip().startswith(("WARNING:", "ERROR:", "FATAL:"))
+            bool(separator)
+            and not prefix
+            and not message.lstrip().startswith(("WARNING:", "ERROR:", "FATAL:"))
     )
 
 
@@ -470,9 +469,9 @@ def _format_pip_progress(line: str) -> str | None:
 
 
 def _render_output_text(
-    text: str,
-    pending: str,
-    output_box: BuildRenderOutput,
+        text: str,
+        pending: str,
+        output_box: BuildRenderOutput,
 ) -> str:
     """Render complete lines and immediately redraw carriage-return frames."""
     new_output = pending + _clean_terminal_output(text)
@@ -496,7 +495,7 @@ def _render_output_text(
 
         line = new_output[:newline]
         terminator = new_output[newline]
-        new_output = new_output[newline + 1 :]
+        new_output = new_output[newline + 1:]
 
         if terminator == "\r":
             # CRLF is a normal completed line.
@@ -528,17 +527,17 @@ def _render_output_text(
 
 
 def _render_new_build_output(
-    output_path: Path,
-    offset: int,
-    pending: str,
-    output_box: BuildRenderOutput,
+        output_path: Path,
+        offset: int,
+        pending: str,
+        output_box: BuildRenderOutput,
 ) -> tuple[int, str]:
     """Fallback file tailer used when ConPTY is unavailable."""
     with output_path.open(
-        "r",
-        encoding="utf-8",
-        errors="replace",
-        newline="",
+            "r",
+            encoding="utf-8",
+            errors="replace",
+            newline="",
     ) as output_file:
         output_file.seek(offset)
         text = output_file.read()
@@ -586,13 +585,13 @@ def _command_activity(command_line: list[str]) -> str:
 
 
 def _report_build_heartbeat(
-    output_box: BuildHeartbeatOutput,
-    last_heartbeat: float,
-    last_child_output: float,
-    *,
-    activity: str,
-    started_at: float | None = None,
-    process_id: int | None = None,
+        output_box: BuildHeartbeatOutput,
+        last_heartbeat: float,
+        last_child_output: float,
+        *,
+        activity: str,
+        started_at: float | None = None,
+        process_id: int | None = None,
 ) -> float:
     """Identify the active command during silence without implying progress."""
     now = time.monotonic()
@@ -625,10 +624,10 @@ def _report_build_heartbeat(
 
 
 def _monitor_build_stall(
-    last_child_output: float,
-    state: BuildStallState,
-    *,
-    activity: str,
+        last_child_output: float,
+        state: BuildStallState,
+        *,
+        activity: str,
 ) -> tuple[str | None, BuildStallState]:
     """Report extended silence without blocking the output pump or Qt event loop."""
     now = time.monotonic()
@@ -667,7 +666,7 @@ def _stop_process_tree(process_id: int) -> None:
 
 
 def _stop_interrupted_build(
-    process: subprocess.Popen,
+        process: subprocess.Popen,
 ) -> None:
     """Stop Nuitka and its compiler children before temporary cleanup."""
     try:
@@ -709,7 +708,7 @@ def _create_pipe() -> tuple[wintypes.HANDLE, wintypes.HANDLE]:
 
 
 def _create_conpty_process(
-    command_line: list[str],
+        command_line: list[str],
 ) -> WindowsConPty:
     """Launch a command inside a Windows ConPTY pseudo console."""
     input_read = wintypes.HANDLE()
@@ -761,9 +760,9 @@ def _create_conpty_process(
         mutable_command = ctypes.create_unicode_buffer(command_text)
 
         creation_flags = (
-            kernel32.EXTENDED_STARTUPINFO_PRESENT
-            | kernel32.CREATE_UNICODE_ENVIRONMENT
-            | kernel32.CREATE_NEW_PROCESS_GROUP
+                kernel32.EXTENDED_STARTUPINFO_PRESENT
+                | kernel32.CREATE_UNICODE_ENVIRONMENT
+                | kernel32.CREATE_NEW_PROCESS_GROUP
         )
 
         kernel32.create_process(
@@ -819,8 +818,8 @@ def _create_conpty_process(
 
 
 def _conpty_reader(
-    output_handle: wintypes.HANDLE,
-    output_queue: queue.Queue[bytes | None],
+        output_handle: wintypes.HANDLE,
+        output_queue: queue.Queue[bytes | None],
 ) -> None:
     try:
         while True:
@@ -837,7 +836,7 @@ def _conpty_reader(
 
 
 def _run_with_conpty(
-    command_line: list[str],
+        command_line: list[str],
 ) -> None:
     """Run Nuitka through ConPTY so terminal progress remains live."""
     activity = _command_activity(command_line)
@@ -1015,7 +1014,7 @@ def _build_process_environment(command_line: list[str]) -> dict[str, str] | None
 
 
 def _run_with_file_tailer(
-    command_line: list[str],
+        command_line: list[str],
 ) -> None:
     """Fallback runner for platforms without Windows ConPTY."""
     activity = _command_activity(command_line)
@@ -1023,10 +1022,10 @@ def _run_with_file_tailer(
         output_path = Path(temporary_directory) / "nuitka-output.txt"
 
         with output_path.open(
-            "w",
-            encoding="utf-8",
-            errors="replace",
-            newline="",
+                "w",
+                encoding="utf-8",
+                errors="replace",
+                newline="",
         ) as output_file:
             process = subprocess.Popen(
                 command_line,
@@ -1142,13 +1141,13 @@ def run(command_line: list[str]) -> None:
 
 def runtime_dlls() -> list[Path]:
     system32 = (
-        Path(
-            os.environ.get(
-                "SYSTEMROOT",
-                r"C:\Windows",
+            Path(
+                os.environ.get(
+                    "SYSTEMROOT",
+                    r"C:\Windows",
+                )
             )
-        )
-        / "System32"
+            / "System32"
     )
 
     resolved = [system32 / name for name in RUNTIME_DLLS]
@@ -1203,10 +1202,10 @@ def stage_numpy_runtime(build_root: Path) -> tuple[Path, Path]:
 
 
 def nuitka_command(
-    target: ApplicationTarget,
-    build_root: Path,
-    runtimes: list[Path],
-    numpy_runtime: tuple[Path, Path] | None = None,
+        target: ApplicationTarget,
+        build_root: Path,
+        runtimes: list[Path],
+        numpy_runtime: tuple[Path, Path] | None = None,
 ) -> list[str]:
     """Build a reproducible standalone Nuitka command."""
     command_line = [
@@ -1222,7 +1221,7 @@ def nuitka_command(
         f"--windows-icon-from-ico={target.icon}",
         f"--output-filename={target.executable}",
         f"--output-dir={build_root}",
-        (f"--include-data-files={NATIVE_LIBRARY}=dll/{NATIVE_LIBRARY.name}"),
+        f"--include-data-files={NATIVE_LIBRARY}=dll/{NATIVE_LIBRARY.name}",
         str(target.entry_point),
     ]
 
@@ -1250,7 +1249,7 @@ def nuitka_command(
 
 
 def _produced_distribution(
-    build_root: Path,
+        build_root: Path,
 ) -> Path:
     candidates = list(build_root.glob("*.dist"))
 
@@ -1263,8 +1262,8 @@ def _produced_distribution(
 
 
 def _verify_application(
-    application: Path,
-    target: ApplicationTarget,
+        application: Path,
+        target: ApplicationTarget,
 ) -> Path:
     executable = application / target.executable
 
@@ -1279,8 +1278,8 @@ def _verify_application(
         raise RuntimeError(f"{target.executable} is missing the native connectome DLL")
 
     for runtime_name in (
-        "msvcp140.dll",
-        *RUNTIME_DLLS,
+            "msvcp140.dll",
+            *RUNTIME_DLLS,
     ):
         if not (application / runtime_name).is_file():
             raise RuntimeError(
@@ -1324,8 +1323,8 @@ def _merge_application_tree(source: Path, destination: Path) -> None:
 
 
 def merge_application_distributions(
-    release: Path,
-    targets: tuple[ApplicationTarget, ...],
+        release: Path,
+        targets: tuple[ApplicationTarget, ...],
 ) -> Path:
     """Create one verified folder containing every independently built app."""
     merged = release / MERGED_APPLICATION_DIRECTORY
@@ -1372,7 +1371,7 @@ def merge_application_distributions(
 
 
 def _is_full_application_build(
-    targets: tuple[ApplicationTarget, ...],
+        targets: tuple[ApplicationTarget, ...],
 ) -> bool:
     return len(targets) == len(APPLICATIONS) and {
         target.executable for target in targets
@@ -1380,7 +1379,7 @@ def _is_full_application_build(
 
 
 def _selected_application_targets(
-    selection: str | None,
+        selection: str | None,
 ) -> tuple[ApplicationTarget, ...]:
     """Resolve a focused target while retaining the former CLI alias."""
     if selection is None:
@@ -1391,11 +1390,11 @@ def _selected_application_targets(
 
 
 def build(
-    timestamp: str | None = None,
-    targets: tuple[
-        ApplicationTarget,
-        ...,
-    ] = APPLICATIONS,
+        timestamp: str | None = None,
+        targets: tuple[
+            ApplicationTarget,
+            ...,
+        ] = APPLICATIONS,
 ) -> Path:
     if not VENV_PYTHON.is_file():
         raise RuntimeError(
@@ -1429,8 +1428,8 @@ def build(
 
     try:
         for index, target in enumerate(
-            targets,
-            start=2,
+                targets,
+                start=2,
         ):
             section(
                 f"Compile {target.executable}",
@@ -1495,13 +1494,13 @@ def build(
 def main() -> int:
     runtime_log, _ = configure_cli_logging("build_dist")
     if not require_managed_runtime(
-        ROOT,
-        "build_dist",
+            ROOT,
+            "build_dist",
     ):
         return 1
 
     parser = argparse.ArgumentParser(
-        description=("Build timestamped standalone AIBrain desktop applications.")
+        description="Build timestamped standalone AIBrain desktop applications."
     )
 
     parser.add_argument(
@@ -1543,9 +1542,9 @@ def main() -> int:
         )
 
     except (
-        OSError,
-        RuntimeError,
-        subprocess.CalledProcessError,
+            OSError,
+            RuntimeError,
+            subprocess.CalledProcessError,
     ) as exc:
         error(str(exc))
         return 1

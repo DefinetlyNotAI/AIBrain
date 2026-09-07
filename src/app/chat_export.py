@@ -11,11 +11,11 @@ from ..models.message_types import TranscriptTurn
 
 
 def write_chat_export(
-    path: Path,
-    conversation: Sequence[TranscriptTurn],
-    *,
-    mode: str,
-    model: str,
+        path: Path,
+        conversation: Sequence[TranscriptTurn],
+        *,
+        mode: str,
+        model: str,
 ) -> None:
     """Write the complete chat as structured JSON or readable plain text."""
     path = Path(path)

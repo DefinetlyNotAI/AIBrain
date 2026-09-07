@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .theme import ColourSettingsDialog, load_colours, save_colours
 from ..connectome.activity import ActivityField
 from ..connectome.analysis import AnalysisRecord, ConnectomeAnalyzer
 from ..connectome.analysis_cache import AnalysisPageCache
@@ -37,7 +38,6 @@ from ..connectome.renderer import ConnectomeRenderer
 from ..models.instrumented_backend import ActivationFrame
 from ..models.message_types import TranscriptTurn
 from ..utils.gpu import discover_render_adapters, set_windows_gpu_preference
-from .theme import ColourSettingsDialog, load_colours, save_colours
 
 
 @dataclass(slots=True)
@@ -48,11 +48,11 @@ class PlaybackStep:
 
 
 def _trim_analysis_memory_data(
-    playback: list[PlaybackStep],
-    retained_bytes: int,
-    memory_limit_bytes: int | None,
-    records: list[AnalysisRecord],
-    cache: AnalysisPageCache,
+        playback: list[PlaybackStep],
+        retained_bytes: int,
+        memory_limit_bytes: int | None,
+        records: list[AnalysisRecord],
+        cache: AnalysisPageCache,
 ) -> tuple[int, bool]:
     """Move old playback and analysis records into the bounded disk cache."""
     if memory_limit_bytes is None:
@@ -83,8 +83,8 @@ class SignalNodeInspectorLabel(QLabel):
         prefix_width = self.fontMetrics().horizontalAdvance(self._prefix)
         number_width = self.fontMetrics().horizontalAdvance("00000")
         if (
-            event.button() == Qt.MouseButton.LeftButton
-            and prefix_width <= event.position().x() <= prefix_width + number_width
+                event.button() == Qt.MouseButton.LeftButton
+                and prefix_width <= event.position().x() <= prefix_width + number_width
         ):
             self.nodeNumberClicked.emit()
             event.accept()
@@ -291,9 +291,9 @@ class VisualizerPanel(QWidget):
         self.replay_rewind = QPushButton("Replay")
         self.next_rewind = QPushButton("Next")
         for button, tip in (
-            (self.previous_rewind, "Show the previous recorded telemetry frame"),
-            (self.replay_rewind, "Play recorded telemetry frames from the beginning"),
-            (self.next_rewind, "Show the next recorded telemetry frame"),
+                (self.previous_rewind, "Show the previous recorded telemetry frame"),
+                (self.replay_rewind, "Play recorded telemetry frames from the beginning"),
+                (self.next_rewind, "Show the next recorded telemetry frame"),
         ):
             button.setToolTip(tip)
             rewind_layout.addWidget(button)
@@ -447,7 +447,7 @@ class VisualizerPanel(QWidget):
         had_cached_records = self._analysis_cache.record_count > 0
         self._analysis_cache.set_limit(max(0, megabytes) * 1024 * 1024)
         data_lost = self._analysis_cache.overflowed or (
-            megabytes == 0 and had_cached_records
+                megabytes == 0 and had_cached_records
         )
         if data_lost and not self._analysis_memory_exceeded:
             self._analysis_memory_exceeded = True
@@ -475,10 +475,10 @@ class VisualizerPanel(QWidget):
     @staticmethod
     def _signal_bytes(signal: PlaybackStep) -> int:
         return (
-            signal.values.nbytes
-            + signal.peaks.nbytes
-            + len(signal.frame.chunk_text.encode("utf-8"))
-            + 96
+                signal.values.nbytes
+                + signal.peaks.nbytes
+                + len(signal.frame.chunk_text.encode("utf-8"))
+                + 96
         )
 
     def _trim_analysis_memory(self) -> None:

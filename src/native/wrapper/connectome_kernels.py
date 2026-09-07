@@ -76,10 +76,10 @@ class NativeConnectome:
         return self.dll is not None
 
     def decay(
-        self,
-        values: NDArray[_numpy.float32],
-        factor: float,
-        threshold: float,
+            self,
+            values: NDArray[_numpy.float32],
+            factor: float,
+            threshold: float,
     ) -> int:
         self._validate_float32(values, "values")
 
@@ -97,10 +97,10 @@ class NativeConnectome:
         )
 
     def edges(
-        self,
-        values: NDArray[_numpy.float32],
-        edges: NDArray[_numpy.int32],
-        output: NDArray[_numpy.float32],
+            self,
+            values: NDArray[_numpy.float32],
+            edges: NDArray[_numpy.int32],
+            output: NDArray[_numpy.float32],
     ) -> None:
         self._validate_float32(values, "values")
         self._validate_int32(edges, "edges")
@@ -126,10 +126,10 @@ class NativeConnectome:
             destination = edges[:, 1]
 
             valid = (
-                (source >= 0)
-                & (destination >= 0)
-                & (source < values.size)
-                & (destination < values.size)
+                    (source >= 0)
+                    & (destination >= 0)
+                    & (source < values.size)
+                    & (destination < values.size)
             )
 
             activity = array_module.zeros(edges.shape[0], dtype=array_module.float32)
@@ -151,11 +151,11 @@ class NativeConnectome:
         )
 
     def regions(
-        self,
-        values: NDArray[_numpy.float32],
-        region_ids: NDArray[_numpy.int16],
-        region_count: int,
-        threshold: float = 0.1,
+            self,
+            values: NDArray[_numpy.float32],
+            region_ids: NDArray[_numpy.int16],
+            region_count: int,
+            threshold: float = 0.1,
     ) -> tuple[NDArray[_numpy.float32], int]:
         self._validate_float32(values, "values")
         self._validate_int16(region_ids, "region_ids")

@@ -53,10 +53,10 @@ class ModelDiagnostic:
     @property
     def can_remove_manifest(self) -> bool:
         return (
-            not self.available
-            and self.issue_code
-            not in {"Backend incompatibility", "Unsupported model type"}
-            and self.manifest_path.is_file()
+                not self.available
+                and self.issue_code
+                not in {"Backend incompatibility", "Unsupported model type"}
+                and self.manifest_path.is_file()
         )
 
     @property
@@ -100,11 +100,11 @@ class OllamaDiagnostics:
         self._discovery = OllamaDiscovery(self.root)
 
     def inspect(
-        self,
-        *,
-        verify_backend: bool = False,
-        cancelled: Event | None = None,
-        progress: Callable[[int, int, str], None] | None = None,
+            self,
+            *,
+            verify_backend: bool = False,
+            cancelled: Event | None = None,
+            progress: Callable[[int, int, str], None] | None = None,
     ) -> list[ModelDiagnostic]:
         manifest_root = self.root / "manifests"
         if not manifest_root.is_dir():
@@ -113,7 +113,7 @@ class OllamaDiagnostics:
         parsed: list[tuple[str, Path, ModelInfo]] = []
         diagnostics: list[ModelDiagnostic] = []
         for manifest in sorted(
-            path for path in manifest_root.rglob("*") if path.is_file()
+                path for path in manifest_root.rglob("*") if path.is_file()
         ):
             reference = self._reference(manifest, manifest_root)
             try:
@@ -267,7 +267,7 @@ class OllamaDiagnostics:
 
     @staticmethod
     def _from_model(
-        reference: str, manifest: Path, model: ModelInfo
+            reference: str, manifest: Path, model: ModelInfo
     ) -> ModelDiagnostic:
         if model.available:
             detail = "GGUF header and model blob are healthy"

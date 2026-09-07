@@ -274,7 +274,7 @@ class NNAnalysisExportTests(unittest.TestCase):
         self.assertEqual(schema, FEATURE_SCHEMA)
 
     def test_default_memory_path_is_user_writable_not_the_application_directory(
-        self,
+            self,
     ) -> None:
         with (
             tempfile.TemporaryDirectory() as directory,

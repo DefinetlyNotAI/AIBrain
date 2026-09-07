@@ -75,11 +75,11 @@ class AnalysisPageCache:
     """Write chronological compressed pages and enforce a disk byte ceiling."""
 
     def __init__(
-        self,
-        max_bytes: int = DEFAULT_CACHE_BYTES,
-        *,
-        root: Path = CACHE_ROOT,
-        page_records: int = 64,
+            self,
+            max_bytes: int = DEFAULT_CACHE_BYTES,
+            *,
+            root: Path = CACHE_ROOT,
+            page_records: int = 64,
     ) -> None:
         self.max_bytes = max(0, int(max_bytes))
         self.root = Path(root)

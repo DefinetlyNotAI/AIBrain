@@ -16,9 +16,9 @@ from src.utils.gpu import GPU_RELAUNCH_EXIT_CODE, can_request_gpu_relaunch
 class GpuLaunchTests(unittest.TestCase):
     def test_diagnostics_consumes_desktop_preserve_console_marker(self) -> None:
         with patch.object(
-            diagnostic.sys,
-            "argv",
-            ["cli/diagnostic.py", "--preserve-console", "--example"],
+                diagnostic.sys,
+                "argv",
+                ["cli/diagnostic.py", "--preserve-console", "--example"],
         ):
             self.assertTrue(diagnostic._consume_preserve_console_flag())
             self.assertEqual(diagnostic.sys.argv, ["cli/diagnostic.py", "--example"])
@@ -37,17 +37,17 @@ class GpuLaunchTests(unittest.TestCase):
     def test_renderer_relaunch_is_limited_to_one_retry(self) -> None:
         with patch("src.utils.gpu.sys.platform", "win32"):
             with patch.dict(
-                os.environ, {"AIBRAIN_GPU_RELAUNCH_ATTEMPT": "0"}, clear=False
+                    os.environ, {"AIBRAIN_GPU_RELAUNCH_ATTEMPT": "0"}, clear=False
             ):
                 self.assertTrue(can_request_gpu_relaunch())
             with patch.dict(
-                os.environ, {"AIBRAIN_GPU_RELAUNCH_ATTEMPT": "1"}, clear=False
+                    os.environ, {"AIBRAIN_GPU_RELAUNCH_ATTEMPT": "1"}, clear=False
             ):
                 self.assertFalse(can_request_gpu_relaunch())
 
     @patch("src.utils.gpu.subprocess.Popen")
     def test_supervisor_waits_for_retry_then_returns_the_child_exit_code(
-        self, popen: Mock
+            self, popen: Mock
     ) -> None:
         retrying_child = Mock()
         retrying_child.wait.return_value = GPU_RELAUNCH_EXIT_CODE
@@ -67,7 +67,7 @@ class GpuLaunchTests(unittest.TestCase):
 
     @patch("src.utils.gpu.subprocess.Popen")
     def test_supervisor_terminates_the_child_when_ctrl_c_interrupts_waiting(
-        self, popen: Mock
+            self, popen: Mock
     ) -> None:
         child = Mock()
         child.wait.side_effect = [KeyboardInterrupt, 1]
@@ -101,7 +101,7 @@ class GpuLaunchTests(unittest.TestCase):
         )
 
     def test_packaged_gpu_preferences_only_register_the_packaged_executable(
-        self,
+            self,
     ) -> None:
         executable = str(Path("dist/diagnostic.exe").resolve())
         with (
@@ -111,7 +111,7 @@ class GpuLaunchTests(unittest.TestCase):
             self.assertEqual(gpu._gpu_host_executables(), {executable})
 
     def test_every_desktop_launcher_returns_supervised_exit_before_creating_qt(
-        self,
+            self,
     ) -> None:
         for launcher in (main, diagnostic, analysis):
             with (
@@ -127,7 +127,7 @@ class GpuLaunchTests(unittest.TestCase):
                 configure.assert_not_called()
 
     def test_gpu_preference_is_saved_before_child_launch_and_preserves_arguments(
-        self,
+            self,
     ) -> None:
         packaged = str(Path("dist/diagnostic.exe").resolve())
 
@@ -137,8 +137,8 @@ class GpuLaunchTests(unittest.TestCase):
             return 0
 
         for compiled, expected in (
-            (False, ["python.exe", packaged, "--example"]),
-            (True, [packaged, "--example"]),
+                (False, ["python.exe", packaged, "--example"]),
+                (True, [packaged, "--example"]),
         ):
             with (
                 self.subTest(compiled=compiled),
@@ -178,7 +178,7 @@ class GpuLaunchTests(unittest.TestCase):
         self.assertFalse(hasattr(ConnectomeRenderer, "_restart_for_gpu"))
 
     def test_renderer_requests_a_clean_supervised_restart_for_a_first_gpu_mismatch(
-        self,
+            self,
     ) -> None:
         source = inspect.getsource(ConnectomeRenderer.initializeGL)
 

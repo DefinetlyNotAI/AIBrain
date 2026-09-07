@@ -201,16 +201,16 @@ def _render_prompt_answer(prompt: str, answer: str, *styles: str) -> None:
 def _choice_label(key: str, label: str) -> str:
     """Highlight a mnemonic key without assuming labels have one character."""
     if label.casefold().startswith(key.casefold()):
-        return f"[{key.upper()}]{label[len(key) :]}"
+        return f"[{key.upper()}]{label[len(key):]}"
     return f"[{key.upper()}] {label}"
 
 
 def ask_choice(
-    question: str,
-    choices: Mapping[str, str],
-    *,
-    default: str | None = None,
-    show_choices: bool = True,
+        question: str,
+        choices: Mapping[str, str],
+        *,
+        default: str | None = None,
+        show_choices: bool = True,
 ) -> str | None:
     """Read a menu answer, accepting a key or a case-insensitive full label."""
     if default is not None and default not in choices:
@@ -294,7 +294,7 @@ def terminal_width() -> int:
             kernel32 = _kernel32_bindings()
             handle = kernel32.get_std_handle(-11)
             if handle and kernel32.get_console_screen_buffer_info(
-                handle, ctypes.byref(info)
+                    handle, ctypes.byref(info)
             ):
                 width = info.window.right - info.window.left + 1
         except (AttributeError, OSError):
@@ -309,7 +309,7 @@ def _clear_native_console() -> bool:
     owns_handle = False
     info = _ConsoleScreenBufferInfo()
     if not handle or not kernel32.get_console_screen_buffer_info(
-        handle, ctypes.byref(info)
+            handle, ctypes.byref(info)
     ):
         # stdout may be captured by an IDE or redirected while the process still
         # owns an interactive console. CONOUT$ addresses that console directly.
@@ -324,7 +324,7 @@ def _clear_native_console() -> bool:
         )
         owns_handle = True
         if not handle or not kernel32.get_console_screen_buffer_info(
-            handle, ctypes.byref(info)
+                handle, ctypes.byref(info)
         ):
             if handle:
                 kernel32.close_handle(handle)
@@ -426,9 +426,9 @@ def shorten_command_argument(argument: str) -> str:
     root_text = str(ROOT.resolve())
     normalized = argument.replace("/", "\\")
     if normalized.lower() == root_text.lower() or normalized.lower().startswith(
-        root_text.lower() + "\\"
+            root_text.lower() + "\\"
     ):
-        relative = normalized[len(root_text) :].lstrip("\\/")
+        relative = normalized[len(root_text):].lstrip("\\/")
         return rf".\{relative}" if relative else "."
 
     # Omit an absolute executable path only when PATH resolves its basename to
@@ -488,7 +488,7 @@ def wrap_console_line(text: str, width: int) -> list[str]:
 
 
 def wrap_prefixed_text(
-    prefix: str, text: str, *, width: int, continuation: str | None = None
+        prefix: str, text: str, *, width: int, continuation: str | None = None
 ) -> list[str]:
     """Wrap each logical line with aligned gutters and its original indentation."""
     continuation_prefix = (
@@ -496,7 +496,7 @@ def wrap_prefixed_text(
     )
     lines: list[str] = []
     for index, raw_line in enumerate(
-        strip_ansi(text).expandtabs(4).splitlines() or [""]
+            strip_ansi(text).expandtabs(4).splitlines() or [""]
     ):
         indentation = raw_line[: len(raw_line) - len(raw_line.lstrip())]
         remaining = raw_line.lstrip().rstrip()
@@ -554,12 +554,12 @@ def section(title: str, number: int) -> None:
 
 
 def panel(
-    title: str,
-    rows: list[tuple[str, str]],
-    *,
-    subtitle: str | None = None,
-    footer: str | None = None,
-    tone: str = Color.CYAN,
+        title: str,
+        rows: list[tuple[str, str]],
+        *,
+        subtitle: str | None = None,
+        footer: str | None = None,
+        tone: str = Color.CYAN,
 ) -> None:
     """Render a labeled summary panel shared by installer and build tools."""
     width = terminal_width()
@@ -575,16 +575,16 @@ def panel(
         prefix = f"  {label:<{label_width}}  "
         continuation = " " * len(prefix)
         for line in wrap_prefixed_text(
-            prefix,
-            shorten_output_paths(value),
-            width=width - 4,
-            continuation=continuation,
+                prefix,
+                shorten_output_paths(value),
+                width=width - 4,
+                continuation=continuation,
         ):
             _box_line(line, width=width, tone=tone)
     if footer:
         print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
         for line in wrap_prefixed_text(
-            "", shorten_output_paths(footer), width=width - 4
+                "", shorten_output_paths(footer), width=width - 4
         ):
             _box_line(line, width=width, tone=tone)
     print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, tone))
@@ -592,7 +592,7 @@ def panel(
 
 
 def instruction_list(
-    steps: list[tuple[str, str, str]], *, stream: TextIO | None = None
+        steps: list[tuple[str, str, str]], *, stream: TextIO | None = None
 ) -> None:
     output = stream or sys.stdout
     print(file=output)
@@ -638,12 +638,12 @@ def error(message: str) -> None:
 
 
 def _print_status_message(
-    marker: str, message: str, tone: str, *, stream: TextIO | None = None
+        marker: str, message: str, tone: str, *, stream: TextIO | None = None
 ) -> None:
     prefix = f"  {marker} "
     lines = console_message_lines(prefix, message)
     print(
-        color(prefix, tone, Color.BOLD) + lines[0][len(prefix) :],
+        color(prefix, tone, Color.BOLD) + lines[0][len(prefix):],
         file=stream or sys.stdout,
     )
     for line in lines[1:]:
@@ -655,7 +655,7 @@ def detail(label: str, value: str) -> None:
     for line in console_message_lines(prefix, value):
         print(
             color(line[: len(prefix)], Color.GRAY)
-            + color(line[len(prefix) :], Color.WHITE)
+            + color(line[len(prefix):], Color.WHITE)
         )
 
 
@@ -716,7 +716,7 @@ def command_preview(command_line: list[str]) -> None:
             print(
                 color(line[: len(prefix) - 1], Color.MAGENTA, Color.BOLD)
                 + " "
-                + color(line[len(prefix) :], Color.DIM, Color.WHITE)
+                + color(line[len(prefix):], Color.DIM, Color.WHITE)
             )
         else:
             print(color(line, Color.DIM, Color.WHITE))
@@ -726,7 +726,7 @@ class CommandOutputBox:
     """An indented, live-rendered container for subprocess output."""
 
     def __init__(
-        self, *, indent: int = COMMAND_INDENT, live: bool | None = None
+            self, *, indent: int = COMMAND_INDENT, live: bool | None = None
     ) -> None:
         self.prefix = " " * indent
         self.inner = max(terminal_width() - indent, 20) - 2
@@ -768,9 +768,9 @@ class CommandOutputBox:
 
     def _border_line(self, left: str, right: str) -> str:
         return (
-            self.prefix
-            + color(left + BOX_HORIZONTAL * self.inner + right, Color.GRAY)
-            + "\n"
+                self.prefix
+                + color(left + BOX_HORIZONTAL * self.inner + right, Color.GRAY)
+                + "\n"
         )
 
     def _rendered_lines(self, output: str) -> list[str]:

@@ -17,7 +17,7 @@ class _NativeLogCallback(Protocol):
     """Callable signature retained by llama.cpp for native log delivery."""
 
     def __call__(
-        self, level: int, text: bytes | None, _user_data: ctypes.c_void_p
+            self, level: int, text: bytes | None, _user_data: ctypes.c_void_p
     ) -> None: ...
 
 

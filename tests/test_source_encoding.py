@@ -6,7 +6,7 @@ from pathlib import Path
 
 class SourceEncodingTests(unittest.TestCase):
     def test_project_python_sources_contain_no_common_utf8_mojibake_markers(
-        self,
+            self,
     ) -> None:
         root = Path(__file__).resolve().parents[1]
         markers = (chr(0x00E2), chr(0x00C3), chr(0x00C2), chr(0xFFFD))

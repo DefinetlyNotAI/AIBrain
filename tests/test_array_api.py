@@ -27,11 +27,11 @@ class ArrayApiTests(unittest.TestCase):
         original_import = builtins.__import__
 
         def import_without_cupy(
-            name: str,
-            global_namespace: Mapping[str, object] | None = None,
-            local_namespace: Mapping[str, object] | None = None,
-            fromlist: Sequence[str] = (),
-            level: int = 0,
+                name: str,
+                global_namespace: Mapping[str, object] | None = None,
+                local_namespace: Mapping[str, object] | None = None,
+                fromlist: Sequence[str] = (),
+                level: int = 0,
         ) -> ModuleType:
             if name == "cupy":
                 raise ModuleNotFoundError("No module named 'cupy'")
@@ -55,7 +55,7 @@ class ArrayApiTests(unittest.TestCase):
                 self.requested_size: tuple[int, ...] | None = None
 
             def standard_normal(
-                self, size: int | tuple[int, ...]
+                    self, size: int | tuple[int, ...]
             ) -> NDArray[np.float32]:
                 if isinstance(size, int):
                     size = (size,)

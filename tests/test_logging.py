@@ -88,7 +88,7 @@ class LoggingTests(unittest.TestCase):
         self.assertNotIn("WARNING", rendered)
 
     def test_console_records_wrap_relative_paths_without_mutating_the_file_message(
-        self,
+            self,
     ) -> None:
         path = console_ui.ROOT / "logs" / "aibrain.build_dist.log"
         message = f"Log file: {path}\n  This indented runtime detail has enough words to require more than one row"
@@ -135,7 +135,7 @@ class LoggingTests(unittest.TestCase):
             self._close_root_handlers()
 
     def test_handled_exception_preserves_traceback_in_runtime_and_crash_logs(
-        self,
+            self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runtime_log, crash_log = configure_logging("test", Path(directory))
@@ -211,7 +211,7 @@ class LoggingTests(unittest.TestCase):
         self.assertRegex(first_line, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| INFO")
 
     def test_completed_command_output_is_logged_once_without_console_decoration(
-        self,
+            self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             console = StringIO()
@@ -273,7 +273,7 @@ class LoggingTests(unittest.TestCase):
         self.assertEqual(crash_log.name, "crash.main.log")
 
     def test_reconfiguring_logging_closes_existing_handlers_before_log_rotation(
-        self,
+            self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log_directory = Path(directory)

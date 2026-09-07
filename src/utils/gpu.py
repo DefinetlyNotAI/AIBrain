@@ -111,7 +111,7 @@ def gpu_relaunch_attempt() -> int:
 def can_request_gpu_relaunch() -> bool:
     """Allow one renderer-triggered restart after a wrong adapter is detected."""
     return (
-        sys.platform == "win32" and gpu_relaunch_attempt() < _MAX_GPU_RELAUNCH_ATTEMPTS
+            sys.platform == "win32" and gpu_relaunch_attempt() < _MAX_GPU_RELAUNCH_ATTEMPTS
     )
 
 
@@ -206,7 +206,7 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
 
 
 def set_windows_executable_gpu_preference(
-    executable: Path, high_performance: bool = True
+        executable: Path, high_performance: bool = True
 ) -> bool:
     """Persist Windows' GPU preference for a standalone AIBrain executable."""
     if sys.platform != "win32":
@@ -242,7 +242,7 @@ def should_prefer_high_performance_gpu() -> bool:
         import winreg
 
         with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, r"Software\AIBrain\AIBrain"
+                winreg.HKEY_CURRENT_USER, r"Software\AIBrain\AIBrain"
         ) as key:
             value, _ = winreg.QueryValueEx(key, "render_adapter")
             return str(value) != "system"

@@ -69,19 +69,19 @@ class Compiler:
 
 
 def line(
-    label: str,
-    text: str,
-    colour: str = Colour.CYAN,
+        label: str,
+        text: str,
+        colour: str = Colour.CYAN,
 ) -> None:
     """Render a compact build status line."""
     status(label, text, colour)
 
 
 def run_command(
-    command_line: list[str],
-    *,
-    check: bool = False,
-    show_output: bool = True,
+        command_line: list[str],
+        *,
+        check: bool = False,
+        show_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run an external command and render each output line as it arrives."""
     command_preview(command_line)
@@ -206,8 +206,8 @@ def discover_compiler(explicit: str | None) -> Compiler:
 
 
 def command_for(
-    compiler: Compiler,
-    debug: bool,
+        compiler: Compiler,
+        debug: bool,
 ) -> list[str]:
     """Create the compiler command for the selected toolchain."""
     if compiler.family == "msvc":
@@ -250,8 +250,8 @@ def command_for(
 
 
 def compile_library(
-    compiler: Compiler,
-    debug: bool,
+        compiler: Compiler,
+        debug: bool,
 ) -> None:
     """Compile the native connectome DLL."""
     result = run_command(
@@ -452,9 +452,9 @@ def main() -> int:
         committed = commit_regenerated_library()
 
     except (
-        OSError,
-        RuntimeError,
-        subprocess.CalledProcessError,
+            OSError,
+            RuntimeError,
+            subprocess.CalledProcessError,
     ) as exc:
         error(str(exc))
         return 1

@@ -110,9 +110,9 @@ class Kernel32:
         self._close_pseudo_console.restype = None
 
     def wait_for_single_object(
-        self,
-        handle: wintypes.HANDLE,
-        timeout: int,
+            self,
+            handle: wintypes.HANDLE,
+            timeout: int,
     ) -> int:
         return int(
             self._wait_for_single_object(
@@ -122,22 +122,22 @@ class Kernel32:
         )
 
     def get_exit_code_process(
-        self,
-        handle: wintypes.HANDLE,
+            self,
+            handle: wintypes.HANDLE,
     ) -> int:
         exit_code = wintypes.DWORD()
 
         if not self._get_exit_code_process(
-            handle,
-            ctypes.byref(exit_code),
+                handle,
+                ctypes.byref(exit_code),
         ):
             raise ctypes.WinError(ctypes.get_last_error())
 
         return int(exit_code.value)
 
     def close_handle(
-        self,
-        handle: wintypes.HANDLE,
+            self,
+            handle: wintypes.HANDLE,
     ) -> None:
         if not handle:
             return
@@ -146,43 +146,43 @@ class Kernel32:
             raise ctypes.WinError(ctypes.get_last_error())
 
     def create_pipe(
-        self,
-        security_attributes: ctypes.Structure,
+            self,
+            security_attributes: ctypes.Structure,
     ) -> tuple[wintypes.HANDLE, wintypes.HANDLE]:
         read_handle = wintypes.HANDLE()
         write_handle = wintypes.HANDLE()
 
         if not self._create_pipe(
-            ctypes.byref(read_handle),
-            ctypes.byref(write_handle),
-            ctypes.byref(security_attributes),
-            0,
+                ctypes.byref(read_handle),
+                ctypes.byref(write_handle),
+                ctypes.byref(security_attributes),
+                0,
         ):
             raise ctypes.WinError(ctypes.get_last_error())
 
         return read_handle, write_handle
 
     def read_file(
-        self,
-        handle: wintypes.HANDLE,
-        size: int = 8192,
+            self,
+            handle: wintypes.HANDLE,
+            size: int = 8192,
     ) -> bytes | None:
         buffer = ctypes.create_string_buffer(size)
         bytes_read = wintypes.DWORD()
 
         if not self._read_file(
-            handle,
-            buffer,
-            size,
-            ctypes.byref(bytes_read),
-            None,
+                handle,
+                buffer,
+                size,
+                ctypes.byref(bytes_read),
+                None,
         ):
             error_code = ctypes.get_last_error()
 
             if error_code in (
-                self.ERROR_INVALID_HANDLE,
-                self.ERROR_BROKEN_PIPE,
-                self.ERROR_NO_DATA,
+                    self.ERROR_INVALID_HANDLE,
+                    self.ERROR_BROKEN_PIPE,
+                    self.ERROR_NO_DATA,
             ):
                 return None
 
@@ -194,7 +194,7 @@ class Kernel32:
         return bytes(buffer.raw[: bytes_read.value])
 
     def initialize_attribute_list(
-        self,
+            self,
     ) -> tuple[
         ctypes.Array[ctypes.c_char],
         wintypes.LPVOID,
@@ -216,42 +216,42 @@ class Kernel32:
         )
 
         if not self._initialize_proc_thread_attribute_list(
-            attribute_list,
-            1,
-            0,
-            ctypes.byref(size),
+                attribute_list,
+                1,
+                0,
+                ctypes.byref(size),
         ):
             raise ctypes.WinError(ctypes.get_last_error())
 
         return buffer, attribute_list
 
     def update_pseudo_console_attribute(
-        self,
-        attribute_list: wintypes.LPVOID,
-        pseudo_console: wintypes.HANDLE,
+            self,
+            attribute_list: wintypes.LPVOID,
+            pseudo_console: wintypes.HANDLE,
     ) -> None:
         if not self._update_proc_thread_attribute(
-            attribute_list,
-            0,
-            self.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-            pseudo_console,
-            ctypes.sizeof(wintypes.HANDLE),
-            None,
-            None,
+                attribute_list,
+                0,
+                self.PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+                pseudo_console,
+                ctypes.sizeof(wintypes.HANDLE),
+                None,
+                None,
         ):
             raise ctypes.WinError(ctypes.get_last_error())
 
     def delete_attribute_list(
-        self,
-        attribute_list: wintypes.LPVOID,
+            self,
+            attribute_list: wintypes.LPVOID,
     ) -> None:
         self._delete_proc_thread_attribute_list(attribute_list)
 
     def create_pseudo_console(
-        self,
-        size: ctypes.Structure,
-        input_handle: wintypes.HANDLE,
-        output_handle: wintypes.HANDLE,
+            self,
+            size: ctypes.Structure,
+            input_handle: wintypes.HANDLE,
+            output_handle: wintypes.HANDLE,
     ) -> wintypes.HANDLE:
         pseudo_console = wintypes.HANDLE()
 
@@ -271,34 +271,34 @@ class Kernel32:
         return pseudo_console
 
     def close_pseudo_console(
-        self,
-        pseudo_console: wintypes.HANDLE,
+            self,
+            pseudo_console: wintypes.HANDLE,
     ) -> None:
         if pseudo_console:
             self._close_pseudo_console(pseudo_console)
 
     def create_process(
-        self,
-        command_line: ctypes.Array[ctypes.c_wchar],
-        current_directory: Path,
-        startup_info: ctypes.Structure,
-        process_information: ctypes.Structure,
-        creation_flags: int,
+            self,
+            command_line: ctypes.Array[ctypes.c_wchar],
+            current_directory: Path,
+            startup_info: ctypes.Structure,
+            process_information: ctypes.Structure,
+            creation_flags: int,
     ) -> None:
         """Create a Windows process using extended startup information."""
         environment = None
 
         if not self._create_process_w(
-            None,
-            command_line,
-            None,
-            None,
-            False,
-            creation_flags,
-            environment,
-            str(current_directory),
-            ctypes.byref(startup_info.StartupInfo),
-            ctypes.byref(process_information),
+                None,
+                command_line,
+                None,
+                None,
+                False,
+                creation_flags,
+                environment,
+                str(current_directory),
+                ctypes.byref(startup_info.StartupInfo),
+                ctypes.byref(process_information),
         ):
             raise ctypes.WinError(ctypes.get_last_error())
 

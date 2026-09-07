@@ -6,11 +6,11 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..models.message_types import TranscriptTurn
 from .analysis import ConnectomeAnalyzer, RecordSource
 from .analysis_cache import AnalysisCacheStatus
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
+from ..models.message_types import TranscriptTurn
 
 
 def _write_payload(path: Path, payload: dict[str, object]) -> None:
@@ -23,12 +23,12 @@ def _write_payload(path: Path, payload: dict[str, object]) -> None:
 
 
 def _base_payload(
-    schema: str,
-    graph: ConnectomeGraph,
-    analyzer: ConnectomeAnalyzer,
-    conversation: Sequence[TranscriptTurn],
-    records: RecordSource | None = None,
-    recorded_summary: dict[str, object] | None = None,
+        schema: str,
+        graph: ConnectomeGraph,
+        analyzer: ConnectomeAnalyzer,
+        conversation: Sequence[TranscriptTurn],
+        records: RecordSource | None = None,
+        recorded_summary: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "schema": schema,
@@ -58,10 +58,10 @@ def _base_payload(
 
 
 def export_session_analysis(
-    path: Path,
-    graph: ConnectomeGraph,
-    analyzer: ConnectomeAnalyzer,
-    conversation: Sequence[TranscriptTurn],
+        path: Path,
+        graph: ConnectomeGraph,
+        analyzer: ConnectomeAnalyzer,
+        conversation: Sequence[TranscriptTurn],
 ) -> None:
     """Export normal-chat session data without autoencoder findings."""
     _write_payload(
@@ -71,13 +71,13 @@ def export_session_analysis(
 
 
 def export_nn_analysis_plus(
-    path: Path,
-    graph: ConnectomeGraph,
-    analyzer: ConnectomeAnalyzer,
-    conversation: Sequence[TranscriptTurn],
-    *,
-    records: RecordSource | None = None,
-    cache_status: AnalysisCacheStatus | None = None,
+        path: Path,
+        graph: ConnectomeGraph,
+        analyzer: ConnectomeAnalyzer,
+        conversation: Sequence[TranscriptTurn],
+        *,
+        records: RecordSource | None = None,
+        cache_status: AnalysisCacheStatus | None = None,
 ) -> None:
     """Export Infinite-mode session data with compact neural findings."""
     smart_analysis = analyzer.smart_report(records)

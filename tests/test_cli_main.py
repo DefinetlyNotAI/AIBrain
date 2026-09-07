@@ -19,7 +19,7 @@ class MainEntryPointTests(unittest.TestCase):
             main.require_virtual_environment()
 
     def test_startup_waits_for_the_worker_before_exiting_after_a_fatal_error(
-        self,
+            self,
     ) -> None:
         source = inspect.getsource(main.main)
 

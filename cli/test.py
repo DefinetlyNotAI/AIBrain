@@ -168,9 +168,9 @@ def run_suite(name: str, modules: list[str]) -> int:
 
 
 def run_separated_suite(
-    name: str,
-    modules: list[str],
-    start_section: int,
+        name: str,
+        modules: list[str],
+        start_section: int,
 ) -> int:
     """Run each module in a suite under its own console section."""
     failures = 0

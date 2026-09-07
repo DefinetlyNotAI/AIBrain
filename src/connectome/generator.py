@@ -6,8 +6,8 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from ..models.instrumented_backend import REALTIME_REGIONS
 from .graph import ConnectomeGraph
+from ..models.instrumented_backend import REALTIME_REGIONS
 
 REGIONS = REALTIME_REGIONS
 
@@ -30,9 +30,9 @@ DARK_BACKGROUND_CLUSTER_COLOR_MAP: dict[str, str] = dict(
         strict=True,
     )
 )
-# Bright colours are readable on the default dark renderer. A user-selected
+# Bright colors are readable on the default dark renderer. A user-selected
 # light renderer background automatically gets a distinct, lower-luminance
-# map, keeping idle clusters legible without making colours user-configurable.
+# map, keeping idle clusters legible without making colors user-configurable.
 LIGHT_BACKGROUND_CLUSTER_COLOR_MAP: dict[str, str] = dict(
     zip(
         REGIONS,
@@ -59,7 +59,7 @@ def cluster_colour_map_for_background(background: str) -> dict[str, str]:
     if len(value) != 6:
         return DARK_BACKGROUND_CLUSTER_COLOR_MAP
     try:
-        red, green, blue = (int(value[offset : offset + 2], 16) for offset in (0, 2, 4))
+        red, green, blue = (int(value[offset: offset + 2], 16) for offset in (0, 2, 4))
     except ValueError:
         return DARK_BACKGROUND_CLUSTER_COLOR_MAP
     luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
@@ -85,24 +85,24 @@ class _RandomGenerator(Protocol):
 
 
 def _sample_indices(
-    rng: _RandomGenerator, population_size: int, size: int
+        rng: _RandomGenerator, population_size: int, size: int
 ) -> NDArray[np.int64]:
     """Return uniform integer indexes with NumPy and CuPy generators alike."""
     return rng.integers(0, population_size, size=size)
 
 
 def _normal(
-    rng: _RandomGenerator,
-    mean: float,
-    deviation: float,
-    size: int | tuple[int, ...],
+        rng: _RandomGenerator,
+        mean: float,
+        deviation: float,
+        size: int | tuple[int, ...],
 ) -> NDArray[np.float64]:
     """Sample normal values with the generator APIs common to NumPy and CuPy."""
     return mean + deviation * rng.standard_normal(size)
 
 
 def build_connectome(
-    model_key: str, quality: str = "Medium", cluster_spacing: float = 1.0
+        model_key: str, quality: str = "Medium", cluster_spacing: float = 1.0
 ) -> ConnectomeGraph:
     counts = {"Low": 5000, "Medium": 11000, "High": 22000}
     n = counts.get(quality, 11000)

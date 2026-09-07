@@ -19,10 +19,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .advanced_settings import AdvancedSettingsDialog
 from ..models.infinite_simulation import random_world_opening
 from ..models.llama_backend import GenerationConfig
 from ..models.model_info import ModelInfo
-from .advanced_settings import AdvancedSettingsDialog
 
 _SELECTABLE_TEXT_FLAGS = Qt.TextInteractionFlag(
     Qt.TextInteractionFlag.TextSelectableByMouse.value
@@ -252,14 +252,14 @@ class ChatPanel(QWidget):
         self.open_analysis.clicked.connect(self.analysisRequested)
         self.export_chat.clicked.connect(self.chatExportRequested)
         for index, button in enumerate(
-            (
-                self.regenerate,
-                self.rewind,
-                self.open_analysis,
-                self.export_chat,
-                self.clear,
-                self.infinite,
-            )
+                (
+                        self.regenerate,
+                        self.rewind,
+                        self.open_analysis,
+                        self.export_chat,
+                        self.clear,
+                        self.infinite,
+                )
         ):
             buttons.addWidget(button, index // 3, index % 3)
         mode_actions_layout.addLayout(buttons)
@@ -506,15 +506,15 @@ class ChatPanel(QWidget):
         )
         if active:
             for control in (
-                self.send,
-                self.regenerate,
-                self.open_analysis,
-                self.export_chat,
-                self.clear,
-                self.infinite,
-                self.models,
-                self.infinite_mode,
-                self.advanced_settings,
+                    self.send,
+                    self.regenerate,
+                    self.open_analysis,
+                    self.export_chat,
+                    self.clear,
+                    self.infinite,
+                    self.models,
+                    self.infinite_mode,
+                    self.advanced_settings,
             ):
                 control.setEnabled(False)
             self.rewind.setEnabled(not self._replay_active)
@@ -577,8 +577,8 @@ class ChatPanel(QWidget):
         )
         self.rewind.setEnabled(
             (
-                self._rewind_active
-                or (ready and self._rewind_available and not self._running)
+                    self._rewind_active
+                    or (ready and self._rewind_available and not self._running)
             )
             and not self._replay_active
         )

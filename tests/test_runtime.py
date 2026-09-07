@@ -10,7 +10,7 @@ from src.utils import runtime
 
 class RuntimePreflightTests(unittest.TestCase):
     def test_outside_managed_environment_explains_activation_when_venv_exists(
-        self,
+            self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

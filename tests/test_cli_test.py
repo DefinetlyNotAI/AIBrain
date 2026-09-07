@@ -50,7 +50,7 @@ class TestLauncherTests(unittest.TestCase):
     @patch("cli.test.subprocess.run")
     @patch("pathlib.Path.is_file", return_value=True)
     def test_global_python_relaunches_the_managed_test_runtime(
-        self, _is_file, run_mock, _managed
+            self, _is_file, run_mock, _managed
     ) -> None:
         run_mock.return_value = subprocess.CompletedProcess([], 0)
 
@@ -77,14 +77,14 @@ class TestLauncherTests(unittest.TestCase):
 
     @patch("builtins.input", side_effect=EOFError)
     def test_menu_exits_cleanly_when_interactive_input_is_unavailable(
-        self, _input_mock
+            self, _input_mock
     ) -> None:
         with redirect_stdout(StringIO()):
             self.assertIsNone(test.choose_suite())
 
     @patch("builtins.input", side_effect=KeyboardInterrupt)
     def test_menu_propagates_keyboard_interrupt_to_the_cli_exit_handler(
-        self, _input_mock
+            self, _input_mock
     ) -> None:
         with redirect_stdout(StringIO()), self.assertRaises(KeyboardInterrupt):
             test.choose_suite()

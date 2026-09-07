@@ -10,24 +10,24 @@ from PySide6.QtCore import QPointF, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QWheelEvent
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
-from ..native.wrapper.connectome_kernels import native
-from ..utils.array_api import to_numpy
-from ..utils.gpu import can_request_gpu_relaunch, should_prefer_high_performance_gpu
 from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP, cluster_colour_map_for_background
 from .graph import ConnectomeGraph
+from ..native.wrapper.connectome_kernels import native
+from ..utils.array_api import to_numpy
+from ..utils.gpu import can_request_gpu_relaunch, should_prefer_high_performance_gpu
 
 
 def _projection_matrix(
-    mode: str,
-    zoom: float,
-    width: int,
-    height: int,
-    *,
-    yaw: float = 0.25,
-    pitch: float = -0.2,
-    pan_x: float = 0.0,
-    pan_y: float = 0.0,
+        mode: str,
+        zoom: float,
+        width: int,
+        height: int,
+        *,
+        yaw: float = 0.25,
+        pitch: float = -0.2,
+        pan_x: float = 0.0,
+        pan_y: float = 0.0,
 ) -> np.ndarray:
     """Build the host-side projection matrix for a renderer camera state."""
     aspect = max(width, 1) / max(height, 1)
@@ -59,7 +59,7 @@ def _projection_matrix(
 
 
 def _validated_region_filter(
-    mode: str, region_filter: int | None, region_count: int
+        mode: str, region_filter: int | None, region_count: int
 ) -> int | None:
     """Validate a projection request and return its effective region filter."""
     if mode not in {"2d", "3d"}:
@@ -70,7 +70,7 @@ def _validated_region_filter(
 
 
 def _visible_region_indices(
-    positions: np.ndarray, regions: np.ndarray, region_filter: int | None
+        positions: np.ndarray, regions: np.ndarray, region_filter: int | None
 ) -> np.ndarray:
     """Return host indices visible under an optional region filter."""
     if region_filter is None:
@@ -96,7 +96,7 @@ def _shader_palette(colour_map: Mapping[str, str] = CLUSTER_COLOR_MAP) -> str:
     clauses = []
     for index, colour in enumerate(colours):
         red, green, blue = (
-            int(colour[offset : offset + 2], 16) / 255 for offset in (1, 3, 5)
+            int(colour[offset: offset + 2], 16) / 255 for offset in (1, 3, 5)
         )
         clauses.append(
             f"if (cluster == {index}) return vec3({red:.6f}, {green:.6f}, {blue:.6f});"
@@ -320,8 +320,8 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def _upload_activity(self) -> None:
         assert (
-            self._node_activity_buffer is not None
-            and self._edge_activity_buffer is not None
+                self._node_activity_buffer is not None
+                and self._edge_activity_buffer is not None
         )
         values = np.ascontiguousarray(to_numpy(self.field.values), dtype="f4")
         native.edges(values, self._render_edges, self._edge_activity_values)
@@ -354,10 +354,10 @@ class ConnectomeRenderer(QOpenGLWidget):
             point_vao = self._point_vao
             edge_vao = self._edge_vao
             if (
-                point_program is None
-                or edge_program is None
-                or point_vao is None
-                or edge_vao is None
+                    point_program is None
+                    or edge_program is None
+                    or point_vao is None
+                    or edge_vao is None
             ):
                 raise RuntimeError("ModernGL resources were not initialized")
             colour = QColor(self.background_colour)
@@ -399,7 +399,7 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     @classmethod
     def _write_uniform_float(
-        cls, program: moderngl.Program, name: str, value: float
+            cls, program: moderngl.Program, name: str, value: float
     ) -> None:
         cls._write_uniform(program, name, struct.pack("f", value))
 
@@ -412,10 +412,10 @@ class ConnectomeRenderer(QOpenGLWidget):
         activities = to_numpy(self.field.values)[indices]
         regions = to_numpy(self.graph.regions)[indices]
         for point, activity, region in zip(
-            points[::stride],
-            activities[::stride],
-            regions[::stride],
-            strict=True,
+                points[::stride],
+                activities[::stride],
+                regions[::stride],
+                strict=True,
         ):
             colour = QColor(
                 self._cluster_colour_map[self.graph.region_names[int(region)]]
@@ -455,9 +455,9 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if (
-            self.view_mode == "3d"
-            and self._last_pos is not None
-            and event.buttons() & Qt.MouseButton.LeftButton
+                self.view_mode == "3d"
+                and self._last_pos is not None
+                and event.buttons() & Qt.MouseButton.LeftButton
         ):
             delta = event.position() - self._last_pos
             self.yaw += delta.x() * 0.008
@@ -465,9 +465,9 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._last_pos = event.position()
             self.update()
         elif (
-            self.view_mode == "2d"
-            and self._last_pos is not None
-            and event.buttons() & Qt.MouseButton.LeftButton
+                self.view_mode == "2d"
+                and self._last_pos is not None
+                and event.buttons() & Qt.MouseButton.LeftButton
         ):
             delta = event.position() - self._last_pos
             self.pan_x += delta.x() * 2 / max(self.width(), 1)
@@ -477,8 +477,8 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if (
-            self._last_pos is not None
-            and (event.position() - self._last_pos).manhattanLength() < 5
+                self._last_pos is not None
+                and (event.position() - self._last_pos).manhattanLength() < 5
         ):
             indices = self._visible_indices()
             points = self._project_for_pick()[indices]

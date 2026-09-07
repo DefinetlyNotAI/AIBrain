@@ -16,7 +16,7 @@ from src.utils.array_api import array_api as np
 
 class VisualizerModeTests(unittest.TestCase):
     def test_renderer_caps_continuous_repaints_at_thirty_frames_per_second(
-        self,
+            self,
     ) -> None:
         self.assertIn(
             "self.timer.start(33)", inspect.getsource(ConnectomeRenderer.__init__)

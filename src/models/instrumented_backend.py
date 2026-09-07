@@ -55,15 +55,15 @@ class ActivationFrame:
 
 
 def realtime_activation_frame(
-    chunk: GenerationChunk,
-    step: int,
-    *,
-    output_tokens: int | None = None,
-    max_tokens: int,
-    context_limit: int,
-    stream_latency_seconds: float,
-    retokenized_tokens_per_second: float,
-    recent_output_occurrences: int,
+        chunk: GenerationChunk,
+        step: int,
+        *,
+        output_tokens: int | None = None,
+        max_tokens: int,
+        context_limit: int,
+        stream_latency_seconds: float,
+        retokenized_tokens_per_second: float,
+        recent_output_occurrences: int,
 ) -> ActivationFrame:
     """Normalize only measured generation values into display channels."""
     token_count = len(chunk.retokenized_ids)

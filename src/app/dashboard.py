@@ -20,7 +20,7 @@ def status_badge(text: str, tone: str = "neutral") -> QLabel:
 
 
 def metric_card(
-    title: str, value: str = "—", detail: str = ""
+        title: str, value: str = "—", detail: str = ""
 ) -> tuple[QFrame, QLabel, QLabel]:
     card = QFrame()
     card.setObjectName("metricCard")

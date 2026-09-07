@@ -50,7 +50,7 @@ class InstallerRepairTests(unittest.TestCase):
         self.assertEqual(by_name["pip / libraries"].status, "Not checked")
 
     def test_cache_repair_only_rebuilds_the_disposable_validation_directory(
-        self,
+            self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -134,7 +134,7 @@ class InstallerRepairTests(unittest.TestCase):
         self.assertNotIn("pip", resolver_command[4:])
 
     def test_repair_force_reinstalls_only_a_broken_root_without_dependencies(
-        self,
+            self,
     ) -> None:
         broken = installer.BASE_PACKAGES[1]
         with (
@@ -251,7 +251,7 @@ class InstallerRepairTests(unittest.TestCase):
             )
 
     def test_automatic_action_defaults_to_install_even_with_an_existing_runtime(
-        self,
+            self,
     ) -> None:
         self.assertEqual(
             installer.select_install_action(runtime_exists=False, assume_yes=True),
@@ -309,9 +309,9 @@ class InstallerRepairTests(unittest.TestCase):
 
     def test_scoped_backend_repair_flag_is_accepted(self) -> None:
         with patch.object(
-            sys,
-            "argv",
-            ["installer.py", "--repair", "--repair-subsystem", "backend", "-y"],
+                sys,
+                "argv",
+                ["installer.py", "--repair", "--repair-subsystem", "backend", "-y"],
         ):
             parsed = installer.parse_args()
 
@@ -341,7 +341,7 @@ class InstallerRepairTests(unittest.TestCase):
 
     @patch("cli.installer.available_wheel", return_value=True)
     def test_cuda_backend_is_the_noninteractive_default(
-        self, _available: MagicMock
+            self, _available: MagicMock
     ) -> None:
         gpu = installer.GpuCapability("NVIDIA RTX", "610.88", (13, 3))
 
@@ -356,9 +356,9 @@ class InstallerRepairTests(unittest.TestCase):
     def test_cuda_runtime_dependencies_match_the_selected_wheel(self) -> None:
         self.assertEqual(installer.cuda_runtime_packages("cpu"), ())
         for tag, expected in (
-            ("cu132", "nvidia-cublas>=13,<14"),
-            ("cu124", "nvidia-cublas-cu12>=12,<13"),
-            ("cu118", "nvidia-cublas-cu11>=11,<12"),
+                ("cu132", "nvidia-cublas>=13,<14"),
+                ("cu124", "nvidia-cublas-cu12>=12,<13"),
+                ("cu118", "nvidia-cublas-cu11>=11,<12"),
         ):
             with self.subTest(tag=tag):
                 packages = installer.cuda_runtime_packages(tag)
@@ -394,11 +394,11 @@ class InstallerBootstrapTests(unittest.TestCase):
             library = runtime / "Lib" / "site-packages"
             library.mkdir(parents=True)
             for name in (
-                "~umpy",
-                "~umpy.libs",
-                "~umpy-2.4.6.dist-info",
-                "numpy",
-                "numpy.libs",
+                    "~umpy",
+                    "~umpy.libs",
+                    "~umpy-2.4.6.dist-info",
+                    "numpy",
+                    "numpy.libs",
             ):
                 (library / name).mkdir()
                 (library / name / "keep.dat").write_text("contents", encoding="utf-8")
@@ -416,7 +416,7 @@ class InstallerBootstrapTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "win32", "Windows junction protection")
     def test_invalid_distribution_cleanup_refuses_a_junction_to_other_data(
-        self,
+            self,
     ) -> None:
         import _winapi
 
@@ -444,16 +444,16 @@ class InstallerBootstrapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             # Exercise direct invocation from a different working directory too.
             for command, cwd in (
-                ([sys.executable, "-S", "-c", script], installer.ROOT),
-                (
-                    [
-                        sys.executable,
-                        "-S",
-                        str(installer.ROOT / "cli" / "installer.py"),
-                        "--help",
-                    ],
-                    Path(directory),
-                ),
+                    ([sys.executable, "-S", "-c", script], installer.ROOT),
+                    (
+                            [
+                                sys.executable,
+                                "-S",
+                                str(installer.ROOT / "cli" / "installer.py"),
+                                "--help",
+                            ],
+                            Path(directory),
+                    ),
             ):
                 with self.subTest(command=command):
                     result = subprocess.run(
@@ -468,18 +468,18 @@ class InstallerBootstrapTests(unittest.TestCase):
                     self.assertIn("AIBrain Installer", result.stdout)
 
     def test_structural_model_health_needs_no_qt_even_with_installed_models(
-        self,
+            self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model_root = root / "models"
             manifest = (
-                model_root
-                / "manifests"
-                / "registry.ollama.ai"
-                / "library"
-                / "demo"
-                / "latest"
+                    model_root
+                    / "manifests"
+                    / "registry.ollama.ai"
+                    / "library"
+                    / "demo"
+                    / "latest"
             )
             manifest.parent.mkdir(parents=True)
             blob = model_root / "blobs" / "sha256-demo"
@@ -585,7 +585,7 @@ class InstallerBootstrapTests(unittest.TestCase):
 
     def test_cuda_probe_rejects_a_cpu_wheel_that_imports_successfully(self) -> None:
         def probe(
-            command: list[str], **_kwargs: object
+                command: list[str], **_kwargs: object
         ) -> subprocess.CompletedProcess[str]:
             script = command[2]
             if "llama_supports_gpu_offload" in script:
@@ -610,7 +610,7 @@ class InstallerBootstrapTests(unittest.TestCase):
         self.assertTrue(cpu_ready)
 
     def test_verification_checks_native_backend_and_dependency_consistency(
-        self,
+            self,
     ) -> None:
         with patch("cli.installer.run") as command:
             installer.verify_installation("managed-python")
@@ -619,7 +619,7 @@ class InstallerBootstrapTests(unittest.TestCase):
         self.assertEqual(commands[-1], ["managed-python", "-m", "pip", "check"])
 
     def test_health_does_not_treat_an_unrelated_dll_as_connectome_acceleration(
-        self,
+            self,
     ) -> None:
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -648,7 +648,7 @@ class InstallerBootstrapTests(unittest.TestCase):
         self.assertEqual(cuda.status, "CPU fallback")
 
     def test_targeted_repair_honors_backend_and_clears_cache_only_after_success(
-        self,
+            self,
     ) -> None:
         for failure in (False, True):
             with (
@@ -701,12 +701,12 @@ class InstallerBootstrapTests(unittest.TestCase):
                 )
                 patched_commands = {}
                 for name in (
-                    "clear_screen",
-                    "header",
-                    "create_environment",
-                    "verify_managed_python",
-                    "install_dependencies",
-                    "cleanup_invalid_distributions",
+                        "clear_screen",
+                        "header",
+                        "create_environment",
+                        "verify_managed_python",
+                        "install_dependencies",
+                        "cleanup_invalid_distributions",
                 ):
                     patched_commands[name] = stack.enter_context(
                         patch(f"cli.installer.{name}")

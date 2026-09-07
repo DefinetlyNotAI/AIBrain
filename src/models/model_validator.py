@@ -12,10 +12,10 @@ from threading import Event
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ..utils.logging import format_exception
 from .llama_backend import GenerationConfig, LlamaBackend
 from .model_info import ModelInfo
 from .ollama_discovery import OllamaDiscovery
+from ..utils.logging import format_exception
 
 LOG = logging.getLogger(__name__)
 
@@ -44,17 +44,17 @@ def _direct_backend_compatibility_error(model: ModelInfo) -> str | None:
 
 
 def _validate_digest(
-    model: ModelInfo,
-    cancelled: Event,
-    report: Callable[[int, int, str], None],
-    index: int,
-    total: int,
+        model: ModelInfo,
+        cancelled: Event,
+        report: Callable[[int, int, str], None],
+        index: int,
+        total: int,
 ) -> str | None:
     """Stream an Ollama SHA-256 check without blocking GUI progress updates."""
     if (
-        model.blob_path is None
-        or not model.digest
-        or not model.digest.startswith("sha256:")
+            model.blob_path is None
+            or not model.digest
+            or not model.digest.startswith("sha256:")
     ):
         return None
     digest = hashlib.sha256()
@@ -102,18 +102,18 @@ _CACHE_MISS = _CacheLookup.MISS
 
 
 def _cached_result(
-    model: ModelInfo, *, verify_backend: bool
+        model: ModelInfo, *, verify_backend: bool
 ) -> str | _CacheLookup | None:
     if model.blob_path is None:
         return _CACHE_MISS
     try:
         payload = json.loads(_cache_path(model).read_text(encoding="utf-8"))
         if (
-            payload.get("format") == _VALIDATION_FORMAT
-            and payload.get("profile") == _cache_profile(verify_backend=verify_backend)
-            and payload.get("blob_path") == str(model.blob_path.resolve())
-            and payload.get("signature") == _signature(model.blob_path)
-            and (payload.get("error") is None or isinstance(payload.get("error"), str))
+                payload.get("format") == _VALIDATION_FORMAT
+                and payload.get("profile") == _cache_profile(verify_backend=verify_backend)
+                and payload.get("blob_path") == str(model.blob_path.resolve())
+                and payload.get("signature") == _signature(model.blob_path)
+                and (payload.get("error") is None or isinstance(payload.get("error"), str))
         ):
             return payload.get("error")
     except (OSError, ValueError, TypeError):
@@ -147,11 +147,11 @@ class ModelValidator:
 
     @staticmethod
     def validate(
-        candidates: list[ModelInfo],
-        cancelled: Event,
-        report: Callable[[int, int, str], None],
-        *,
-        verify_backend: bool = True,
+            candidates: list[ModelInfo],
+            cancelled: Event,
+            report: Callable[[int, int, str], None],
+            *,
+            verify_backend: bool = True,
     ) -> list[ModelInfo]:
         """Confirm that each unique GGUF has a valid header and loads in llama.cpp."""
         validated: list[ModelInfo] = []
@@ -201,8 +201,8 @@ class ModelValidator:
                                 model.tag,
                             )
                             error = (
-                                f"llama.cpp compatibility check failed: {exc}\n"
-                                + format_exception(exc)
+                                    f"llama.cpp compatibility check failed: {exc}\n"
+                                    + format_exception(exc)
                             )
                         finally:
                             backend.unload()

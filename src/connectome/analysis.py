@@ -13,10 +13,10 @@ from typing import Protocol, TypedDict
 import numpy as _numpy
 from numpy.typing import NDArray
 
+from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
 from ..utils.array_api import array_api as np
 from ..utils.array_api import to_numpy
-from .graph import ConnectomeGraph
 
 LOG = logging.getLogger(__name__)
 MODEL_FILENAME = "aibrain.analyser.npz"
@@ -34,15 +34,15 @@ class _NormalGenerator(Protocol):
     """Random generator operations shared by NumPy and CuPy."""
 
     def standard_normal(
-        self, size: int | tuple[int, ...]
+            self, size: int | tuple[int, ...]
     ) -> NDArray[_numpy.float32] | NDArray[_numpy.float64]: ...
 
 
 def _normal(
-    rng: _NormalGenerator,
-    mean: float,
-    deviation: float,
-    size: int | tuple[int, ...],
+        rng: _NormalGenerator,
+        mean: float,
+        deviation: float,
+        size: int | tuple[int, ...],
 ) -> NDArray[_numpy.float32] | NDArray[_numpy.float64]:
     """Sample normal values with the generator APIs shared by NumPy and CuPy."""
     return mean + deviation * rng.standard_normal(size)
@@ -103,10 +103,10 @@ class ConnectomeAnalyzer:
     """
 
     def __init__(
-        self,
-        graph: ConnectomeGraph,
-        hidden_width: int = 12,
-        model_path: Path | None = None,
+            self,
+            graph: ConnectomeGraph,
+            hidden_width: int = 12,
+            model_path: Path | None = None,
     ) -> None:
         self.graph = graph
         self.region_count = len(graph.region_names)
@@ -227,9 +227,9 @@ class ConnectomeAnalyzer:
                 }
                 loaded = {name: stored[name] for name in tensors}
                 if any(
-                    value.shape != tensors[name].shape
-                    or not _numpy.isfinite(value).all()
-                    for name, value in loaded.items()
+                        value.shape != tensors[name].shape
+                        or not _numpy.isfinite(value).all()
+                        for name, value in loaded.items()
                 ):
                     return False
                 frames_seen = int(stored["frames_seen"])
@@ -242,8 +242,8 @@ class ConnectomeAnalyzer:
                 }
                 has_metrics = all(value is not None for value in histories.values())
                 if has_metrics and any(
-                    not _numpy.isfinite(_numpy.asarray(value)).all()
-                    for value in histories.values()
+                        not _numpy.isfinite(_numpy.asarray(value)).all()
+                        for value in histories.values()
                 ):
                     return False
                 stored_state = str(
@@ -320,7 +320,7 @@ class ConnectomeAnalyzer:
         try:
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
-                "wb", dir=self.model_path.parent, delete=False
+                    "wb", dir=self.model_path.parent, delete=False
             ) as handle:
                 temporary_path = Path(handle.name)
                 _numpy.savez_compressed(
@@ -371,10 +371,10 @@ class ConnectomeAnalyzer:
                 time.sleep(delay)
 
     def _train(
-        self,
-        features: NDArray[_numpy.floating],
-        embedding: NDArray[_numpy.floating],
-        reconstruction: NDArray[_numpy.floating],
+            self,
+            features: NDArray[_numpy.floating],
+            embedding: NDArray[_numpy.floating],
+            reconstruction: NDArray[_numpy.floating],
     ) -> float:
         """One gradient-descent step for tanh encoder + sigmoid decoder."""
         if self.weights_frozen:
@@ -384,7 +384,7 @@ class ConnectomeAnalyzer:
         array = self._array
         gradient_decoder_weights = array.outer(embedding, gradient_output)
         gradient_embedding = gradient_output @ self.decoder_weights.T
-        gradient_encoder_pre = gradient_embedding * (1.0 - embedding**2)
+        gradient_encoder_pre = gradient_embedding * (1.0 - embedding ** 2)
         self.decoder_weights -= self._learning_rate * gradient_decoder_weights
         self.decoder_bias -= self._learning_rate * gradient_output
         self.encoder_weights -= self._learning_rate * array.outer(
@@ -400,20 +400,20 @@ class ConnectomeAnalyzer:
         )
 
     def _append_metrics(
-        self, reconstruction_error: float, novelty: float, update_magnitude: float
+            self, reconstruction_error: float, novelty: float, update_magnitude: float
     ) -> None:
         for history, value in (
-            (self.reconstruction_history, reconstruction_error),
-            (self.novelty_history, novelty),
-            (self.update_magnitude_history, update_magnitude),
+                (self.reconstruction_history, reconstruction_error),
+                (self.novelty_history, novelty),
+                (self.update_magnitude_history, update_magnitude),
         ):
             history.append(float(value))
             del history[:-METRIC_HISTORY_LIMIT]
 
     def _sustained_consistency(self) -> bool:
         if (
-            len(self.reconstruction_history) < CONSISTENCY_WINDOW
-            or len(self.update_magnitude_history) < CONSISTENCY_WINDOW
+                len(self.reconstruction_history) < CONSISTENCY_WINDOW
+                or len(self.update_magnitude_history) < CONSISTENCY_WINDOW
         ):
             return False
         errors = np.asarray(
@@ -424,14 +424,14 @@ class ConnectomeAnalyzer:
         )
         early_updates = np.asarray(
             self.update_magnitude_history[
-                -2 * CONSISTENCY_WINDOW : -CONSISTENCY_WINDOW
+                -2 * CONSISTENCY_WINDOW: -CONSISTENCY_WINDOW
             ],
             dtype="f4",
         )
         stable_error = float(errors.std()) <= 0.015 and float(errors.mean()) <= 0.08
         slowdown = (
-            not len(early_updates)
-            or float(updates.mean()) <= float(early_updates.mean()) * 1.05
+                not len(early_updates)
+                or float(updates.mean()) <= float(early_updates.mean()) * 1.05
         )
         return stable_error and slowdown
 
@@ -445,24 +445,24 @@ class ConnectomeAnalyzer:
             np.asarray(self.update_magnitude_history[-48:], dtype="f4").mean()
         )
         return (
-            recent > previous * 1.18 and recent - previous >= 0.008 and updates <= 0.003
+                recent > previous * 1.18 and recent - previous >= 0.008 and updates <= 0.003
         )
 
     def _advance_maturity(self) -> None:
         """Promote only from persisted, sustained evidence; never demote silently."""
         if (
-            self.maturity_state == "Baby"
-            and self.frames_seen >= BABY_FRAME_FLOOR
-            and self._sustained_consistency()
+                self.maturity_state == "Baby"
+                and self.frames_seen >= BABY_FRAME_FLOOR
+                and self._sustained_consistency()
         ):
             self.maturity_state, self.transition_count = (
                 "Teen",
                 self.transition_count + 1,
             )
         elif (
-            self.maturity_state == "Teen"
-            and self.frames_seen >= ADULT_FRAME_FLOOR
-            and self._sustained_consistency()
+                self.maturity_state == "Teen"
+                and self.frames_seen >= ADULT_FRAME_FLOOR
+                and self._sustained_consistency()
         ):
             self.maturity_state, self.transition_count = (
                 "Adult",
@@ -522,11 +522,11 @@ class ConnectomeAnalyzer:
             "Elder is the terminal safeguarded state."
             if next_state is None
             else f"{stage_frames:,} of {stage_required:,} stage frames; "
-            + (
-                "consistency evidence satisfied."
-                if consistent
-                else f"{CONSISTENCY_WINDOW} stable samples are also required."
-            )
+                 + (
+                     "consistency evidence satisfied."
+                     if consistent
+                     else f"{CONSISTENCY_WINDOW} stable samples are also required."
+                 )
         )
         return {
             "state": self.maturity_state,
@@ -604,8 +604,8 @@ class ConnectomeAnalyzer:
             if segments_complete:
                 continue
             if (
-                not segments
-                or segments[-1]["dominant_channel"] != record.dominant_channel
+                    not segments
+                    or segments[-1]["dominant_channel"] != record.dominant_channel
             ):
                 if len(segments) >= 40:
                     segments_complete = True
@@ -625,8 +625,8 @@ class ConnectomeAnalyzer:
             group["end_step"] = record.step
             group["frames"] = frame_count + 1
             group["mean_novelty"] = (
-                group["mean_novelty"] * frame_count + record.novelty
-            ) / (frame_count + 1)
+                                            group["mean_novelty"] * frame_count + record.novelty
+                                    ) / (frame_count + 1)
 
         if not count:
             return {"frames_processed": 0, "maturity": self.maturity_report()}
@@ -656,7 +656,7 @@ class ConnectomeAnalyzer:
                 "lifetime_frames_seen": self.frames_seen,
                 "feature_schema": FEATURE_SCHEMA,
                 "feature_calibration": "Nine normalized llama.cpp logit, context, token, latency, and throughput "
-                "channels plus four temporal summary values.",
+                                       "channels plus four temporal summary values.",
                 "maturity": self.maturity_report(),
             },
             "session_findings": {
@@ -712,7 +712,7 @@ class ConnectomeAnalyzer:
             group["end_step"] = record.step
             group["frames"] = frame_count + 1
             group["mean_novelty"] = (
-                group["mean_novelty"] * frame_count + record.novelty
-            ) / (frame_count + 1)
+                                            group["mean_novelty"] * frame_count + record.novelty
+                                    ) / (frame_count + 1)
 
         return groups

@@ -39,13 +39,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .dashboard import metric_card
+from .loading_window import GpuProbe
+from .theme import load_colours, stylesheet
 from ..models.diagnostics import ModelDiagnostic, OllamaDiagnostics
 from ..utils.console_ui import strip_ansi
 from ..utils.gpu import discover_render_adapters, should_prefer_high_performance_gpu
 from ..utils.logging import PROJECT_ROOT
-from .dashboard import metric_card
-from .loading_window import GpuProbe
-from .theme import load_colours, stylesheet
 
 LOG = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ class DiagnosticsWindow(QMainWindow):
     inspection_progress = Signal(int, int, str)
 
     def __init__(
-        self, parent: QWidget | None = None, *, auto_refresh: bool = True
+            self, parent: QWidget | None = None, *, auto_refresh: bool = True
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("AIBrain Repair and Diagnostics")
@@ -173,15 +173,15 @@ class DiagnosticsWindow(QMainWindow):
         cards.setHorizontalSpacing(10)
         cards.setVerticalSpacing(10)
         for index, title in enumerate(
-            (
-                "Models",
-                "GPU / CUDA",
-                "OpenGL rendering",
-                "Python environment",
-                "pip / libraries",
-                "Native DLLs",
-                ".cache",
-            )
+                (
+                        "Models",
+                        "GPU / CUDA",
+                        "OpenGL rendering",
+                        "Python environment",
+                        "pip / libraries",
+                        "Native DLLs",
+                        ".cache",
+                )
         ):
             card, value, detail = metric_card(title, "Checking…")
             cards.addWidget(card, index // 4, index % 4)
@@ -252,11 +252,11 @@ class DiagnosticsWindow(QMainWindow):
         self.cache_button.clicked.connect(self.repair_validation_cache)
         self.open_logs_button.clicked.connect(self.open_logs)
         for button in (
-            self.refresh_button,
-            self.repair_button,
-            self.remove_button,
-            self.cache_button,
-            self.open_logs_button,
+                self.refresh_button,
+                self.repair_button,
+                self.remove_button,
+                self.cache_button,
+                self.open_logs_button,
         ):
             actions.addWidget(button)
         actions.addStretch(1)
@@ -601,7 +601,7 @@ class DiagnosticsWindow(QMainWindow):
             return
         path = diagnostic.manifest_path
         if path.is_file() and QProcess.startDetached(
-            "explorer.exe", ["/select,", str(path)]
+                "explorer.exe", ["/select,", str(path)]
         ):
             self._log("OPEN", f"Revealed manifest in Explorer: {path}")
             return

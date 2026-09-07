@@ -96,7 +96,7 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("10%", buffer.render())
 
     def test_inspection_windows_defer_close_until_their_worker_has_finished(
-        self,
+            self,
     ) -> None:
         diagnostics_close = inspect.getsource(DiagnosticsWindow.closeEvent)
         analysis_close = inspect.getsource(AnalysisWindow.closeEvent)
@@ -112,7 +112,7 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("itemDoubleClicked", source)
 
     def test_backend_repair_uses_the_current_noninteractive_installer_flags(
-        self,
+            self,
     ) -> None:
         source = inspect.getsource(DiagnosticsWindow.repair_selected)
 
@@ -178,9 +178,9 @@ class ModelDiagnosticsTests(unittest.TestCase):
         try:
             logged: list[tuple[str, str]] = []
             with patch.object(
-                window,
-                "_log",
-                side_effect=lambda level, message: logged.append((level, message)),
+                    window,
+                    "_log",
+                    side_effect=lambda level, message: logged.append((level, message)),
             ):
                 window._diagnostics_progress(1, 1, "Hashing demo:latest (start)")
                 window._diagnostics_progress(1, 1, "Hashing demo:latest (50%)")
@@ -310,7 +310,7 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertEqual(compute_results, [("Ready", "CUDA device operation passed")])
 
     def test_compute_card_waits_for_runtime_probe_and_is_independent_of_opengl(
-        self,
+            self,
     ) -> None:
         window = DiagnosticsWindow(auto_refresh=False)
         try:
@@ -347,12 +347,12 @@ class ModelDiagnosticsTests(unittest.TestCase):
             (1, None, True, OSError("missing DLL"), "Needs repair", "missing DLL"),
         )
         for (
-            count,
-            device_error,
-            offload,
-            load_error,
-            expected_state,
-            expected_detail,
+                count,
+                device_error,
+                offload,
+                load_error,
+                expected_state,
+                expected_detail,
         ) in cases:
             with self.subTest(state=expected_state, detail=expected_detail):
                 cupy = Mock()
@@ -393,7 +393,7 @@ class ModelDiagnosticsTests(unittest.TestCase):
 
     def _write_manifest(self, root: Path, *, blob_data: bytes) -> Path:
         manifest = (
-            root / "manifests" / "registry.ollama.ai" / "library" / "demo" / "latest"
+                root / "manifests" / "registry.ollama.ai" / "library" / "demo" / "latest"
         )
         blob = root / "blobs" / "sha256-demo"
         manifest.parent.mkdir(parents=True)
@@ -420,12 +420,12 @@ class ModelDiagnosticsTests(unittest.TestCase):
             root = Path(directory)
             self._write_manifest(root, blob_data=b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
             invalid_manifest = (
-                root
-                / "manifests"
-                / "registry.ollama.ai"
-                / "library"
-                / "broken"
-                / "latest"
+                    root
+                    / "manifests"
+                    / "registry.ollama.ai"
+                    / "library"
+                    / "broken"
+                    / "latest"
             )
             invalid_manifest.parent.mkdir(parents=True)
             invalid_manifest.write_text("not JSON", encoding="utf-8")
@@ -501,14 +501,14 @@ class ModelDiagnosticsTests(unittest.TestCase):
 
     @patch("src.models.model_validator.ModelValidator.validate")
     def test_backend_diagnostics_report_a_model_that_cannot_load(
-        self, validate: MagicMock
+            self, validate: MagicMock
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._write_manifest(root, blob_data=b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
 
             def failed_validation(
-                models: Sequence[ModelInfo], *_args: object, **_kwargs: object
+                    models: Sequence[ModelInfo], *_args: object, **_kwargs: object
             ) -> list[ModelInfo]:
                 model = models[0]
                 return [

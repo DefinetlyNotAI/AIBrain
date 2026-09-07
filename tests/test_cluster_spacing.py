@@ -21,7 +21,7 @@ class ClusterSpacingTests(unittest.TestCase):
         self.assertGreater(len(graph.edges), 0)
 
     def test_activity_mapping_uses_measured_channels_without_token_randomization(
-        self,
+            self,
     ) -> None:
         graph = build_connectome("activity-regression", "Low")
         field = ActivityField(graph)
@@ -62,8 +62,8 @@ class ClusterSpacingTests(unittest.TestCase):
         field.last_time = 10.0
 
         with patch(
-            "src.connectome.activity.monotonic",
-            return_value=10.0 + ACTIVITY_DECAY_SECONDS,
+                "src.connectome.activity.monotonic",
+                return_value=10.0 + ACTIVITY_DECAY_SECONDS,
         ):
             field.decay()
 

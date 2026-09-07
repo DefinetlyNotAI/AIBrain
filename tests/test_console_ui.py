@@ -46,7 +46,7 @@ class TerminalOutput(StringIO):
             else:
                 line = self.rows[self.row].ljust(self.column)
                 self.rows[self.row] = (
-                    line[: self.column] + token + line[self.column + 1 :]
+                        line[: self.column] + token + line[self.column + 1:]
                 )
                 self.column += 1
         return super().write(text)
@@ -148,7 +148,7 @@ class ConsoleUiTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
 
         for source_file in sorted(
-            path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
+                path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
         ):
             with self.subTest(source_file=source_file):
                 content = source_file.read_text(encoding="utf-8")
@@ -161,7 +161,7 @@ class ConsoleUiTests(unittest.TestCase):
     def test_every_cli_entry_point_handles_keyboard_interrupt(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for source_file in sorted(
-            path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
+                path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
         ):
             with self.subTest(source_file=source_file):
                 content = source_file.read_text(encoding="utf-8-sig")
@@ -188,9 +188,9 @@ class ConsoleUiTests(unittest.TestCase):
     def test_native_clear_passes_a_wchar_value_not_a_string_pointer(self) -> None:
         class ScreenInfoCall:
             def __call__(
-                self,
-                _handle: int,
-                info_pointer,
+                    self,
+                    _handle: int,
+                    info_pointer,
             ) -> int:
                 info = ctypes.cast(
                     info_pointer, ctypes.POINTER(ConsoleScreenBufferInfo)
@@ -208,12 +208,12 @@ class ConsoleUiTests(unittest.TestCase):
                 self.origins: list[ConsoleCoord] = []
 
             def __call__(
-                self,
-                _handle: int,
-                value: str | int,
-                count: int,
-                origin: ConsoleCoord,
-                written_pointer,
+                    self,
+                    _handle: int,
+                    value: str | int,
+                    count: int,
+                    origin: ConsoleCoord,
+                    written_pointer,
             ) -> int:
                 self.values.append(value)
                 self.counts.append(count)
@@ -236,9 +236,9 @@ class ConsoleUiTests(unittest.TestCase):
         )
 
         with patch.object(
-            console_ui,
-            "_kernel32_bindings",
-            return_value=kernel32,
+                console_ui,
+                "_kernel32_bindings",
+                return_value=kernel32,
         ):
             result = console_ui._clear_native_console()
 
@@ -293,16 +293,16 @@ class ConsoleUiTests(unittest.TestCase):
         native_clear.assert_called_once_with()
 
     def test_native_clear_uses_attached_console_when_stdout_is_redirected(
-        self,
+            self,
     ) -> None:
         class ScreenInfo:
             def __init__(self) -> None:
                 self.calls = 0
 
             def __call__(
-                self,
-                _handle: int,
-                info_pointer,
+                    self,
+                    _handle: int,
+                    info_pointer,
             ) -> int:
                 self.calls += 1
 
@@ -319,11 +319,11 @@ class ConsoleUiTests(unittest.TestCase):
                 return 1
 
         def fill(
-            _handle: object,
-            _value: object,
-            count: int,
-            _origin: object,
-            written,
+                _handle: object,
+                _value: object,
+                count: int,
+                _origin: object,
+                written,
         ) -> int:
             written_count = ctypes.cast(
                 written, ctypes.POINTER(ctypes.c_ulong)
@@ -427,7 +427,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("'cupy-cuda13x[ctk]>=14,<15'", rendered)
 
     def test_live_command_footer_moves_with_output_and_stays_visible_between_frames(
-        self,
+            self,
     ) -> None:
         output = TerminalOutput()
         with (
@@ -453,10 +453,10 @@ class ConsoleUiTests(unittest.TestCase):
             self.assertNotIn("50%", "\n".join(output.frames[-1]))
 
             footer = (
-                box.prefix
-                + console_ui.BOX_BOTTOM_LEFT
-                + console_ui.BOX_HORIZONTAL * box.inner
-                + console_ui.BOX_BOTTOM_RIGHT
+                    box.prefix
+                    + console_ui.BOX_BOTTOM_LEFT
+                    + console_ui.BOX_HORIZONTAL * box.inner
+                    + console_ui.BOX_BOTTOM_RIGHT
             )
             for frame in output.frames:
                 self.assertEqual(frame[-1], footer)
@@ -468,7 +468,7 @@ class ConsoleUiTests(unittest.TestCase):
             self.assertEqual(output.getvalue(), before_close)
 
     def test_empty_command_boxes_leave_no_frame_in_live_or_captured_output(
-        self,
+            self,
     ) -> None:
         for live in (True, False):
             with self.subTest(live=live), redirect_stdout(StringIO()) as output:
@@ -480,14 +480,14 @@ class ConsoleUiTests(unittest.TestCase):
                 self.assertEqual(output.getvalue(), "")
 
     def test_captured_progress_is_periodic_and_stage_changes_are_immediate(
-        self,
+            self,
     ) -> None:
         output = StringIO()
         with redirect_stdout(output), console_ui.CommandOutputBox(live=False) as box:
             for now, message in (
-                (10.0, "Analyzing alpha"),
-                (11.0, "Analyzing beta"),
-                (13.0, "Analyzing gamma"),
+                    (10.0, "Analyzing alpha"),
+                    (11.0, "Analyzing beta"),
+                    (13.0, "Analyzing gamma"),
             ):
                 with patch.object(console_ui.time, "monotonic", return_value=now):
                     box.write_progress(message)
@@ -508,7 +508,7 @@ class ConsoleUiTests(unittest.TestCase):
             self.assertIn("Waiting for compiler output", output.frames[0][1])
 
     def test_status_paths_are_relative_and_long_messages_wrap_at_the_current_width(
-        self,
+            self,
     ) -> None:
         project_log = console_ui.ROOT / "logs" / "aibrain.build_dist.log"
         with redirect_stdout(StringIO()) as output:
@@ -524,10 +524,10 @@ class ConsoleUiTests(unittest.TestCase):
                 patch.object(console_ui, "terminal_width", return_value=width),
             ):
                 for emit in (
-                    console_ui.info,
-                    console_ui.success,
-                    console_ui.warning,
-                    console_ui.error,
+                        console_ui.info,
+                        console_ui.success,
+                        console_ui.warning,
+                        console_ui.error,
                 ):
                     output = StringIO()
                     with redirect_stdout(output), redirect_stderr(output):
@@ -545,7 +545,7 @@ class ConsoleUiTests(unittest.TestCase):
                     )
 
     def test_long_command_preview_counts_flags_and_keeps_the_full_command_in_the_log(
-        self,
+            self,
     ) -> None:
         command = [
             str(console_ui.ROOT / ".venv" / "Scripts" / "python.exe"),
@@ -584,7 +584,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn(str(console_ui.ROOT), captured.output[0])
 
     def test_path_shortening_preserves_neighboring_directories_and_handles_flag_values(
-        self,
+            self,
     ) -> None:
         neighbor = str(console_ui.ROOT) + "-backup\\file.py"
         self.assertEqual(console_ui.shorten_command_argument(neighbor), neighbor)
@@ -595,7 +595,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn(r"--output-dir=.\dist", rendered)
 
     def test_redirected_command_output_has_no_cursor_redraws_or_duplicate_progress(
-        self,
+            self,
     ) -> None:
         output = StringIO()
         with redirect_stdout(output), console_ui.CommandOutputBox() as box:
@@ -609,14 +609,14 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertNotIn("\x1b[1A", output.getvalue())
 
     def test_executable_path_shortening_requires_an_exact_path_match(
-        self,
+            self,
     ) -> None:
         local_executable = Path(console_ui.ROOT) / ".venv" / "Scripts" / "python.exe"
 
         with patch.object(
-            console_ui.shutil,
-            "which",
-            return_value=str(local_executable),
+                console_ui.shutil,
+                "which",
+                return_value=str(local_executable),
         ):
             self.assertEqual(
                 console_ui.shorten_command_argument(str(local_executable)),
@@ -626,9 +626,9 @@ class ConsoleUiTests(unittest.TestCase):
         executable = Path(getattr(sys, "_base_executable", sys.executable)).resolve()
 
         with patch.object(
-            console_ui.shutil,
-            "which",
-            return_value=str(executable),
+                console_ui.shutil,
+                "which",
+                return_value=str(executable),
         ):
             self.assertEqual(
                 console_ui.shorten_command_argument(str(executable)),
@@ -636,9 +636,9 @@ class ConsoleUiTests(unittest.TestCase):
             )
 
         with patch.object(
-            console_ui.shutil,
-            "which",
-            return_value=None,
+                console_ui.shutil,
+                "which",
+                return_value=None,
         ):
             self.assertEqual(
                 console_ui.shorten_command_argument(str(executable)),
@@ -649,9 +649,9 @@ class ConsoleUiTests(unittest.TestCase):
         local_executable = Path(console_ui.ROOT) / ".venv" / "Scripts" / "python.exe"
 
         with patch.object(
-            console_ui.shutil,
-            "which",
-            return_value=str(local_executable),
+                console_ui.shutil,
+                "which",
+                return_value=str(local_executable),
         ):
             self.assertEqual(
                 console_ui.shorten_command_argument(r".\.venv\Scripts\python.exe"),

@@ -35,7 +35,7 @@ class ChatAnalysisActionTests(unittest.TestCase):
         panel.deleteLater()
 
     def test_mode_switch_clears_messages_and_changes_the_available_actions(
-        self,
+            self,
     ) -> None:
         panel = ChatPanel(GenerationConfig())
         panel.set_model_available(True)
@@ -59,7 +59,7 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertEqual(panel.send.text(), "🎲")
         self.assertIn("random World prompt", panel.send.accessibleName())
         with patch(
-            "src.app.chat_panel.random_world_opening", return_value=WORLD_OPENINGS[3]
+                "src.app.chat_panel.random_world_opening", return_value=WORLD_OPENINGS[3]
         ):
             panel.send.click()
 

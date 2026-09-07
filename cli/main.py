@@ -156,13 +156,13 @@ def main() -> int:
         def _show_main_when_ready(self) -> None:
             nonlocal main_window
             if (
-                self._stopping
-                or self._gpu_relaunch_requested
-                or not loading.isVisible()
-                or self._models is None
-                or not self._models_finished
-                or not self._gpu_checked
-                or self._main_window_started
+                    self._stopping
+                    or self._gpu_relaunch_requested
+                    or not loading.isVisible()
+                    or self._models is None
+                    or not self._models_finished
+                    or not self._gpu_checked
+                    or self._main_window_started
             ):
                 return
             self._main_window_started = True

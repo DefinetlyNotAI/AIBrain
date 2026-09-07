@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .dashboard import metric_card, metric_grid, progress_card
+from .theme import load_colours, stylesheet
 from ..connectome.analysis import (
     ADULT_FRAME_FLOOR,
     BABY_FRAME_FLOOR,
@@ -33,8 +35,6 @@ from ..connectome.analysis import (
     ConnectomeAnalyzer,
 )
 from ..utils.array_api import BACKEND_NAME
-from .dashboard import metric_card, metric_grid, progress_card
-from .theme import load_colours, stylesheet
 
 LOG = logging.getLogger(__name__)
 _TENSOR_NAMES = (
@@ -232,9 +232,9 @@ def inspect_npz_model(path: Path) -> AnalysisMetadata:
     history_finite = all(np.isfinite(history).all() for history in histories.values())
     consistency = False
     if (
-        history_present
-        and history_finite
-        and histories["reconstruction_history"].size >= CONSISTENCY_WINDOW
+            history_present
+            and history_finite
+            and histories["reconstruction_history"].size >= CONSISTENCY_WINDOW
     ):
         recent = histories["reconstruction_history"][-CONSISTENCY_WINDOW:]
         consistency = bool(
@@ -259,7 +259,7 @@ def inspect_npz_model(path: Path) -> AnalysisMetadata:
             "Elder is the terminal safeguarded state."
             if next_state is None
             else f"{stage_frames:,} of {required:,} stage frames; "
-            f"{CONSISTENCY_WINDOW} stable reconstruction/update samples are also required."
+                 f"{CONSISTENCY_WINDOW} stable reconstruction/update samples are also required."
         ),
         "metrics_persisted": history_present,
         "consistency_sustained": consistency,
@@ -704,8 +704,8 @@ class AnalysisWindow(QMainWindow):
                     len(conversation) if isinstance(conversation, list) else 0
                 ),
                 "has_nn_findings": isinstance(payload.get("smart_analysis"), dict)
-                or "analysis_plus" in payload
-                or "neural_network" in payload,
+                                   or "analysis_plus" in payload
+                                   or "neural_network" in payload,
                 "recorded_frame_summary": payload.get("recorded_frame_summary", {}),
             }
             LOG.info(

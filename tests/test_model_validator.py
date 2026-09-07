@@ -82,7 +82,7 @@ class ModelValidatorTests(unittest.TestCase):
         backend_type.return_value.load.assert_called_once()
 
     def test_structural_validation_accepts_a_valid_gguf_without_loading_llama(
-        self,
+            self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             blob = Path(directory) / "model.gguf"
@@ -231,7 +231,7 @@ class ModelValidatorTests(unittest.TestCase):
         self.assertIn("unsupported model architecture", validated[0].error)
 
     def test_validation_cache_lives_in_the_repairable_validation_directory(
-        self,
+            self,
     ) -> None:
         self.assertEqual(model_validator.CACHE_DIRECTORY.name, "validation")
         self.assertEqual(model_validator.CACHE_DIRECTORY.parent.name, ".cache")

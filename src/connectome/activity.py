@@ -4,9 +4,9 @@ from time import monotonic
 
 import numpy as np
 
+from .graph import ConnectomeGraph
 from ..models.instrumented_backend import ActivationFrame
 from ..native.wrapper.connectome_kernels import native
-from .graph import ConnectomeGraph
 
 ACTIVITY_DECAY_SECONDS = 0.11
 

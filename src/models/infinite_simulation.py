@@ -85,11 +85,11 @@ class InfiniteSimulationWorker(QObject):
 
     @Slot(object, object, object, object)
     def run(
-        self,
-        seed: str,
-        config: GenerationConfig,
-        model_path: Path,
-        transcript: Sequence[ConversationTurn] | None = None,
+            self,
+            seed: str,
+            config: GenerationConfig,
+            model_path: Path,
+            transcript: Sequence[ConversationTurn] | None = None,
     ) -> None:
         self._cancelled.clear()
         config = infinite_generation_config(config)
@@ -173,13 +173,13 @@ class InfiniteSimulationWorker(QObject):
             self.participant.unload()
 
     def _generate(
-        self,
-        role: str,
-        backend: GenerationBackend,
-        messages: list[ChatMessage],
-        config: GenerationConfig,
-        turn: int,
-        step_offset: int,
+            self,
+            role: str,
+            backend: GenerationBackend,
+            messages: list[ChatMessage],
+            config: GenerationConfig,
+            turn: int,
+            step_offset: int,
     ) -> tuple[str, int]:
         self.turnStarted.emit(role, turn)
         chunks: list[str] = []
@@ -219,11 +219,11 @@ class InfiniteSimulationWorker(QObject):
         return output, token_count
 
     def _generate_participant(
-        self,
-        messages: list[ChatMessage],
-        config: GenerationConfig,
-        turn: int,
-        step_offset: int,
+            self,
+            messages: list[ChatMessage],
+            config: GenerationConfig,
+            turn: int,
+            step_offset: int,
     ) -> tuple[str, int]:
         return self._generate(
             "participant", self.participant, messages, config, turn, step_offset
@@ -237,8 +237,8 @@ class InfiniteSimulationWorker(QObject):
 
     @staticmethod
     def _histories(
-        seed: str,
-        transcript: Sequence[ConversationTurn] | None,
+            seed: str,
+            transcript: Sequence[ConversationTurn] | None,
     ) -> tuple[list[ChatMessage], list[ChatMessage], int, str]:
         world_history: list[ChatMessage] = [{"role": "system", "content": WORLD_SYSTEM}]
         participant_history: list[ChatMessage] = [

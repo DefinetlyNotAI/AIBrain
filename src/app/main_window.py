@@ -31,6 +31,11 @@ from PySide6.QtWidgets import (
     QSplitter,
 )
 
+from .chat_export import write_chat_export
+from .chat_panel import ChatPanel
+from .settings import load_generation_settings, save_generation_settings
+from .theme import load_colours, stylesheet
+from .visualizer_panel import VisualizerPanel
 from ..models.generation_worker import GenerationWorker
 from ..models.infinite_simulation import InfiniteSimulationWorker
 from ..models.instrumented_backend import ActivationFrame
@@ -38,11 +43,6 @@ from ..models.llama_backend import LlamaBackend
 from ..models.message_types import ChatMessage, ConversationTurn
 from ..models.model_info import ModelInfo
 from ..utils.gpu import GPU_RELAUNCH_EXIT_CODE
-from .chat_export import write_chat_export
-from .chat_panel import ChatPanel
-from .settings import load_generation_settings, save_generation_settings
-from .theme import load_colours, stylesheet
-from .visualizer_panel import VisualizerPanel
 
 LOG = logging.getLogger(__name__)
 
@@ -327,9 +327,9 @@ class MainWindow(QMainWindow):
 
     def send(self, prompt: str) -> None:
         if (
-            not self.current_model
-            or not self.current_model.available
-            or not self.current_model.blob_path
+                not self.current_model
+                or not self.current_model.available
+                or not self.current_model.blob_path
         ):
             QMessageBox.warning(
                 self,
@@ -368,9 +368,9 @@ class MainWindow(QMainWindow):
 
     def start_infinite_simulation(self, seed: str, continuation: bool = False) -> None:
         if (
-            not self.current_model
-            or not self.current_model.available
-            or not self.current_model.blob_path
+                not self.current_model
+                or not self.current_model.available
+                or not self.current_model.blob_path
         ):
             QMessageBox.warning(
                 self,
@@ -426,7 +426,7 @@ class MainWindow(QMainWindow):
         self._simulation_bubbles[(role, turn)] = bubble
 
     def _simulation_token(
-        self, role: str, turn: int, text: str, frame: ActivationFrame
+            self, role: str, turn: int, text: str, frame: ActivationFrame
     ) -> None:
         bubble = self._simulation_bubbles.get((role, turn))
         if bubble is not None:
