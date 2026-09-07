@@ -89,14 +89,23 @@ def _gpu_host_executables() -> set[str]:
     """Include the real Python process image behind Windows venv redirectors."""
     executable = Path(sys.executable).resolve()
     hosts = {executable}
+
     if executable.name.lower() in {"python.exe", "pythonw.exe"}:
-        base = getattr(sys, "_base_executable", None)
-        if base:
-            hosts.add(Path(base).resolve())
-        hosts.update(host.with_name("pythonw.exe") for host in list(hosts))
+        base_executable = getattr(sys, "_base_executable", None)
+
+        if isinstance(base_executable, (str, os.PathLike)):
+            hosts.add(Path(base_executable).resolve())
+
+        hosts.update(
+            host.with_name("pythonw.exe")
+            for host in list(hosts)
+        )
+
     launched_program = Path(sys.argv[0])
+
     if launched_program.suffix.lower() == ".exe":
         hosts.add(launched_program.resolve())
+
     return {str(host) for host in hosts}
 
 
