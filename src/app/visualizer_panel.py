@@ -60,7 +60,7 @@ def _trim_analysis_memory_data(
     data_lost = False
     while playback and retained_bytes > memory_limit_bytes:
         oldest = playback.pop(0)
-        retained_bytes -= VisualizerPanel._signal_bytes(oldest)
+        retained_bytes -= VisualizerPanel.signal_bytes(oldest)
         if records:
             record = records.pop(0)
             overflowed = cache.append(record)
@@ -424,7 +424,7 @@ class VisualizerPanel(QWidget):
             )
             self._playback.append(signal)
             self.analyzer.observe(frame)
-            self._analysis_retained_bytes += self._signal_bytes(signal)
+            self._analysis_retained_bytes += self.signal_bytes(signal)
             self._trim_analysis_memory()
         self._refresh_overlay()
 
@@ -473,7 +473,8 @@ class VisualizerPanel(QWidget):
         self._analysis_cache.cleanup()
 
     @staticmethod
-    def _signal_bytes(signal: PlaybackStep) -> int:
+    def signal_bytes(signal: PlaybackStep) -> int:
+        """Return the approximate retained-memory size of one playback step."""
         return (
                 signal.values.nbytes
                 + signal.peaks.nbytes
@@ -501,7 +502,13 @@ class VisualizerPanel(QWidget):
         self._analysis_retained_bytes = 0
 
     def set_conversation(self, conversation: Sequence[TranscriptTurn]) -> None:
-        self._conversation = [turn.copy() for turn in conversation]
+        self._conversation = [
+            TranscriptTurn(
+                role=turn["role"],
+                content=turn["content"],
+            )
+            for turn in conversation
+        ]
 
     def start_playback(self, speed: float) -> None:
         if not self._playback:

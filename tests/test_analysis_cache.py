@@ -99,7 +99,7 @@ class AnalysisPageCacheTests(unittest.TestCase):
             records = [_record(1)]
             retained_bytes, data_lost = _trim_analysis_memory_data(
                 playback,
-                VisualizerPanel._signal_bytes(signal),
+                VisualizerPanel.signal_bytes(signal),
                 1,
                 records,
                 cache,
