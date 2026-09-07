@@ -119,6 +119,11 @@ def main() -> int:
             self._main_window_started = False
             self._shutdown_exit_code = 0
 
+        @property
+        def stopping(self) -> bool:
+            """Return whether desktop startup is being stopped."""
+            return self._stopping
+
         @Slot(object)
         def models_ready(self, models: object) -> None:
             self._models = (
@@ -239,7 +244,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, quit_for_keyboard_interrupt)
 
     def start_startup_worker() -> None:
-        if not startup_coordinator._stopping:
+        if not startup_coordinator.stopping:
             startup_thread.start()
 
     loading.show_centered()
