@@ -168,7 +168,7 @@ class DiagnosticsWindow(QMainWindow):
         help_text.setWordWrap(True)
         help_text.setObjectName("muted")
         layout.addWidget(help_text)
-        self.subsystem_cards = {}
+        self.subsystem_cards: dict[str, tuple[QLabel, QLabel]] = {}
         cards = QGridLayout()
         cards.setHorizontalSpacing(10)
         cards.setVerticalSpacing(10)
@@ -583,10 +583,12 @@ class DiagnosticsWindow(QMainWindow):
             "DONE" if exit_code == 0 else "ERROR",
             f"Repair command finished with exit code {exit_code}",
         )
+
         self._repair_process = None
         LOG.info("Diagnostics repair command finished with exit code %s", exit_code)
         if exit_code == 0:
             OllamaDiagnostics.invalidate_validation_cache(PROJECT_ROOT)
+
         self._update_actions()
         self.refresh()
 
@@ -596,21 +598,23 @@ class DiagnosticsWindow(QMainWindow):
             return
         if column != 4:
             return
+
         diagnostic = item.data(0, self._DIAGNOSTIC_ROLE)
         if not isinstance(diagnostic, ModelDiagnostic):
             return
+
         path = diagnostic.manifest_path
-        if path.is_file() and QProcess.startDetached(
-                "explorer.exe", ["/select,", str(path)]
-        ):
+        if path.is_file() and QProcess.startDetached("explorer.exe", ["/select,", str(path)]):
             self._log("OPEN", f"Revealed manifest in Explorer: {path}")
             return
+
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
     def _open_trace(self, item: QTreeWidgetItem) -> None:
         trace = item.data(3, self._TRACE_ROLE)
         if not isinstance(trace, str) or not trace:
             return
+
         dialog = QDialog(self)
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dialog.setWindowTitle("Raw diagnostic error trace")
@@ -658,6 +662,7 @@ class DiagnosticsWindow(QMainWindow):
         diagnostic = self.selected_diagnostic()
         if diagnostic is None or not diagnostic.can_remove_manifest:
             return
+
         confirmation = QMessageBox(self)
         confirmation.setIcon(QMessageBox.Icon.Warning)
         confirmation.setWindowTitle("Remove stale manifest")
@@ -667,16 +672,20 @@ class DiagnosticsWindow(QMainWindow):
         remove = confirmation.addButton(
             "Remove stale manifest", QMessageBox.ButtonRole.DestructiveRole
         )
+
         confirmation.addButton(QMessageBox.StandardButton.Cancel)
         confirmation.exec()
+
         if confirmation.clickedButton() is not remove:
             return
+
         try:
             OllamaDiagnostics.remove_stale_manifest(diagnostic)
         except OSError as exc:
             LOG.exception("Could not remove stale manifest")
             QMessageBox.critical(self, "Removal failed", str(exc))
             return
+
         self.output.appendPlainText(
             f"Removed stale manifest: {diagnostic.manifest_path}"
         )
@@ -690,8 +699,10 @@ class DiagnosticsWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
+
         if confirmation != QMessageBox.StandardButton.Yes:
             return
+
         try:
             target = OllamaDiagnostics.invalidate_validation_cache(PROJECT_ROOT)
         except (OSError, ValueError) as exc:
@@ -700,6 +711,7 @@ class DiagnosticsWindow(QMainWindow):
                 self, "Validation cache repair failed", f"REASON: {exc}"
             )
             return
+
         self.output.appendPlainText(f"Rebuilt validation cache: {target}")
         self.refresh()
 
@@ -715,12 +727,15 @@ class DiagnosticsWindow(QMainWindow):
             "Checking",
             "Testing CUDA compute and llama.cpp separately from OpenGL rendering.",
         )
-        mismatch = str(QSettings().value("opengl_gpu_mismatch_reason", ""))
+
+        mismatch_value = QSettings().value("opengl_gpu_mismatch_reason", "")
+        mismatch = mismatch_value if isinstance(mismatch_value, str) else ""
         checks["OpenGL rendering"] = (
             "Needs repair" if mismatch else "Checking",
             mismatch
             or "The main window records the actual OpenGL vendor and renderer.",
         )
+
         for title, (value, detail) in checks.items():
             labels = self.subsystem_cards.get(title)
             if labels is not None:
