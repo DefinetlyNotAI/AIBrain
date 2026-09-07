@@ -65,6 +65,14 @@ EXCLUDED_PACKAGING_IMPORTS = (
     "numpy",
 )
 
+# CuPy imports several core and backend binary modules dynamically from its
+# compiled extensions, so Nuitka's static import graph cannot discover the full
+# runtime package on its own.
+INCLUDED_PACKAGING_PACKAGES = (
+    "cupy",
+    "cupy_backends",
+)
+
 # These are the only NumPy implementation branches AIBrain requires: array
 # core, type metadata, random generation, linear algebra, and NPZ archive I/O.
 # Deliberately omit compatibility, FFT, masked arrays, polynomial, test, f2py,
@@ -77,6 +85,8 @@ NUMPY_RUNTIME_SUBDIRECTORIES = (
     "linalg",
     "matrixlib",
     "random",
+    "rec",
+    "typing",
 )
 
 # NumPy's staged Python modules dynamically load this observed CPython support
@@ -1165,6 +1175,10 @@ def nuitka_command(
 
     for module_name in EXCLUDED_PACKAGING_IMPORTS:
         command_line.insert(-1, f"--nofollow-import-to={module_name}")
+
+    for package_name in INCLUDED_PACKAGING_PACKAGES:
+        command_line.insert(-1, f"--include-package={package_name}")
+    command_line.insert(-1, "--include-package-data=cupy")
 
     if numpy_runtime is not None:
         package_root, dll_root = numpy_runtime

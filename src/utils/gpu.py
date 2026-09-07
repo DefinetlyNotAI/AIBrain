@@ -65,7 +65,8 @@ def prepare_gpu_launch(*, compiled: bool = False) -> int | None:
     set_windows_gpu_preference(True)
     if not os.environ.get(_GPU_SUPERVISOR_ENV):
         arguments = sys.argv[1:] if compiled else sys.argv
-        return supervise_gpu_launch([sys.executable, *arguments])
+        executable = str(Path(sys.argv[0]).resolve()) if compiled else sys.executable
+        return supervise_gpu_launch([executable, *arguments])
     return None
 
 

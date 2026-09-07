@@ -15,10 +15,14 @@ REQUIRED_MODULES = {
 }
 
 
+def _is_compiled_runtime() -> bool:
+    main_module = sys.modules.get("__main__")
+    return main_module is not None and "__compiled__" in main_module.__dict__
+
+
 def in_managed_virtual_environment(root: Path) -> bool:
     """Return whether this process uses the project's managed virtual environment."""
-    main_module = sys.modules.get("__main__")
-    if main_module is not None and "__compiled__" in main_module.__dict__:
+    if _is_compiled_runtime():
         return True
     if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
         return False
@@ -30,6 +34,12 @@ def in_managed_virtual_environment(root: Path) -> bool:
 
 def require_managed_runtime(root: Path, feature: str) -> bool:
     """Print actionable setup guidance and return false when startup must stop."""
+    # Nuitka has already resolved the imports required by this particular
+    # executable. A dynamic development-environment probe can reject a valid
+    # compiled tool when another AIBrain feature owns an optional dependency.
+    if _is_compiled_runtime():
+        return True
+
     if not in_managed_virtual_environment(root):
         header("AIBrain", f"{feature.replace('_', ' ').title()} requires the managed runtime")
         venv_python = root / ".venv" / "Scripts" / "python.exe"

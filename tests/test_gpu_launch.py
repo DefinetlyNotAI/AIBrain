@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import os
 import unittest
+from functools import partial
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -102,26 +103,31 @@ class GpuLaunchTests(unittest.TestCase):
                 self.assertEqual(launcher.main(), 17)
                 configure.assert_not_called()
 
-    def test_gpu_preference_is_saved_before_child_launch_and_preserves_arguments(self) -> None:
+    def test_gpu_preference_is_saved_before_child_launch_and_preserves_arguments(
+        self,
+    ) -> None:
+        packaged = str(Path("dist/diagnostic.exe").resolve())
+
+        def launch(command: list[str], expected: list[str], save: Mock) -> int:
+            save.assert_called_once_with(True)
+            self.assertEqual(command, expected)
+            return 0
+
         for compiled, expected in (
-            (False, ["python.exe", "cli/diagnostic.py", "--example"]),
-            (True, ["python.exe", "--example"]),
+            (False, ["python.exe", packaged, "--example"]),
+            (True, [packaged, "--example"]),
         ):
             with (
                 self.subTest(compiled=compiled),
                 patch.object(gpu.sys, "platform", "win32"),
                 patch.object(gpu.sys, "executable", "python.exe"),
-                patch.object(gpu.sys, "argv", ["cli/diagnostic.py", "--example"]),
+                patch.object(gpu.sys, "argv", [packaged, "--example"]),
                 patch.dict(os.environ, {}, clear=True),
                 patch.object(gpu, "should_prefer_high_performance_gpu", return_value=True),
                 patch.object(gpu, "set_windows_gpu_preference", return_value=True) as save,
                 patch.object(gpu, "supervise_gpu_launch") as supervise,
             ):
-                def launch(command):
-                    save.assert_called_once_with(True)
-                    self.assertEqual(command, expected)
-                    return 0
-                supervise.side_effect = launch
+                supervise.side_effect = partial(launch, expected=expected, save=save)
                 self.assertEqual(gpu.prepare_gpu_launch(compiled=compiled), 0)
 
     def test_system_default_and_supervised_children_do_not_relaunch(self) -> None:

@@ -34,6 +34,15 @@ class RuntimePreflightTests(unittest.TestCase):
 
         self.assertIn("llama-cpp-python", error.call_args.args[0])
 
+    def test_compiled_distribution_skips_development_dependency_probe(self) -> None:
+        with (
+            patch.object(runtime, "_is_compiled_runtime", return_value=True),
+            patch("src.utils.runtime.importlib.util.find_spec") as find_spec,
+        ):
+            self.assertTrue(runtime.require_managed_runtime(Path("dist"), "analysis"))
+
+        find_spec.assert_not_called()
+
     def test_every_non_installer_cli_entry_uses_the_shared_preflight(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for path in sorted((root / "cli").glob("*.py")):

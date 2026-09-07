@@ -558,6 +558,9 @@ class BuildDistributionTests(unittest.TestCase):
             }
             self.assertEqual(excluded, set(build_dist.EXCLUDED_PACKAGING_IMPORTS))
             self.assertEqual(excluded, {"glcontext", "numpy"})
+            self.assertIn("--include-package=cupy", command)
+            self.assertIn("--include-package=cupy_backends", command)
+            self.assertIn("--include-package-data=cupy", command)
             self.assertIn("--include-raw-dir=numpy-runtime=numpy", command)
             self.assertIn("--include-raw-dir=numpy-dlls=numpy.libs", command)
             self.assertIn("--include-module=textwrap", command)
@@ -658,6 +661,8 @@ class BuildDistributionTests(unittest.TestCase):
             self.assertTrue((package / "__init__.py").is_file())
             self.assertFalse((package / "conftest.py").exists())
             self.assertTrue((package / "random" / "__init__.py").is_file())
+            self.assertTrue((package / "rec" / "__init__.py").is_file())
+            self.assertTrue((package / "typing" / "__init__.py").is_file())
             self.assertFalse((package / "fft").exists())
             self.assertEqual((dlls / "numpy.dll").read_bytes(), b"dll")
 
