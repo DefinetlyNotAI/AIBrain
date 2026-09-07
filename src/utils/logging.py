@@ -251,8 +251,13 @@ def report_exception(
 
 
 def _thread_exception(args: threading.ExceptHookArgs) -> None:
-    if args.exc_value is not None:
-        _uncaught_exception(args.exc_type, args.exc_value, args.exc_traceback)
+    value = args.exc_value
+    if value is not None:
+        _uncaught_exception(
+            args.exc_type,
+            value,
+            args.exc_traceback,
+        )
 
 
 def _start_fresh_log(path: Path) -> Path:
