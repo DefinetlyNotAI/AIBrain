@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ctypes
 import logging
 import os
 import re
@@ -10,10 +9,11 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Mapping
-from ctypes import wintypes
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Self, TextIO, cast
+from typing import Self, TextIO
+
+from ..app.ctypes_helper import windows_console
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WIDTH = 82
@@ -22,115 +22,6 @@ RIGHT_EDGE_MARGIN = 4
 COMMAND_INDENT = 2
 MAX_PREVIEW_FLAGS = 8
 ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|][^\x07]*(?:\x07|\x1b\\))")
-
-
-class _ConsoleCoord(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
-
-
-class _ConsoleSmallRect(ctypes.Structure):
-    _fields_ = [
-        ("left", ctypes.c_short),
-        ("top", ctypes.c_short),
-        ("right", ctypes.c_short),
-        ("bottom", ctypes.c_short),
-    ]
-
-
-class _ConsoleScreenBufferInfo(ctypes.Structure):
-    _fields_ = [
-        ("size", _ConsoleCoord),
-        ("cursor", _ConsoleCoord),
-        ("attributes", ctypes.c_ushort),
-        ("window", _ConsoleSmallRect),
-        ("maximum_window_size", _ConsoleCoord),
-    ]
-
-
-_GetStdHandle = ctypes.WINFUNCTYPE(wintypes.HANDLE, ctypes.c_long)
-_GetConsoleScreenBufferInfo = ctypes.WINFUNCTYPE(
-    wintypes.BOOL,
-    wintypes.HANDLE,
-    ctypes.POINTER(_ConsoleScreenBufferInfo),
-)
-_FillConsoleOutputCharacter = ctypes.WINFUNCTYPE(
-    wintypes.BOOL,
-    wintypes.HANDLE,
-    ctypes.c_wchar,
-    wintypes.DWORD,
-    _ConsoleCoord,
-    ctypes.POINTER(wintypes.DWORD),
-)
-_FillConsoleOutputAttribute = ctypes.WINFUNCTYPE(
-    wintypes.BOOL,
-    wintypes.HANDLE,
-    wintypes.WORD,
-    wintypes.DWORD,
-    _ConsoleCoord,
-    ctypes.POINTER(wintypes.DWORD),
-)
-_SetConsoleCursorPosition = ctypes.WINFUNCTYPE(
-    wintypes.BOOL,
-    wintypes.HANDLE,
-    _ConsoleCoord,
-)
-_CreateFile = ctypes.WINFUNCTYPE(
-    wintypes.HANDLE,
-    wintypes.LPCWSTR,
-    wintypes.DWORD,
-    wintypes.DWORD,
-    ctypes.c_void_p,
-    wintypes.DWORD,
-    wintypes.DWORD,
-    wintypes.HANDLE,
-)
-_CloseHandle = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HANDLE)
-
-_GENERIC_READ = 0x80000000
-_GENERIC_WRITE = 0x40000000
-_FILE_SHARE_READ = 0x00000001
-_FILE_SHARE_WRITE = 0x00000002
-_OPEN_EXISTING = 3
-
-
-class _Kernel32Bindings:
-    """Explicit callable contracts for the Windows console APIs we use."""
-
-    def __init__(self) -> None:
-        library = ctypes.WinDLL("kernel32", use_last_error=True)
-        self.get_std_handle: Callable[[int], int] = cast(
-            Callable[[int], int],
-            _GetStdHandle(("GetStdHandle", library)),
-        )
-        self.get_console_screen_buffer_info: Callable[..., int] = cast(
-            Callable[..., int],
-            _GetConsoleScreenBufferInfo(("GetConsoleScreenBufferInfo", library)),
-        )
-        self.fill_console_output_character: Callable[..., int] = cast(
-            Callable[..., int],
-            _FillConsoleOutputCharacter(("FillConsoleOutputCharacterW", library)),
-        )
-        self.fill_console_output_attribute: Callable[..., int] = cast(
-            Callable[..., int],
-            _FillConsoleOutputAttribute(("FillConsoleOutputAttribute", library)),
-        )
-        self.set_console_cursor_position: Callable[..., int] = cast(
-            Callable[..., int],
-            _SetConsoleCursorPosition(("SetConsoleCursorPosition", library)),
-        )
-        self.create_file: Callable[..., int] = cast(
-            Callable[..., int],
-            _CreateFile(("CreateFileW", library)),
-        )
-        self.close_handle: Callable[[int], int] = cast(
-            Callable[[int], int],
-            _CloseHandle(("CloseHandle", library)),
-        )
-
-
-def _kernel32_bindings() -> _Kernel32Bindings:
-    """Return explicitly typed Kernel32 callables without dynamic DLL attributes."""
-    return _Kernel32Bindings()
 
 
 try:
@@ -288,98 +179,35 @@ def ask_boolean(question: str, *, default: bool) -> bool:
 
 def terminal_width() -> int:
     """Return the visible terminal width with a usable minimum."""
-    width = shutil.get_terminal_size((DEFAULT_WIDTH, 24)).columns
+    width = shutil.get_terminal_size(
+        (DEFAULT_WIDTH, 24)
+    ).columns
+
     if os.name == "nt":
         try:
-            info = _ConsoleScreenBufferInfo()
-            kernel32 = _kernel32_bindings()
-            handle = kernel32.get_std_handle(-11)
-            if handle and kernel32.get_console_screen_buffer_info(
-                    handle, ctypes.byref(info)
-            ):
-                width = info.window.right - info.window.left + 1
-        except (AttributeError, OSError):
+            native_width = windows_console.console_width()
+
+            if native_width is not None:
+                width = native_width
+
+        except OSError:
             pass
-    return max(width - RIGHT_EDGE_MARGIN, MIN_WIDTH)
 
-
-def _clear_native_console() -> bool:
-    """Clear the entire attached Windows console buffer, not just its viewport."""
-    kernel32 = _kernel32_bindings()
-    handle = kernel32.get_std_handle(-11)
-    owns_handle = False
-    info = _ConsoleScreenBufferInfo()
-    if not handle or not kernel32.get_console_screen_buffer_info(
-            handle, ctypes.byref(info)
-    ):
-        # stdout may be captured by an IDE or redirected while the process still
-        # owns an interactive console. CONOUT$ addresses that console directly.
-        handle = kernel32.create_file(
-            "CONOUT$",
-            _GENERIC_READ | _GENERIC_WRITE,
-            _FILE_SHARE_READ | _FILE_SHARE_WRITE,
-            None,
-            _OPEN_EXISTING,
-            0,
-            None,
-        )
-        owns_handle = True
-        if not handle or not kernel32.get_console_screen_buffer_info(
-                handle, ctypes.byref(info)
-        ):
-            if handle:
-                kernel32.close_handle(handle)
-            return False
-    try:
-        # The second parameter is a 16-bit WCHAR value, not a string pointer.
-        # Passing a pointer here produces repeated CJK glyphs from its low word.
-        cells = info.size.x * info.size.y
-        characters_written = wintypes.DWORD()
-        attributes_written = wintypes.DWORD()
-        origin = _ConsoleCoord(0, 0)
-        characters_cleared = kernel32.fill_console_output_character(
-            handle, " ", cells, origin, ctypes.byref(characters_written)
-        )
-        attributes_cleared = kernel32.fill_console_output_attribute(
-            handle, info.attributes, cells, origin, ctypes.byref(attributes_written)
-        )
-        cursor_reset = kernel32.set_console_cursor_position(handle, origin)
-        return bool(
-            characters_cleared
-            and attributes_cleared
-            and cursor_reset
-            and characters_written.value == cells
-            and attributes_written.value == cells
-        )
-    finally:
-        if owns_handle:
-            kernel32.close_handle(handle)
-
-
-_ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+    return max(
+        width - RIGHT_EDGE_MARGIN,
+        MIN_WIDTH,
+    )
 
 
 def _enable_virtual_terminal() -> bool:
+    """Enable ANSI terminal processing where supported."""
     if os.name != "nt":
         return True
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
-
-    mode = wintypes.DWORD()
-
-    if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+    try:
+        return windows_console.enable_virtual_terminal_output()
+    except OSError:
         return False
-
-    if mode.value & _ENABLE_VIRTUAL_TERMINAL_PROCESSING:
-        return True
-
-    return bool(
-        kernel32.SetConsoleMode(
-            handle,
-            mode.value | _ENABLE_VIRTUAL_TERMINAL_PROCESSING,
-        )
-    )
 
 
 def clear_screen() -> None:
@@ -391,7 +219,7 @@ def clear_screen() -> None:
 
     if os.name == "nt":
         try:
-            _clear_native_console()
+            windows_console.clear_output()
         except (AttributeError, OSError):
             pass
 

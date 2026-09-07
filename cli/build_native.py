@@ -12,7 +12,6 @@ generated DLL only when its contents have changed.
 from __future__ import annotations
 
 import argparse
-import ctypes
 import os
 import queue
 import shutil
@@ -29,9 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.console_ui import (
-    Color as Colour,
-)
+from src.app.ctypes_helper import NativeLibrary
+from src.utils.console_ui import Color as Colour
 from src.utils.console_ui import (
     CommandOutputBox,
     clear_screen,
@@ -53,6 +51,7 @@ from src.utils.runtime import require_managed_runtime
 
 SOURCE = ROOT / "src" / "native" / "c" / "connectome_kernels.c"
 OUTPUT = ROOT / "dll" / "aibrain.connectome.dll"
+
 LIVE_HEARTBEAT_SECONDS = 1.0
 CAPTURED_HEARTBEAT_SECONDS = 15.0
 
@@ -65,6 +64,8 @@ EXPECTED_EXPORTS = (
 
 @dataclass(frozen=True, slots=True)
 class Compiler:
+    """Description of one discovered native C compiler."""
+
     path: Path
     family: str
 
@@ -75,14 +76,18 @@ def line(
         colour: str = Colour.CYAN,
 ) -> None:
     """Render a compact build status line."""
-    status(label, text, colour)
+    status(
+        label,
+        text,
+        colour,
+    )
 
 
 def run_command(
-    command_line: list[str],
-    *,
-    check: bool = False,
-    show_output: bool = True,
+        command_line: list[str],
+        *,
+        check: bool = False,
+        show_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run an external command and render each output line as it arrives."""
     command_preview(command_line)
@@ -106,13 +111,21 @@ def run_command(
         process = running_process
 
         raw_stdout = running_process.stdout
-        if raw_stdout is None:
-            raise RuntimeError("Could not capture command output")
 
-        stdout = cast(TextIO, raw_stdout)
+        if raw_stdout is None:
+            raise RuntimeError(
+                "Could not capture command output"
+            )
+
+        stdout = cast(
+            TextIO,
+            raw_stdout,
+        )
+
         output_queue: queue.Queue[str | None] = queue.Queue()
 
         def read_output() -> None:
+            """Read compiler output without blocking the presentation loop."""
             try:
                 for output_line in stdout:
                     output_queue.put(output_line)
@@ -124,7 +137,9 @@ def run_command(
             name="native-build-output-reader",
             daemon=True,
         )
+
         reader = output_reader
+
         output_reader.start()
 
         with CommandOutputBox() as output_box:
@@ -133,21 +148,32 @@ def run_command(
 
             while True:
                 try:
-                    output_line = output_queue.get(timeout=0.1)
+                    output_line = output_queue.get(
+                        timeout=0.1,
+                    )
                 except queue.Empty:
                     now = time.monotonic()
+
                     interval = (
                         LIVE_HEARTBEAT_SECONDS
                         if output_box.is_live
                         else CAPTURED_HEARTBEAT_SECONDS
                     )
 
-                    if show_output and now - last_heartbeat >= interval:
-                        elapsed = max(0, int(now - last_output))
+                    if (
+                            show_output
+                            and now - last_heartbeat >= interval
+                    ):
+                        elapsed = max(
+                            0,
+                            int(now - last_output),
+                        )
+
                         output_box.write_progress(
                             "Compiler is still running without new output "
                             f"({elapsed}s since the last line)"
                         )
+
                         last_heartbeat = now
 
                     continue
@@ -156,6 +182,7 @@ def run_command(
                     break
 
                 captured.append(output_line)
+
                 last_output = time.monotonic()
                 last_heartbeat = last_output
 
@@ -165,7 +192,10 @@ def run_command(
         return_code = running_process.wait()
 
     except KeyboardInterrupt:
-        if process is not None and process.poll() is None:
+        if (
+                process is not None
+                and process.poll() is None
+        ):
             process.terminate()
             process.wait()
 
@@ -175,11 +205,14 @@ def run_command(
             return_code=None,
             interrupted=True,
         )
+
         raise
 
     finally:
         if reader is not None:
-            reader.join(timeout=1.0)
+            reader.join(
+                timeout=1.0,
+            )
 
     output = "".join(captured).rstrip()
 
@@ -204,7 +237,9 @@ def run_command(
     )
 
 
-def discover_compiler(explicit: str | None) -> Compiler:
+def discover_compiler(
+        explicit: str | None,
+) -> Compiler:
     """Locate a supported Windows C compiler."""
     candidates = [
         explicit,
@@ -225,7 +260,12 @@ def discover_compiler(explicit: str | None) -> Compiler:
             continue
 
         name = path.name.lower()
-        family = "msvc" if name in {"cl", "cl.exe"} else "gnu"
+
+        family = (
+            "msvc"
+            if name in {"cl", "cl.exe"}
+            else "gnu"
+        )
 
         return Compiler(
             path=path,
@@ -254,7 +294,11 @@ def command_for(
             f"/Fe:{OUTPUT}",
         ]
 
-        flags += ["/Od", "/Zi"] if debug else ["/O2", "/DNDEBUG"]
+        flags += (
+            ["/Od", "/Zi"]
+            if debug
+            else ["/O2", "/DNDEBUG"]
+        )
 
         return [
             str(compiler.path),
@@ -274,7 +318,15 @@ def command_for(
         str(SOURCE),
     ]
 
-    flags += ["-O0", "-g"] if debug else ["-O3", "-DNDEBUG", "-march=native"]
+    flags += (
+        ["-O0", "-g"]
+        if debug
+        else [
+            "-O3",
+            "-DNDEBUG",
+            "-march=native",
+        ]
+    )
 
     return [
         str(compiler.path),
@@ -288,22 +340,31 @@ def compile_library(
 ) -> None:
     """Compile the native connectome DLL."""
     result = run_command(
-        command_for(compiler, debug),
+        command_for(
+            compiler,
+            debug,
+        )
     )
 
     if result.returncode:
-        raise RuntimeError(f"Compiler exited with code {result.returncode}")
+        raise RuntimeError(
+            f"Compiler exited with code {result.returncode}"
+        )
 
 
 def verify_library() -> None:
     """Verify the generated DLL and its required exports."""
     if not OUTPUT.is_file():
-        raise RuntimeError(f"Compiler did not create {OUTPUT.name}")
+        raise RuntimeError(
+            f"Compiler did not create {OUTPUT.name}"
+        )
 
     size = OUTPUT.stat().st_size
 
     if size < 1024:
-        raise RuntimeError(f"Generated DLL is unexpectedly small: {size:,} bytes")
+        raise RuntimeError(
+            f"Generated DLL is unexpectedly small: {size:,} bytes"
+        )
 
     with OUTPUT.open("rb") as library_file:
         signature = library_file.read(2)
@@ -313,19 +374,18 @@ def verify_library() -> None:
             "Generated output does not contain a valid Windows PE signature"
         )
 
-    library = ctypes.WinDLL(str(OUTPUT))
+    library = NativeLibrary(OUTPUT)
 
-    missing_exports: list[str] = []
-
-    for symbol in EXPECTED_EXPORTS:
-        try:
-            getattr(library, symbol)
-        except AttributeError:
-            missing_exports.append(symbol)
+    missing_exports = [
+        symbol
+        for symbol in EXPECTED_EXPORTS
+        if not library.has_export(symbol)
+    ]
 
     if missing_exports:
         raise RuntimeError(
-            "Native library is missing required exports: " + ", ".join(missing_exports)
+            "Native library is missing required exports: "
+            + ", ".join(missing_exports)
         )
 
     line(
@@ -343,7 +403,10 @@ def commit_regenerated_library() -> bool:
     """Commit the generated DLL only when its contents changed."""
     relative_output = OUTPUT.relative_to(ROOT)
 
-    section("Update generated artifact", 2)
+    section(
+        "Update generated artifact",
+        2,
+    )
 
     run_command(
         [
@@ -363,19 +426,23 @@ def commit_regenerated_library() -> bool:
             "--quiet",
             "--",
             str(relative_output),
-        ],
+        ]
     )
 
     if diff_result.returncode == 0:
         line(
             "GIT",
-            "Native DLL is unchanged. No generated-artifact commit is required.",
+            "Native DLL is unchanged. "
+            "No generated-artifact commit is required.",
             Colour.GRAY,
         )
+
         return False
 
     if diff_result.returncode != 1:
-        raise RuntimeError("Git could not determine whether the generated DLL changed")
+        raise RuntimeError(
+            "Git could not determine whether the generated DLL changed"
+        )
 
     run_command(
         [
@@ -400,9 +467,16 @@ def commit_regenerated_library() -> bool:
 
 def main() -> int:
     """Build, verify, and optionally commit the native library."""
-    runtime_log, _ = configure_cli_logging("build_native")
-    if not require_managed_runtime(ROOT, "build_native"):
+    runtime_log, _ = configure_cli_logging(
+        "build_native"
+    )
+
+    if not require_managed_runtime(
+            ROOT,
+            "build_native",
+    ):
         return 1
+
     parser = argparse.ArgumentParser(
         description="Compile AIBrain's optimized native connectome DLL."
     )
@@ -432,9 +506,16 @@ def main() -> int:
         "AIBrain",
         "Native connectome build tool - x64 Windows",
     )
-    status("LOG", f"CLI output: {runtime_log}")
 
-    section("Compile native acceleration", 1)
+    status(
+        "LOG",
+        f"CLI output: {runtime_log}",
+    )
+
+    section(
+        "Compile native acceleration",
+        1,
+    )
 
     if not SOURCE.is_file():
         line(
@@ -442,6 +523,7 @@ def main() -> int:
             f"Missing native source: {SOURCE}",
             Colour.RED,
         )
+
         return 1
 
     OUTPUT.parent.mkdir(
@@ -471,7 +553,11 @@ def main() -> int:
 
         line(
             "PROFILE",
-            "Debug" if arguments.debug else "Optimized release",
+            (
+                "Debug"
+                if arguments.debug
+                else "Optimized release"
+            ),
             Colour.CYAN,
         )
 
@@ -489,7 +575,10 @@ def main() -> int:
             RuntimeError,
             subprocess.CalledProcessError,
     ) as exc:
-        error(str(exc))
+        error(
+            str(exc)
+        )
+
         return 1
 
     panel(
@@ -501,7 +590,11 @@ def main() -> int:
             ),
             (
                 "Profile",
-                "Debug" if arguments.debug else "Release",
+                (
+                    "Debug"
+                    if arguments.debug
+                    else "Release"
+                ),
             ),
             (
                 "Library",
@@ -513,7 +606,11 @@ def main() -> int:
             ),
             (
                 "Git",
-                "Committed" if committed else "Unchanged",
+                (
+                    "Committed"
+                    if committed
+                    else "Unchanged"
+                ),
             ),
         ],
         footer="Native acceleration is verified and ready for AIBrain.",
@@ -525,10 +622,21 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        raise SystemExit(
+            main()
+        )
+
     except KeyboardInterrupt:
-        report_keyboard_interrupt("the native build")
+        report_keyboard_interrupt(
+            "the native build"
+        )
+
         raise SystemExit(130) from None
+
     except REPORTABLE_EXCEPTIONS as exc:
-        report_exception("AIBrain native build failed", exc)
+        report_exception(
+            "AIBrain native build failed",
+            exc,
+        )
+
         raise SystemExit(1) from exc
