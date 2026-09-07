@@ -502,13 +502,7 @@ class VisualizerPanel(QWidget):
         self._analysis_retained_bytes = 0
 
     def set_conversation(self, conversation: Sequence[TranscriptTurn]) -> None:
-        self._conversation = [
-            TranscriptTurn(
-                role=turn["role"],
-                content=turn["content"],
-            )
-            for turn in conversation
-        ]
+        self._conversation = list(conversation)
 
     def start_playback(self, speed: float) -> None:
         if not self._playback:
