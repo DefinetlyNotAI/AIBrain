@@ -10,7 +10,7 @@ import numpy as np
 from src.app.visualizer_panel import (
     PlaybackStep,
     VisualizerPanel,
-    _trim_analysis_memory_data,
+    trim_analysis_memory_data,
 )
 from src.connectome.analysis import AnalysisRecord
 from src.connectome.analysis_cache import AnalysisPageCache
@@ -97,7 +97,7 @@ class AnalysisPageCacheTests(unittest.TestCase):
             )
             playback = [signal]
             records = [_record(1)]
-            retained_bytes, data_lost = _trim_analysis_memory_data(
+            retained_bytes, data_lost = trim_analysis_memory_data(
                 playback,
                 VisualizerPanel.signal_bytes(signal),
                 1,

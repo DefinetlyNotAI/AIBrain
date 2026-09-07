@@ -47,7 +47,7 @@ class PlaybackStep:
     peaks: np.ndarray
 
 
-def _trim_analysis_memory_data(
+def trim_analysis_memory_data(
         playback: list[PlaybackStep],
         retained_bytes: int,
         memory_limit_bytes: int | None,
@@ -483,7 +483,7 @@ class VisualizerPanel(QWidget):
         )
 
     def _trim_analysis_memory(self) -> None:
-        self._analysis_retained_bytes, data_lost = _trim_analysis_memory_data(
+        self._analysis_retained_bytes, data_lost = trim_analysis_memory_data(
             self._playback,
             self._analysis_retained_bytes,
             self._analysis_memory_limit_bytes,

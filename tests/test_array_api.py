@@ -10,7 +10,7 @@ from unittest.mock import patch
 import numpy as np
 from numpy.typing import NDArray
 
-from src.connectome.analysis import _normal
+from src.connectome.analysis import normal
 from src.utils.array_api import BACKEND_NAME, array_api, to_numpy
 
 
@@ -66,7 +66,7 @@ class ArrayApiTests(unittest.TestCase):
                 raise AssertionError("NumPy-only normal() must not be called")
 
         generator = Generator()
-        sample = _normal(generator, 0.5, 0.25, (2, 3))
+        sample = normal(generator, 0.5, 0.25, (2, 3))
 
         self.assertEqual(generator.requested_size, (2, 3))
         self.assertEqual(to_numpy(sample).tolist(), [[0.75] * 3] * 2)

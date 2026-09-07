@@ -38,7 +38,7 @@ class _NormalGenerator(Protocol):
     ) -> NDArray[_numpy.float32] | NDArray[_numpy.float64]: ...
 
 
-def _normal(
+def normal(
         rng: _NormalGenerator,
         mean: float,
         deviation: float,
@@ -114,11 +114,11 @@ class ConnectomeAnalyzer:
         self.hidden_width = hidden_width
         self._array = _numpy if isinstance(graph.positions, _numpy.ndarray) else np
         rng = self._array.random.default_rng(9137)
-        self.encoder_weights = _normal(
+        self.encoder_weights = normal(
             rng, 0, 0.14, (self.input_width, hidden_width)
         ).astype("f4")
         self.encoder_bias = self._array.zeros(hidden_width, dtype="f4")
-        self.decoder_weights = _normal(
+        self.decoder_weights = normal(
             rng, 0, 0.14, (hidden_width, self.input_width)
         ).astype("f4")
         self.decoder_bias = self._array.zeros(self.input_width, dtype="f4")

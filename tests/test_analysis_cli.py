@@ -182,8 +182,7 @@ class AnalysisCliTests(unittest.TestCase):
                     threshold: int | None = None,
                     max_line_width: int | None = None,
                     precision: int | None = None,
-                    floatmode: Literal["fixed", "unique", "maxprec", "maxprec_equal"]
-                               | None = None,
+                    floatmode: Literal["fixed", "unique", "maxprec", "maxprec_equal"] | None = None,
             ) -> str:
                 nonlocal replaced
                 if not replaced:
