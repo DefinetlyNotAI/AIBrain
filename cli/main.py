@@ -7,6 +7,11 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+ROOT = Path(__file__).resolve().parents[1]
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from src.utils.console_ui import (
     clear_screen,
     error,
@@ -35,12 +40,6 @@ if TYPE_CHECKING:
 
     from src.app.startup_coordinator import StartupCoordinator
     from src.models.model_validator import StartupWorker
-
-
-ROOT = Path(__file__).resolve().parents[1]
-
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 
 def require_virtual_environment() -> None:
