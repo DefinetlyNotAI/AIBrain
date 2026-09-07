@@ -22,6 +22,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,18 +79,20 @@ def line(
 
 
 def run_command(
-        command_line: list[str],
-        *,
-        check: bool = False,
-        show_output: bool = True,
+    command_line: list[str],
+    *,
+    check: bool = False,
+    show_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run an external command and render each output line as it arrives."""
     command_preview(command_line)
+
     process: subprocess.Popen[str] | None = None
     reader: threading.Thread | None = None
     captured: list[str] = []
+
     try:
-        process = subprocess.Popen(
+        running_process = subprocess.Popen(
             command_line,
             cwd=ROOT,
             text=True,
@@ -99,9 +102,14 @@ def run_command(
             stderr=subprocess.STDOUT,
             bufsize=1,
         )
-        stdout = process.stdout
-        if stdout is None:
+
+        process = running_process
+
+        raw_stdout = running_process.stdout
+        if raw_stdout is None:
             raise RuntimeError("Could not capture command output")
+
+        stdout = cast(TextIO, raw_stdout)
         output_queue: queue.Queue[str | None] = queue.Queue()
 
         def read_output() -> None:
@@ -111,15 +119,18 @@ def run_command(
             finally:
                 output_queue.put(None)
 
-        reader = threading.Thread(
+        output_reader = threading.Thread(
             target=read_output,
             name="native-build-output-reader",
             daemon=True,
         )
-        reader.start()
+        reader = output_reader
+        output_reader.start()
+
         with CommandOutputBox() as output_box:
             last_output = time.monotonic()
             last_heartbeat = last_output
+
             while True:
                 try:
                     output_line = output_queue.get(timeout=0.1)
@@ -130,6 +141,7 @@ def run_command(
                         if output_box.is_live
                         else CAPTURED_HEARTBEAT_SECONDS
                     )
+
                     if show_output and now - last_heartbeat >= interval:
                         elapsed = max(0, int(now - last_output))
                         output_box.write_progress(
@@ -137,29 +149,45 @@ def run_command(
                             f"({elapsed}s since the last line)"
                         )
                         last_heartbeat = now
+
                     continue
+
                 if output_line is None:
                     break
+
                 captured.append(output_line)
                 last_output = time.monotonic()
                 last_heartbeat = last_output
+
                 if show_output:
                     output_box.write(output_line)
-        return_code = process.wait()
+
+        return_code = running_process.wait()
+
     except KeyboardInterrupt:
         if process is not None and process.poll() is None:
             process.terminate()
             process.wait()
+
         log_completed_command(
-            command_line, "".join(captured).rstrip(), return_code=None, interrupted=True
+            command_line,
+            "".join(captured).rstrip(),
+            return_code=None,
+            interrupted=True,
         )
         raise
+
     finally:
         if reader is not None:
             reader.join(timeout=1.0)
 
     output = "".join(captured).rstrip()
-    log_completed_command(command_line, output, return_code=return_code)
+
+    log_completed_command(
+        command_line,
+        output,
+        return_code=return_code,
+    )
 
     if check and return_code:
         raise subprocess.CalledProcessError(
@@ -168,7 +196,12 @@ def run_command(
             output=output,
         )
 
-    return subprocess.CompletedProcess(command_line, return_code, output, "")
+    return subprocess.CompletedProcess(
+        command_line,
+        return_code,
+        output,
+        "",
+    )
 
 
 def discover_compiler(explicit: str | None) -> Compiler:
