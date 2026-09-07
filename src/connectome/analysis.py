@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, TypedDict
+from typing import Protocol, TypedDict, Any
 
 import numpy as _numpy
 from numpy.typing import NDArray
@@ -26,7 +26,7 @@ MATURITY_STATES = ("Baby", "Teen", "Adult", "Elder")
 BABY_FRAME_FLOOR = 2_048
 ADULT_FRAME_FLOOR = 32_768
 CONSISTENCY_WINDOW = 128
-MODEL_SAVE_RETRY_DELAYS = (0.025, 0.05, 0.1, 0.2, 0.4, 0.8)
+MODEL_SAVE_RETRY_DELAYS = (0.025, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6)
 _MODEL_SAVE_LOCK = threading.RLock()
 
 
@@ -43,7 +43,7 @@ def _normal(
         mean: float,
         deviation: float,
         size: int | tuple[int, ...],
-) -> NDArray[_numpy.float32] | NDArray[_numpy.float64]:
+) -> NDArray[_numpy.floating[Any]]:
     """Sample normal values with the generator APIs shared by NumPy and CuPy."""
     return mean + deviation * rng.standard_normal(size)
 
@@ -317,12 +317,17 @@ class ConnectomeAnalyzer:
 
     def _save_model_locked(self) -> bool:
         temporary_path: Path | None = None
+
         try:
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
+
             with tempfile.NamedTemporaryFile(
-                    "wb", dir=self.model_path.parent, delete=False
+                    "wb",
+                    dir=self.model_path.parent,
+                    delete=False,
             ) as handle:
                 temporary_path = Path(handle.name)
+
                 _numpy.savez_compressed(
                     handle,
                     feature_schema=_numpy.array(FEATURE_SCHEMA),
@@ -333,25 +338,37 @@ class ConnectomeAnalyzer:
                     embedding_centroid=to_numpy(self.embedding_centroid),
                     frames_seen=_numpy.array(self.frames_seen),
                     reconstruction_history=_numpy.asarray(
-                        self.reconstruction_history, dtype="f4"
+                        self.reconstruction_history,
+                        dtype="f4",
                     ),
-                    novelty_history=_numpy.asarray(self.novelty_history, dtype="f4"),
+                    novelty_history=_numpy.asarray(
+                        self.novelty_history,
+                        dtype="f4",
+                    ),
                     update_magnitude_history=_numpy.asarray(
-                        self.update_magnitude_history, dtype="f4"
+                        self.update_magnitude_history,
+                        dtype="f4",
                     ),
                     maturity_state=_numpy.array(self.maturity_state),
                     transition_count=_numpy.array(self.transition_count),
                     weights_frozen=_numpy.array(self.weights_frozen),
                 )
+
                 handle.flush()
                 os.fsync(handle.fileno())
+
+            assert temporary_path is not None
             self._replace_model_file(temporary_path)
             return True
+
         except (OSError, ValueError) as exc:
             LOG.warning(
-                "Could not persist NN Analysis+ memory to %s: %s", self.model_path, exc
+                "Could not persist NN Analysis+ memory to %s: %s",
+                self.model_path,
+                exc,
             )
             return False
+
         finally:
             if temporary_path is not None and temporary_path.exists():
                 temporary_path.unlink(missing_ok=True)
