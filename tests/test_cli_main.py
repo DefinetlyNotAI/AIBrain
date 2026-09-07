@@ -10,7 +10,8 @@ from cli import main
 
 
 class MainEntryPointTests(unittest.TestCase):
-    def test_compiled_distribution_bypasses_development_venv_guard(self) -> None:
+    @staticmethod
+    def test_compiled_distribution_bypasses_development_venv_guard() -> None:
         with (
             patch.object(main, "__compiled__", True, create=True),
             patch.object(main.sys, "prefix", "system"),
