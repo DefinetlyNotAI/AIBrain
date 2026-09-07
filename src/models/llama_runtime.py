@@ -10,7 +10,7 @@ import sysconfig
 from pathlib import Path
 from threading import Lock
 from types import ModuleType
-from typing import Protocol
+from typing import Protocol, Callable, cast
 
 
 class _NativeLogCallback(Protocol):
@@ -106,20 +106,35 @@ def prepare_cuda_dll_search() -> list[Path]:
 def load_llama_cpp() -> ModuleType:
     """Use the same native loader in the installer and application."""
     prepare_cuda_dll_search()
+
     import llama_cpp
 
     global _LOG_CALLBACK
+
     with _LOG_LOCK:
-        if _LOG_CALLBACK is None:
-            callback_factory = getattr(llama_cpp, "llama_log_callback", None)
-            _LOG_CALLBACK = (
-                callback_factory(_handle_native_log)
-                if callback_factory is not None
-                else _handle_native_log
+        callback = _LOG_CALLBACK
+
+        if callback is None:
+            raw_callback_factory = getattr(llama_cpp, "llama_log_callback", None)
+
+            if callable(raw_callback_factory):
+                callback_factory = cast(
+                    Callable[[_NativeLogCallback], _NativeLogCallback],
+                    raw_callback_factory,
+                )
+                callback = callback_factory(_handle_native_log)
+            else:
+                callback = _handle_native_log
+
+            _LOG_CALLBACK = callback
+
+        raw_log_set = getattr(llama_cpp, "llama_log_set", None)
+
+        if callable(raw_log_set):
+            log_set = cast(
+                Callable[[_NativeLogCallback, object | None], None],
+                raw_log_set,
             )
-        # Install before any probe can initialize ggml/CUDA. Keeping the callback
-        # alive at module scope also protects later native calls from GC.
-        log_set = getattr(llama_cpp, "llama_log_set", None)
-        if callable(log_set):
-            log_set(_LOG_CALLBACK, None)
+            log_set(callback, None)
+
     return llama_cpp
