@@ -227,7 +227,8 @@ def ask_choice(
         _choice_label(key, label) for key, label in choices.items()
     )
     suffix = f" ({rendered_choices})" if show_choices else ""
-    suffix += f" [{default.upper()}]" if default is not None else ""
+    if default is not None:
+        suffix += f" [{default.upper()}]"
     prompt = f"  {question}{suffix}: "
 
     while True:
@@ -863,7 +864,7 @@ class CommandOutputBox:
 
 
 def command_output_box(output: str, *, indent: int = COMMAND_INDENT) -> None:
-    """Render complete subprocess output in an indented grey box."""
+    """Render complete subprocess output in an indented gray box."""
     if not output.strip():
         return
     with CommandOutputBox(indent=indent) as box:
