@@ -107,17 +107,23 @@ class OllamaDiagnostics:
             progress: Callable[[int, int, str], None] | None = None,
     ) -> list[ModelDiagnostic]:
         manifest_root = self.root / "manifests"
+
         if not manifest_root.is_dir():
             return []
 
         parsed: list[tuple[str, Path, ModelInfo]] = []
         diagnostics: list[ModelDiagnostic] = []
+
         for manifest in sorted(
                 path for path in manifest_root.rglob("*") if path.is_file()
         ):
             reference = self._reference(manifest, manifest_root)
+
             try:
-                model = self._discovery._parse_manifest(manifest, manifest_root)
+                model = self._discovery.parse_manifest(
+                    manifest,
+                    manifest_root,
+                )
                 parsed.append((reference, manifest, model))
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 diagnostics.append(
@@ -126,29 +132,48 @@ class OllamaDiagnostics:
                         manifest,
                         None,
                         False,
-                        f"Invalid manifest: {exc}\n{traceback.format_exc().rstrip()}",
+                        (
+                            f"Invalid manifest: {exc}\n"
+                            f"{traceback.format_exc().rstrip()}"
+                        ),
                     )
                 )
-        models = [model for _reference, _manifest, model in parsed]
+
+        models = [
+            model
+            for _reference, _manifest, model in parsed
+        ]
+
         if verify_backend and models:
-            # Structural diagnostics also run in the stdlib-only installer.
-            # The Qt worker and inference dependencies are only needed here.
             from .model_validator import ModelValidator
 
             checked = ModelValidator.validate(
                 models,
                 cancelled or Event(),
-                progress or (lambda _current, _total, _detail: None),
+                progress or (
+                    lambda _current, _total, _detail: None
+                ),
             )
         else:
             checked = models
+
         diagnostics.extend(
-            self._from_model(reference, manifest, model)
+            self._from_model(
+                reference,
+                manifest,
+                model,
+            )
             for (reference, manifest, _original), model in zip(
-                parsed, checked, strict=True
+                parsed,
+                checked,
+                strict=True,
             )
         )
-        return sorted(diagnostics, key=lambda item: item.reference)
+
+        return sorted(
+            diagnostics,
+            key=lambda item: item.reference,
+        )
 
     def subsystem_health(self) -> dict[str, tuple[str, str]]:
         """Cheap, non-mutating health cards for the repair dashboard."""

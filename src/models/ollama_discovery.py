@@ -54,7 +54,7 @@ class OllamaDiscovery:
                 continue
 
             try:
-                info = self._parse_manifest(manifest, manifest_root)
+                info = self._private_parse_manifest(manifest, manifest_root)
                 if info.available:
                     models.append(info)
                 else:
@@ -77,13 +77,43 @@ class OllamaDiscovery:
         """Validate that a model blob is a readable GGUF file."""
         return OllamaDiscovery._validate_gguf(path, expected_size)
 
-    def _parse_manifest(self, path: Path, manifest_root: Path) -> ModelInfo:
+    def parse_manifest(
+            self,
+            path: Path,
+            manifest_root: Path | None = None,
+    ) -> ModelInfo:
+        """Parse one Ollama manifest through the supported public interface."""
+        path = Path(path).resolve()
+
+        root = (
+            Path(manifest_root).resolve()
+            if manifest_root is not None
+            else (self.root / "manifests").resolve()
+        )
+
+        if not root.is_dir():
+            raise FileNotFoundError(f"Ollama manifest directory does not exist: {root}")
+
+        if not path.is_file():
+            raise FileNotFoundError(f"Ollama manifest does not exist: {path}")
+
+        if not path.is_relative_to(root):
+            raise ValueError(
+                f"Manifest is outside the Ollama manifest directory: {path}"
+            )
+
+        return self._private_parse_manifest(path, root)
+
+    def _private_parse_manifest(self, path: Path, manifest_root: Path) -> ModelInfo:
+        """Parse a validated Ollama manifest into model metadata."""
         data: _OllamaManifest = json.loads(path.read_text(encoding="utf-8"))
         relative = path.relative_to(manifest_root).parts
 
         name_parts = list(relative[:-1])
+
         if name_parts and name_parts[0].startswith("registry."):
             name_parts.pop(0)
+
         if name_parts and name_parts[0] == "library":
             name_parts.pop(0)
 
