@@ -176,8 +176,9 @@ class ModelValidator:
             if model.blob_path not in checked_paths:
                 cached = _cached_result(model, verify_backend=verify_backend)
                 if cached is _CACHE_MISS:
-                    error = OllamaDiscovery._validate_gguf(
-                        model.blob_path, model.size_bytes
+                    error = OllamaDiscovery.validate_gguf(
+                        model.blob_path,
+                        model.size_bytes,
                     )
                     if error is None and verify_backend:
                         error = _direct_backend_compatibility_error(model)
