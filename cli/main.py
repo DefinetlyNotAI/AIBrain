@@ -1,4 +1,5 @@
 """AIBrain desktop entry point."""
+
 from __future__ import annotations
 
 import logging
@@ -25,10 +26,15 @@ from src.utils.gpu import (
     configure_opengl_surface,
     prepare_gpu_launch,
 )
-from src.utils.logging import configure_cli_logging, report_exception
+from src.utils.logging import (
+    REPORTABLE_EXCEPTIONS,
+    configure_cli_logging,
+    report_exception,
+)
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
+
 
 def require_virtual_environment() -> None:
     """Prevent accidental system-wide package use or installation."""
@@ -63,7 +69,9 @@ def main() -> int:
     header("AIBrain", "Desktop connectome launcher")
     section("Desktop startup", 1)
     status("LOG", f"CLI output: {runtime_log}")
-    status("START", "Preparing Qt, local model validation, and the OpenGL adapter check")
+    status(
+        "START", "Preparing Qt, local model validation, and the OpenGL adapter check"
+    )
     print()
     from PySide6.QtCore import QCoreApplication, QObject, QThread, QTimer, Slot
     from PySide6.QtGui import QFont
@@ -71,6 +79,7 @@ def main() -> int:
 
     from src.app.loading_window import GpuProbe, LoadingWindow
     from src.app.main_window import MainWindow
+    from src.models.model_info import ModelInfo
     from src.models.model_validator import StartupWorker
     from src.utils.gpu import (
         can_request_gpu_relaunch,
@@ -95,13 +104,14 @@ def main() -> int:
     startup_worker = StartupWorker()
     startup_worker.moveToThread(startup_thread)
     gpu_probe = GpuProbe(app)
+    main_window: MainWindow | None = None
 
     class StartupCoordinator(QObject):
         """Receive worker completion signals on the QApplication thread."""
 
         def __init__(self) -> None:
             super().__init__(app)
-            self._models: list[object] | None = None
+            self._models: list[ModelInfo] | None = None
             self._models_finished = False
             self._gpu_checked = False
             self._gpu_relaunch_requested = False
@@ -111,7 +121,11 @@ def main() -> int:
 
         @Slot(object)
         def models_ready(self, models: object) -> None:
-            self._models = models if isinstance(models, list) else []
+            self._models = (
+                [model for model in models if isinstance(model, ModelInfo)]
+                if isinstance(models, list)
+                else []
+            )
 
         @Slot(str, str)
         def gpu_ready(self, vendor: str, renderer: str) -> None:
@@ -140,14 +154,15 @@ def main() -> int:
             self._show_main_when_ready()
 
         def _show_main_when_ready(self) -> None:
+            nonlocal main_window
             if (
-                    self._stopping
-                    or self._gpu_relaunch_requested
-                    or not loading.isVisible()
-                    or self._models is None
-                    or not self._models_finished
-                    or not self._gpu_checked
-                    or self._main_window_started
+                self._stopping
+                or self._gpu_relaunch_requested
+                or not loading.isVisible()
+                or self._models is None
+                or not self._models_finished
+                or not self._gpu_checked
+                or self._main_window_started
             ):
                 return
             self._main_window_started = True
@@ -157,7 +172,7 @@ def main() -> int:
                 LOG.exception("Could not construct the AIBrain main window")
                 self._stop_startup(exit_code=1)
                 return
-            app.main_window = window  # type: ignore[attr-defined]
+            main_window = window
             # Maximize as an ordinary resizable desktop window; never enter
             # borderless/fullscreen mode, so system controls remain available.
             window.showMaximized()
@@ -196,7 +211,6 @@ def main() -> int:
             self.models_ready([])
 
     startup_coordinator = StartupCoordinator()
-    app.startup_coordinator = startup_coordinator  # type: ignore[attr-defined]
 
     startup_thread.started.connect(startup_worker.run)
     startup_worker.progress.connect(loading.set_progress)
@@ -215,7 +229,7 @@ def main() -> int:
         if interrupted:
             return
         interrupted = True
-        window = getattr(app, "main_window", None)
+        window = getattr(app, "main_window", None) or main_window
         if window is not None:
             LOG.info("KeyboardInterrupt requested an orderly desktop shutdown")
             QTimer.singleShot(0, window.close)
@@ -252,7 +266,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         report_keyboard_interrupt("AIBrain")
-        raise SystemExit(130)
-    except Exception as exc:
+        raise SystemExit(130) from None
+    except REPORTABLE_EXCEPTIONS as exc:
         report_exception("AIBrain desktop launcher failed", exc)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

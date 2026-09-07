@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Protocol
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ..models.instrumented_backend import REALTIME_REGIONS
 from .graph import ConnectomeGraph
@@ -11,7 +13,7 @@ REGIONS = REALTIME_REGIONS
 
 # Region names are stable, so every measured telemetry channel retains the same
 # distinct color across launches, qualities, replay, and fallback rendering.
-DARK_BACKGROUND_CLUSTER_COLOR_MAP = dict(
+DARK_BACKGROUND_CLUSTER_COLOR_MAP: dict[str, str] = dict(
     zip(
         REGIONS,
         (
@@ -31,7 +33,7 @@ DARK_BACKGROUND_CLUSTER_COLOR_MAP = dict(
 # Bright colours are readable on the default dark renderer. A user-selected
 # light renderer background automatically gets a distinct, lower-luminance
 # map, keeping idle clusters legible without making colours user-configurable.
-LIGHT_BACKGROUND_CLUSTER_COLOR_MAP = dict(
+LIGHT_BACKGROUND_CLUSTER_COLOR_MAP: dict[str, str] = dict(
     zip(
         REGIONS,
         (
@@ -74,14 +76,29 @@ def _seed(key: str) -> int:
     )
 
 
-def _sample_indices(rng: object, population_size: int, size: int) -> np.ndarray:
+class _RandomGenerator(Protocol):
+    """Random generator operations shared by NumPy and CuPy."""
+
+    def integers(self, low: int, high: int, *, size: int) -> NDArray[np.int64]: ...
+
+    def standard_normal(self, size: int | tuple[int, ...]) -> NDArray[np.float64]: ...
+
+
+def _sample_indices(
+    rng: _RandomGenerator, population_size: int, size: int
+) -> NDArray[np.int64]:
     """Return uniform integer indexes with NumPy and CuPy generators alike."""
-    return rng.integers(0, population_size, size=size)  # type: ignore[union-attr]
+    return rng.integers(0, population_size, size=size)
 
 
-def _normal(rng: object, mean: float, deviation: float, size: object) -> np.ndarray:
+def _normal(
+    rng: _RandomGenerator,
+    mean: float,
+    deviation: float,
+    size: int | tuple[int, ...],
+) -> NDArray[np.float64]:
     """Sample normal values with the generator APIs common to NumPy and CuPy."""
-    return mean + deviation * rng.standard_normal(size)  # type: ignore[union-attr]
+    return mean + deviation * rng.standard_normal(size)
 
 
 def build_connectome(
@@ -93,12 +110,8 @@ def build_connectome(
     # Generate the static topology on the host. These relatively small arrays
     # feed OpenGL buffers and Qt picking, where a CUDA round trip per event is
     # slower than NumPy and previously exposed incompatible random APIs.
-    region_weights = np.array(
-        [0.07, 0.10, 0.12, 0.14, 0.16, 0.10, 0.12, 0.12, 0.07]
-    )
-    region_ids = np.searchsorted(
-        np.cumsum(region_weights), rng.random(n), side="right"
-    )
+    region_weights = np.array([0.07, 0.10, 0.12, 0.14, 0.16, 0.10, 0.12, 0.12, 0.07])
+    region_ids = np.searchsorted(np.cumsum(region_weights), rng.random(n), side="right")
     # Nine deliberately separated 2D clusters. Keeping the z coordinate
     # varied preserves depth in 3D while the flat map remains non-overlapping.
     grid = np.array(
@@ -126,7 +139,9 @@ def build_connectome(
             edge_parts.append(
                 np.column_stack(
                     (
-                        nodes[_sample_indices(rng, len(nodes), max(20, len(nodes) // 18))],
+                        nodes[
+                            _sample_indices(rng, len(nodes), max(20, len(nodes) // 18))
+                        ],
                         target_nodes[
                             _sample_indices(
                                 rng, len(target_nodes), max(20, len(nodes) // 18)

@@ -6,12 +6,14 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import replace
+from enum import Enum
 from pathlib import Path
 from threading import Event
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from ..utils.logging import format_exception
+from .llama_backend import GenerationConfig, LlamaBackend
 from .model_info import ModelInfo
 from .ollama_discovery import OllamaDiscovery
 
@@ -31,7 +33,7 @@ def _direct_backend_compatibility_error(model: ModelInfo) -> str | None:
     ).lower()
     parameter_size = model.parameter_size.upper().replace(" ", "")
     qwen_vision = "qwen" in identity and "vl" in identity
-    gemma3_vision = "gemma3" in identity and parameter_size not in {"1B"}
+    gemma3_vision = "gemma3" in identity and parameter_size != "1B"
     if not (qwen_vision or gemma3_vision):
         return None
     return (
@@ -66,9 +68,7 @@ def _validate_digest(
                 return "Validation cancelled"
             digest.update(chunk)
             read += len(chunk)
-            report(
-                index, total, f"{label} ({read / size:.0%})"
-            )
+            report(index, total, f"{label} ({read / size:.0%})")
     actual = digest.hexdigest()
     expected = model.digest.partition(":")[2].lower()
     report(index, total, f"{label} (complete)")
@@ -94,7 +94,16 @@ def _cache_profile(*, verify_backend: bool) -> str:
     return "llama-cpp" if verify_backend else "structural"
 
 
-def _cached_result(model: ModelInfo, *, verify_backend: bool) -> str | None | object:
+class _CacheLookup(Enum):
+    MISS = "miss"
+
+
+_CACHE_MISS = _CacheLookup.MISS
+
+
+def _cached_result(
+    model: ModelInfo, *, verify_backend: bool
+) -> str | _CacheLookup | None:
     if model.blob_path is None:
         return _CACHE_MISS
     try:
@@ -110,9 +119,6 @@ def _cached_result(model: ModelInfo, *, verify_backend: bool) -> str | None | ob
     except (OSError, ValueError, TypeError):
         pass
     return _CACHE_MISS
-
-
-_CACHE_MISS = object()
 
 
 def _store_result(model: ModelInfo, error: str | None, *, verify_backend: bool) -> None:
@@ -150,10 +156,8 @@ class ModelValidator:
         """Confirm that each unique GGUF has a valid header and loads in llama.cpp."""
         validated: list[ModelInfo] = []
         checked_paths: dict[Path, str | None] = {}
-        backend = None
+        backend: LlamaBackend | None = None
         if verify_backend:
-            from .llama_backend import GenerationConfig, LlamaBackend
-
             backend = LlamaBackend()
         total = len(candidates)
 

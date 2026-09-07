@@ -20,8 +20,6 @@ class ModelInfo:
     @property
     def label(self) -> str:
         size = (
-            f"{self.size_bytes / 1024 ** 3:.1f} GB"
-            if self.size_bytes
-            else "unavailable"
+            f"{self.size_bytes / 1024**3:.1f} GB" if self.size_bytes else "unavailable"
         )
         return f"{self.name}:{self.tag} — {self.family} · {self.quantization} · {size}"

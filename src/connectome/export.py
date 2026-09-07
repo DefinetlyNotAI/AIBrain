@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import gzip
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..models.message_types import TranscriptTurn
 from .analysis import ConnectomeAnalyzer, RecordSource
+from .analysis_cache import AnalysisCacheStatus
 from .generator import CLUSTER_COLOR_MAP
 from .graph import ConnectomeGraph
 
@@ -19,10 +22,14 @@ def _write_payload(path: Path, payload: dict[str, object]) -> None:
     path.write_text(encoded, encoding="utf-8")
 
 
-def _base_payload(schema: str, graph: ConnectomeGraph, analyzer: ConnectomeAnalyzer,
-                  conversation: list[dict[str, object]],
-                  records: RecordSource | None = None,
-                  recorded_summary: dict[str, object] | None = None) -> dict[str, object]:
+def _base_payload(
+    schema: str,
+    graph: ConnectomeGraph,
+    analyzer: ConnectomeAnalyzer,
+    conversation: Sequence[TranscriptTurn],
+    records: RecordSource | None = None,
+    recorded_summary: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "schema": schema,
         "created_at": datetime.now(UTC).isoformat(),
@@ -50,16 +57,28 @@ def _base_payload(schema: str, graph: ConnectomeGraph, analyzer: ConnectomeAnaly
     }
 
 
-def export_session_analysis(path: Path, graph: ConnectomeGraph, analyzer: ConnectomeAnalyzer,
-                            conversation: list[dict[str, object]]) -> None:
+def export_session_analysis(
+    path: Path,
+    graph: ConnectomeGraph,
+    analyzer: ConnectomeAnalyzer,
+    conversation: Sequence[TranscriptTurn],
+) -> None:
     """Export normal-chat session data without autoencoder findings."""
-    _write_payload(path, _base_payload("aibrain.session-analysis.v2", graph, analyzer, conversation))
+    _write_payload(
+        path,
+        _base_payload("aibrain.session-analysis.v2", graph, analyzer, conversation),
+    )
 
 
-def export_nn_analysis_plus(path: Path, graph: ConnectomeGraph, analyzer: ConnectomeAnalyzer,
-                            conversation: list[dict[str, object]], *,
-                            records: RecordSource | None = None,
-    cache_status: dict[str, object] | None = None) -> None:
+def export_nn_analysis_plus(
+    path: Path,
+    graph: ConnectomeGraph,
+    analyzer: ConnectomeAnalyzer,
+    conversation: Sequence[TranscriptTurn],
+    *,
+    records: RecordSource | None = None,
+    cache_status: AnalysisCacheStatus | None = None,
+) -> None:
     """Export Infinite-mode session data with compact neural findings."""
     smart_analysis = analyzer.smart_report(records)
     findings = smart_analysis.get("session_findings")

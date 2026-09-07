@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import re
 import sys
@@ -44,13 +45,51 @@ class TerminalOutput(StringIO):
                     self.rows.append("")
             else:
                 line = self.rows[self.row].ljust(self.column)
-                self.rows[self.row] = line[:self.column] + token + line[self.column + 1:]
+                self.rows[self.row] = (
+                    line[: self.column] + token + line[self.column + 1 :]
+                )
                 self.column += 1
         return super().write(text)
 
     def flush(self) -> None:
         self.frames.append([line.rstrip() for line in self.rows if line.strip()])
         super().flush()
+
+
+class InteractiveInput(StringIO):
+    """String input that represents an attached interactive terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+class ConsoleCoord(ctypes.Structure):
+    """Test-side layout matching the Windows console coordinate structure."""
+
+    _fields_ = [("x", ctypes.c_short), ("y", ctypes.c_short)]
+
+
+class ConsoleSmallRect(ctypes.Structure):
+    """Test-side layout matching the Windows console rectangle structure."""
+
+    _fields_ = [
+        ("left", ctypes.c_short),
+        ("top", ctypes.c_short),
+        ("right", ctypes.c_short),
+        ("bottom", ctypes.c_short),
+    ]
+
+
+class ConsoleScreenBufferInfo(ctypes.Structure):
+    """Test-side layout matching the Windows screen-buffer information."""
+
+    _fields_ = [
+        ("size", ConsoleCoord),
+        ("cursor", ConsoleCoord),
+        ("attributes", ctypes.c_ushort),
+        ("window", ConsoleSmallRect),
+        ("maximum_window_size", ConsoleCoord),
+    ]
 
 
 class ConsoleUiTests(unittest.TestCase):
@@ -77,7 +116,7 @@ class ConsoleUiTests(unittest.TestCase):
             console_ui.error(
                 "Model validation failed\n"
                 "Traceback (most recent call last):\n"
-                "  File \"model.py\", line 7, in validate\n"
+                '  File "model.py", line 7, in validate\n'
                 "RuntimeError: incompatible backend"
             )
 
@@ -109,9 +148,7 @@ class ConsoleUiTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
 
         for source_file in sorted(
-            path
-            for path in (root / "cli").glob("*.py")
-            if path.name != "__init__.py"
+            path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
         ):
             with self.subTest(source_file=source_file):
                 content = source_file.read_text(encoding="utf-8")
@@ -124,7 +161,7 @@ class ConsoleUiTests(unittest.TestCase):
     def test_every_cli_entry_point_handles_keyboard_interrupt(self) -> None:
         root = Path(__file__).resolve().parents[1]
         for source_file in sorted(
-                path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
+            path for path in (root / "cli").glob("*.py") if path.name != "__init__.py"
         ):
             with self.subTest(source_file=source_file):
                 content = source_file.read_text(encoding="utf-8-sig")
@@ -149,41 +186,53 @@ class ConsoleUiTests(unittest.TestCase):
                 self.assertFalse(any(marker in content for marker in forbidden))
 
     def test_native_clear_passes_a_wchar_value_not_a_string_pointer(self) -> None:
-        class Call:
-            def __init__(
+        class ScreenInfoCall:
+            def __call__(
                 self,
-                result: int = 1,
-                writes_count: bool = False,
-            ) -> None:
-                self.result = result
-                self.writes_count = writes_count
-                self.calls: list[tuple[object, ...]] = []
+                _handle: int,
+                info_pointer,
+            ) -> int:
+                info = ctypes.cast(
+                    info_pointer, ctypes.POINTER(ConsoleScreenBufferInfo)
+                ).contents
+                info.size.x = 80
+                info.size.y = 25
+                info.window.left = 0
+                info.window.right = 79
+                return 1
 
-            def __call__(self, *args: object) -> int:
-                self.calls.append(args)
+        class FillCall:
+            def __init__(self) -> None:
+                self.values: list[str | int] = []
+                self.counts: list[int] = []
+                self.origins: list[ConsoleCoord] = []
 
-                if self is screen_info:
-                    info = args[1]._obj  # type: ignore[attr-defined]
-                    info.size.x = 80
-                    info.size.y = 25
-                    info.window.left = 0
-                    info.window.right = 79
+            def __call__(
+                self,
+                _handle: int,
+                value: str | int,
+                count: int,
+                origin: ConsoleCoord,
+                written_pointer,
+            ) -> int:
+                self.values.append(value)
+                self.counts.append(count)
+                self.origins.append(origin)
+                written = ctypes.cast(
+                    written_pointer, ctypes.POINTER(ctypes.c_ulong)
+                ).contents
+                written.value = count
+                return 1
 
-                if self.writes_count:
-                    args[4]._obj.value = args[2]  # type: ignore[attr-defined]
-
-                return self.result
-
-        get_handle = Call(1)
-        screen_info = Call(1)
-        fill_character = Call(1, writes_count=True)
+        screen_info = ScreenInfoCall()
+        fill_character = FillCall()
 
         kernel32 = SimpleNamespace(
-            get_std_handle=get_handle,
+            get_std_handle=Mock(return_value=1),
             get_console_screen_buffer_info=screen_info,
             fill_console_output_character=fill_character,
-            fill_console_output_attribute=Call(1, writes_count=True),
-            set_console_cursor_position=Call(1),
+            fill_console_output_attribute=FillCall(),
+            set_console_cursor_position=Mock(return_value=1),
         )
 
         with patch.object(
@@ -194,10 +243,11 @@ class ConsoleUiTests(unittest.TestCase):
             result = console_ui._clear_native_console()
 
         self.assertTrue(result)
-        self.assertEqual(fill_character.calls[0][1], " ")
-        self.assertEqual(fill_character.calls[0][2], 2_000)
-        self.assertEqual(fill_character.calls[0][3].x, 0)  # type: ignore[attr-defined]
-        self.assertEqual(fill_character.calls[0][3].y, 0)  # type: ignore[attr-defined]
+        self.assertEqual(fill_character.values[0], " ")
+        self.assertEqual(fill_character.counts[0], 2_000)
+        origin = fill_character.origins[0]
+        self.assertEqual(origin.x, 0)
+        self.assertEqual(origin.y, 0)
 
     def test_clear_screen_uses_vt_sequence_when_available(self) -> None:
         stdout = Mock()
@@ -251,15 +301,18 @@ class ConsoleUiTests(unittest.TestCase):
 
             def __call__(
                 self,
-                _handle: object,
-                info_pointer: object,
+                _handle: int,
+                info_pointer,
             ) -> int:
                 self.calls += 1
 
                 if self.calls == 1:
                     return 0
 
-                info = info_pointer._obj  # type: ignore[attr-defined]
+                info = ctypes.cast(
+                    info_pointer,
+                    ctypes.POINTER(ConsoleScreenBufferInfo),
+                ).contents
                 info.size.x = 120
                 info.size.y = 900
                 info.attributes = 7
@@ -270,9 +323,12 @@ class ConsoleUiTests(unittest.TestCase):
             _value: object,
             count: int,
             _origin: object,
-            written: object,
+            written,
         ) -> int:
-            written._obj.value = count  # type: ignore[attr-defined]
+            written_count = ctypes.cast(
+                written, ctypes.POINTER(ctypes.c_ulong)
+            ).contents
+            written_count.value = count
             return 1
 
         stdout = Mock()
@@ -350,11 +406,7 @@ class ConsoleUiTests(unittest.TestCase):
         ]
 
         self.assertGreater(len(lines), 1)
-        self.assertTrue(
-            lines[0].startswith(
-                "  " + console_ui.PROMPT + " .\\.venv"
-            )
-        )
+        self.assertTrue(lines[0].startswith("  " + console_ui.PROMPT + " .\\.venv"))
         self.assertTrue(all(line.startswith("    ") for line in lines[1:]))
         self.assertTrue(all(len(line) <= 58 for line in lines))
         self.assertFalse(any(line.endswith("...") for line in lines))
@@ -374,7 +426,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("'PySide6>=6.7,<7'", rendered)
         self.assertIn("'cupy-cuda13x[ctk]>=14,<15'", rendered)
 
-    def test_live_command_footer_moves_with_output_and_stays_visible_between_frames(self) -> None:
+    def test_live_command_footer_moves_with_output_and_stays_visible_between_frames(
+        self,
+    ) -> None:
         output = TerminalOutput()
         with (
             patch.object(console_ui, "terminal_width", return_value=42),
@@ -393,13 +447,14 @@ class ConsoleUiTests(unittest.TestCase):
             self.assertNotIn("filename", "\n".join(output.frames[-1]))
             box.write("Download complete")
             box.write("Next completed line")
-            self.assertEqual(output.frames[-1][:len(stable)], stable)
+            self.assertEqual(output.frames[-1][: len(stable)], stable)
             self.assertIn("Download complete", output.frames[-1][-3])
             self.assertIn("Next completed line", output.frames[-1][-2])
             self.assertNotIn("50%", "\n".join(output.frames[-1]))
 
             footer = (
-                box.prefix + console_ui.BOX_BOTTOM_LEFT
+                box.prefix
+                + console_ui.BOX_BOTTOM_LEFT
                 + console_ui.BOX_HORIZONTAL * box.inner
                 + console_ui.BOX_BOTTOM_RIGHT
             )
@@ -412,7 +467,9 @@ class ConsoleUiTests(unittest.TestCase):
             box.close()
             self.assertEqual(output.getvalue(), before_close)
 
-    def test_empty_command_boxes_leave_no_frame_in_live_or_captured_output(self) -> None:
+    def test_empty_command_boxes_leave_no_frame_in_live_or_captured_output(
+        self,
+    ) -> None:
         for live in (True, False):
             with self.subTest(live=live), redirect_stdout(StringIO()) as output:
                 with console_ui.CommandOutputBox(live=live) as box:
@@ -422,10 +479,16 @@ class ConsoleUiTests(unittest.TestCase):
                     self.assertEqual(output.getvalue(), "")
                 self.assertEqual(output.getvalue(), "")
 
-    def test_captured_progress_is_periodic_and_stage_changes_are_immediate(self) -> None:
+    def test_captured_progress_is_periodic_and_stage_changes_are_immediate(
+        self,
+    ) -> None:
         output = StringIO()
         with redirect_stdout(output), console_ui.CommandOutputBox(live=False) as box:
-            for now, message in ((10.0, "Analyzing alpha"), (11.0, "Analyzing beta"), (13.0, "Analyzing gamma")):
+            for now, message in (
+                (10.0, "Analyzing alpha"),
+                (11.0, "Analyzing beta"),
+                (13.0, "Analyzing gamma"),
+            ):
                 with patch.object(console_ui.time, "monotonic", return_value=now):
                     box.write_progress(message)
             self.assertIn("Analyzing alpha", output.getvalue())
@@ -438,14 +501,15 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_first_partial_output_draws_one_complete_frame(self) -> None:
         output = TerminalOutput()
-        with redirect_stdout(output):
-            with console_ui.CommandOutputBox(live=True) as box:
-                box.write_partial("Waiting for compiler output")
-                self.assertEqual(len(output.frames), 1)
-                self.assertEqual(len(output.frames[0]), 3)
-                self.assertIn("Waiting for compiler output", output.frames[0][1])
+        with redirect_stdout(output), console_ui.CommandOutputBox(live=True) as box:
+            box.write_partial("Waiting for compiler output")
+            self.assertEqual(len(output.frames), 1)
+            self.assertEqual(len(output.frames[0]), 3)
+            self.assertIn("Waiting for compiler output", output.frames[0][1])
 
-    def test_status_paths_are_relative_and_long_messages_wrap_at_the_current_width(self) -> None:
+    def test_status_paths_are_relative_and_long_messages_wrap_at_the_current_width(
+        self,
+    ) -> None:
         project_log = console_ui.ROOT / "logs" / "aibrain.build_dist.log"
         with redirect_stdout(StringIO()) as output:
             console_ui.info(f"Log file: {project_log}")
@@ -455,28 +519,59 @@ class ConsoleUiTests(unittest.TestCase):
         )
 
         for width in (38, 64):
-            with self.subTest(width=width), patch.object(console_ui, "terminal_width", return_value=width):
-                for emit in (console_ui.info, console_ui.success, console_ui.warning, console_ui.error):
+            with (
+                self.subTest(width=width),
+                patch.object(console_ui, "terminal_width", return_value=width),
+            ):
+                for emit in (
+                    console_ui.info,
+                    console_ui.success,
+                    console_ui.warning,
+                    console_ui.error,
+                ):
                     output = StringIO()
                     with redirect_stdout(output), redirect_stderr(output):
-                        emit("Staging a long runtime message with enough words to wrap onto multiple rows\n  indented detail")
+                        emit(
+                            "Staging a long runtime message with enough words to wrap onto multiple rows\n  indented detail"
+                        )
                     lines = console_ui.strip_ansi(output.getvalue()).splitlines()
                     self.assertTrue(all(len(line) <= width for line in lines))
                     prefix_width = lines[0].index("Staging")
-                    self.assertTrue(all(line.startswith(" " * prefix_width) for line in lines[1:]))
-                    self.assertEqual(lines[-1], " " * (prefix_width + 2) + "indented detail")
+                    self.assertTrue(
+                        all(line.startswith(" " * prefix_width) for line in lines[1:])
+                    )
+                    self.assertEqual(
+                        lines[-1], " " * (prefix_width + 2) + "indented detail"
+                    )
 
-    def test_long_command_preview_counts_flags_and_keeps_the_full_command_in_the_log(self) -> None:
-        command = [str(console_ui.ROOT / ".venv" / "Scripts" / "python.exe"), "-u", "-m", "nuitka"]
+    def test_long_command_preview_counts_flags_and_keeps_the_full_command_in_the_log(
+        self,
+    ) -> None:
+        command = [
+            str(console_ui.ROOT / ".venv" / "Scripts" / "python.exe"),
+            "-u",
+            "-m",
+            "nuitka",
+        ]
         options = [f"--include-module=module_{index}" for index in range(49)]
-        command += [*options, "--output-dir", "a folder", "--", "--positional-script.py"]
+        command += [
+            *options,
+            "--output-dir",
+            "a folder",
+            "--",
+            "--positional-script.py",
+        ]
         with (
             patch.object(console_ui, "terminal_width", return_value=64),
             redirect_stdout(StringIO()) as output,
             self.assertLogs("aibrain.command", level="INFO") as captured,
         ):
             console_ui.command_preview(command)
-        lines = [line for line in console_ui.strip_ansi(output.getvalue()).splitlines() if line]
+        lines = [
+            line
+            for line in console_ui.strip_ansi(output.getvalue()).splitlines()
+            if line
+        ]
         rendered = " ".join(line.strip() for line in lines)
         self.assertIn(r".\.venv\Scripts\python.exe -u -m nuitka", rendered)
         self.assertIn("(50 flags attached - Full command in log file)", rendered)
@@ -488,14 +583,20 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("--positional-script.py", captured.output[0])
         self.assertIn(str(console_ui.ROOT), captured.output[0])
 
-    def test_path_shortening_preserves_neighboring_directories_and_handles_flag_values(self) -> None:
+    def test_path_shortening_preserves_neighboring_directories_and_handles_flag_values(
+        self,
+    ) -> None:
         neighbor = str(console_ui.ROOT) + "-backup\\file.py"
         self.assertEqual(console_ui.shorten_command_argument(neighbor), neighbor)
         self.assertEqual(console_ui.shorten_output_paths(neighbor), neighbor)
-        rendered = console_ui.display_command(["tool", f"--output-dir={console_ui.ROOT / 'dist'}"])
+        rendered = console_ui.display_command(
+            ["tool", f"--output-dir={console_ui.ROOT / 'dist'}"]
+        )
         self.assertIn(r"--output-dir=.\dist", rendered)
 
-    def test_redirected_command_output_has_no_cursor_redraws_or_duplicate_progress(self) -> None:
+    def test_redirected_command_output_has_no_cursor_redraws_or_duplicate_progress(
+        self,
+    ) -> None:
         output = StringIO()
         with redirect_stdout(output), console_ui.CommandOutputBox() as box:
             box.write_partial("Downloading: 25%")
@@ -510,12 +611,7 @@ class ConsoleUiTests(unittest.TestCase):
     def test_executable_path_shortening_requires_an_exact_path_match(
         self,
     ) -> None:
-        local_executable = (
-            Path(console_ui.ROOT)
-            / ".venv"
-            / "Scripts"
-            / "python.exe"
-        )
+        local_executable = Path(console_ui.ROOT) / ".venv" / "Scripts" / "python.exe"
 
         with patch.object(
             console_ui.shutil,
@@ -527,7 +623,7 @@ class ConsoleUiTests(unittest.TestCase):
                 r".\.venv\Scripts\python.exe",
             )
 
-        executable = Path(sys._base_executable).resolve()
+        executable = Path(getattr(sys, "_base_executable", sys.executable)).resolve()
 
         with patch.object(
             console_ui.shutil,
@@ -550,12 +646,7 @@ class ConsoleUiTests(unittest.TestCase):
             )
 
     def test_relative_executable_path_remains_explicit_when_it_is_on_path(self) -> None:
-        local_executable = (
-            Path(console_ui.ROOT)
-            / ".venv"
-            / "Scripts"
-            / "python.exe"
-        )
+        local_executable = Path(console_ui.ROOT) / ".venv" / "Scripts" / "python.exe"
 
         with patch.object(
             console_ui.shutil,
@@ -569,8 +660,7 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_choice_accepts_a_lowercase_full_label_and_renders_it_white(self) -> None:
         output = StringIO()
-        stdin = StringIO()
-        stdin.isatty = lambda: True  # type: ignore[method-assign]
+        stdin = InteractiveInput()
 
         with (
             patch.object(console_ui.sys, "stdin", stdin),
@@ -587,8 +677,7 @@ class ConsoleUiTests(unittest.TestCase):
 
     def test_empty_boolean_uses_a_colored_default_on_the_prompt_line(self) -> None:
         output = StringIO()
-        stdin = StringIO()
-        stdin.isatty = lambda: True  # type: ignore[method-assign]
+        stdin = InteractiveInput()
 
         with (
             patch.object(console_ui.sys, "stdin", stdin),
@@ -613,7 +702,9 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("User closed AIBrain Analysis.", stdout.getvalue())
         self.assertTrue(stdout.getvalue().endswith("\n\n"))
         self.assertIn(console_ui.CROSS, console_ui.strip_ansi(stderr.getvalue()))
-        self.assertIn("User ended AIBrain Analysis with KeyboardInterrupt.", stderr.getvalue())
+        self.assertIn(
+            "User ended AIBrain Analysis with KeyboardInterrupt.", stderr.getvalue()
+        )
 
     def test_prompt_answer_redraws_the_original_terminal_line(self) -> None:
         class InteractiveOutput(StringIO):
@@ -632,8 +723,7 @@ class ConsoleUiTests(unittest.TestCase):
         self.assertIn("Yes", console_ui.strip_ansi(output.getvalue()))
 
     def test_boolean_accepts_common_true_and_false_aliases(self) -> None:
-        stdin = StringIO()
-        stdin.isatty = lambda: True  # type: ignore[method-assign]
+        stdin = InteractiveInput()
 
         cases = (
             ("true", True),

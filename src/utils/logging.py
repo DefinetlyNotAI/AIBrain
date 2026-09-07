@@ -1,4 +1,5 @@
 """Project-local, readable runtime and crash logging."""
+
 from __future__ import annotations
 
 import logging
@@ -8,13 +9,29 @@ import sys
 import textwrap
 import threading
 import traceback as traceback_module
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
+from typing import ClassVar
 
 from .console_ui import BULLET, CROSS, Color, color, console_message_lines
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPORTABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    ArithmeticError,
+    AssertionError,
+    AttributeError,
+    EOFError,
+    ImportError,
+    LookupError,
+    MemoryError,
+    OSError,
+    ReferenceError,
+    RuntimeError,
+    TypeError,
+    ValueError,
+)
 MAX_LOG_BYTES = 20 * 1024 * 1024
 MAX_CRASH_LOG_BYTES = MAX_LOG_BYTES
 FILE_LOG_LINE_WIDTH = 140
@@ -24,19 +41,20 @@ _SOURCE_WIDTH = 28
 
 
 _ANSI_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|][^\x07]*(?:\x07|\x1b\\))")
+
+
 def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
 def restore_cli_output() -> None:
     """Compatibility hook for callers that previously restored console tees."""
-    return
 
 
 class AlignedFormatter(logging.Formatter):
     """Write fixed-column, word-wrapped runtime records for developer logs."""
 
-    _COLOURS = {
+    _COLOURS: ClassVar[Mapping[int, str]] = {
         logging.DEBUG: "\x1b[38;5;245m",
         logging.INFO: "\x1b[38;5;45m",
         logging.WARNING: "\x1b[38;5;220m",
@@ -50,7 +68,11 @@ class AlignedFormatter(logging.Formatter):
         self.colour = colour
 
     def format(self, record: logging.LogRecord) -> str:
-        timestamp = datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = (
+            datetime.fromtimestamp(record.created)
+            .astimezone()
+            .strftime("%Y-%m-%d %H:%M:%S")
+        )
         source = record.name.removeprefix("src.").removeprefix("aibrain.")
         if len(source) > _SOURCE_WIDTH:
             source = source[: _SOURCE_WIDTH - 3] + "..."
@@ -59,8 +81,7 @@ class AlignedFormatter(logging.Formatter):
             f"{source:<{_SOURCE_WIDTH}} | "
         )
         continuation = (
-            f"{'':<{_TIME_WIDTH}} | {'':<{_SEVERITY_WIDTH}} | "
-            f"{'':<{_SOURCE_WIDTH}} | "
+            f"{'':<{_TIME_WIDTH}} | {'':<{_SEVERITY_WIDTH}} | {'':<{_SOURCE_WIDTH}} | "
         )
         message = record.getMessage()
         if record.exc_info:
@@ -84,7 +105,10 @@ class AlignedFormatter(logging.Formatter):
             )
         ]
         rendered = "\n".join(
-            [f"{prefix}{wrapped[0]}", *[f"{continuation}{line}" for line in wrapped[1:]]]
+            [
+                f"{prefix}{wrapped[0]}",
+                *[f"{continuation}{line}" for line in wrapped[1:]],
+            ]
         )
         if self.colour:
             return f"{self._COLOURS.get(record.levelno, '')}{rendered}{self._RESET}"
@@ -94,7 +118,7 @@ class AlignedFormatter(logging.Formatter):
 class ConsoleFormatter(logging.Formatter):
     """Render runtime records as compact messages that match the CLI UI."""
 
-    _PRESENTATION = {
+    _PRESENTATION: ClassVar[Mapping[int, tuple[str, str]]] = {
         logging.DEBUG: ("·", Color.GRAY),
         logging.INFO: (BULLET, Color.CYAN),
         logging.WARNING: ("!", Color.YELLOW),
@@ -129,7 +153,9 @@ class ConsoleRecordFilter(logging.Filter):
 class BoundedFileHandler(logging.FileHandler):
     """Keep the newest log data and discard old complete lines above the cap."""
 
-    def __init__(self, filename: Path, *, max_bytes: int = MAX_LOG_BYTES, delay: bool = False) -> None:
+    def __init__(
+        self, filename: Path, *, max_bytes: int = MAX_LOG_BYTES, delay: bool = False
+    ) -> None:
         super().__init__(filename, mode="a", encoding="utf-8", delay=delay)
         self.max_bytes = max_bytes
 
@@ -165,7 +191,7 @@ class CrashFileHandler(BoundedFileHandler):
 
 
 def _uncaught_exception(
-        exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
+    exc_type: type[BaseException], value: BaseException, traceback: TracebackType | None
 ) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         return
@@ -199,9 +225,9 @@ def log_completed_command(
 
 
 def report_exception(
-        context: str,
-        exception: BaseException,
-        traceback: TracebackType | None = None,
+    context: str,
+    exception: BaseException,
+    traceback: TracebackType | None = None,
 ) -> None:
     """Record a handled fatal exception once, including its complete traceback.
 
@@ -209,7 +235,9 @@ def report_exception(
     started yet (for example, a failure while configuring it), fall back to
     stderr so no traceback is swallowed.
     """
-    exception_traceback = traceback if traceback is not None else exception.__traceback__
+    exception_traceback = (
+        traceback if traceback is not None else exception.__traceback__
+    )
     if logging.getLogger().handlers:
         logging.getLogger("aibrain.crash").critical(
             context,
@@ -224,7 +252,8 @@ def report_exception(
 
 
 def _thread_exception(args: threading.ExceptHookArgs) -> None:
-    _uncaught_exception(args.exc_type, args.exc_value, args.exc_traceback)
+    if args.exc_value is not None:
+        _uncaught_exception(args.exc_type, args.exc_value, args.exc_traceback)
 
 
 def _start_fresh_log(path: Path) -> Path:
@@ -251,7 +280,9 @@ def _clear_previous_run_logs(directory: Path, feature: str) -> None:
             continue
 
 
-def configure_logging(feature: str | Path = "main", log_directory: Path | None = None) -> tuple[Path, Path]:
+def configure_logging(
+    feature: str | Path = "main", log_directory: Path | None = None
+) -> tuple[Path, Path]:
     """Start fresh normal and crash logs for this application run.
 
     Both files are bounded while the program runs so a long session preserves
@@ -283,7 +314,9 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
     runtime_handler.setFormatter(AlignedFormatter(colour=False))
     root.addHandler(runtime_handler)
 
-    crash_handler = CrashFileHandler(crash_log, max_bytes=MAX_CRASH_LOG_BYTES, delay=True)
+    crash_handler = CrashFileHandler(
+        crash_log, max_bytes=MAX_CRASH_LOG_BYTES, delay=True
+    )
     crash_handler.setLevel(logging.CRITICAL)
     crash_handler.setFormatter(AlignedFormatter(colour=False))
     root.addHandler(crash_handler)
@@ -293,7 +326,9 @@ def configure_logging(feature: str | Path = "main", log_directory: Path | None =
     return runtime_log, crash_log
 
 
-def configure_cli_logging(feature: str, log_directory: Path | None = None) -> tuple[Path, Path]:
+def configure_cli_logging(
+    feature: str, log_directory: Path | None = None
+) -> tuple[Path, Path]:
     """Configure file logging without copying decorative console presentation."""
     restore_cli_output()
     return configure_logging(feature, log_directory)

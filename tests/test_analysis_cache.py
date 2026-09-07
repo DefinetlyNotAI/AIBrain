@@ -3,12 +3,15 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 
-from src.app.visualizer_panel import PlaybackStep, VisualizerPanel
+from src.app.visualizer_panel import (
+    PlaybackStep,
+    VisualizerPanel,
+    _trim_analysis_memory_data,
+)
 from src.connectome.analysis import AnalysisRecord
 from src.connectome.analysis_cache import AnalysisPageCache
 from src.models.instrumented_backend import ActivationFrame, ActivitySource
@@ -35,9 +38,7 @@ class AnalysisPageCacheTests(unittest.TestCase):
     def test_records_are_compressed_paged_and_removed_after_use(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / ".cache" / "temp"
-            cache = AnalysisPageCache(
-                1024 * 1024, root=root, page_records=2
-            )
+            cache = AnalysisPageCache(1024 * 1024, root=root, page_records=2)
             cache.append(_record(1))
             cache.append(_record(2))
 
@@ -48,16 +49,15 @@ class AnalysisPageCacheTests(unittest.TestCase):
             self.assertEqual(restored[0].telemetry["raw_logit_entropy_bits"], 4.2)
             self.assertGreater(cache.disk_bytes, 0)
             cache_directory = cache.directory
+            assert cache_directory is not None
             cache.cleanup()
 
-            self.assertFalse(cache_directory.exists())  # type: ignore[union-attr]
+            self.assertFalse(cache_directory.exists())
             self.assertEqual(cache.record_count, 0)
 
     def test_tiny_limit_discards_oldest_page_and_reports_overflow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            cache = AnalysisPageCache(
-                1, root=Path(directory) / "temp", page_records=1
-            )
+            cache = AnalysisPageCache(1, root=Path(directory) / "temp", page_records=1)
 
             self.assertTrue(cache.append(_record(1)))
             self.assertTrue(cache.overflowed)
@@ -95,24 +95,21 @@ class AnalysisPageCacheTests(unittest.TestCase):
                 np.ones(4, dtype="f4"),
                 np.ones(4, dtype="f4"),
             )
-            emitted: list[bool] = []
-            panel = SimpleNamespace(
-                _analysis_memory_limit_bytes=1,
-                _playback=[signal],
-                _analysis_retained_bytes=VisualizerPanel._signal_bytes(signal),
-                analyzer=SimpleNamespace(records=[_record(1)]),
-                _analysis_cache=cache,
-                _analysis_memory_exceeded=False,
-                analysisMemoryExceeded=SimpleNamespace(emit=emitted.append),
-                _signal_bytes=VisualizerPanel._signal_bytes,
+            playback = [signal]
+            records = [_record(1)]
+            retained_bytes, data_lost = _trim_analysis_memory_data(
+                playback,
+                VisualizerPanel._signal_bytes(signal),
+                1,
+                records,
+                cache,
             )
 
-            VisualizerPanel._trim_analysis_memory(panel)  # type: ignore[arg-type]
-
-            self.assertEqual(panel._playback, [])
-            self.assertEqual(panel.analyzer.records, [])
+            self.assertEqual(playback, [])
+            self.assertEqual(records, [])
+            self.assertEqual(retained_bytes, 0)
             self.assertEqual(cache.record_count, 1)
-            self.assertEqual(emitted, [])
+            self.assertFalse(data_lost)
 
 
 if __name__ == "__main__":

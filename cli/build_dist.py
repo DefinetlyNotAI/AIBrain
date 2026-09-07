@@ -1,4 +1,5 @@
 """Compile timestamped standalone AIBrain desktop applications with Nuitka."""
+
 from __future__ import annotations
 
 import argparse
@@ -19,12 +20,12 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.utils.kernel32 import kernel32
 from src.utils.console_ui import (
     COMMAND_INDENT,
     Color,
@@ -40,8 +41,14 @@ from src.utils.console_ui import (
     terminal_width,
 )
 from src.utils.gpu import set_windows_executable_gpu_preference
+from src.utils.kernel32 import kernel32
+from src.utils.logging import (
+    REPORTABLE_EXCEPTIONS,
+    configure_cli_logging,
+    log_completed_command,
+    report_exception,
+)
 from src.utils.runtime import require_managed_runtime
-from src.utils.logging import configure_cli_logging, log_completed_command, report_exception
 
 VENV_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 DIST_ROOT = ROOT / "dist"
@@ -93,16 +100,80 @@ NUMPY_RUNTIME_SUBDIRECTORIES = (
 # closure. Nuitka cannot discover it after NumPy is deliberately no-follow, so
 # include these exact helpers explicitly. This is not a NumPy package include.
 NUMPY_RUNTIME_SUPPORT_MODULES = (
-    "_collections_abc", "_compat_pickle", "_compression", "_ctypes", "_hashlib", "_lzma", "_weakrefset",
-    "abc", "ast", "base64", "bisect", "bz2", "codecs", "collections", "collections.abc", "contextlib",
-    "contextvars", "copyreg", "ctypes", "ctypes._endian", "datetime", "dis", "encodings",
-    "encodings.aliases", "encodings.cp1252", "encodings.cp437", "encodings.utf_8", "enum", "fnmatch",
-    "functools", "genericpath", "hashlib", "hmac", "importlib", "importlib._abc", "importlib.machinery",
-    "importlib.util", "inspect", "io", "ipaddress", "keyword", "linecache", "lzma", "ntpath", "numbers",
-    "opcode", "operator", "os", "pathlib", "pickle", "platform", "posixpath", "random", "re",
-    "re._casefix", "re._compiler", "re._constants", "re._parser", "reprlib", "secrets", "shutil", "stat",
-    "struct", "textwrap", "threading", "token", "tokenize", "types", "typing", "urllib", "urllib.parse",
-    "warnings", "weakref", "zipfile",
+    "_collections_abc",
+    "_compat_pickle",
+    "_compression",
+    "_ctypes",
+    "_hashlib",
+    "_lzma",
+    "_weakrefset",
+    "abc",
+    "ast",
+    "base64",
+    "bisect",
+    "bz2",
+    "codecs",
+    "collections",
+    "collections.abc",
+    "contextlib",
+    "contextvars",
+    "copyreg",
+    "ctypes",
+    "ctypes._endian",
+    "datetime",
+    "dis",
+    "encodings",
+    "encodings.aliases",
+    "encodings.cp1252",
+    "encodings.cp437",
+    "encodings.utf_8",
+    "enum",
+    "fnmatch",
+    "functools",
+    "genericpath",
+    "hashlib",
+    "hmac",
+    "importlib",
+    "importlib._abc",
+    "importlib.machinery",
+    "importlib.util",
+    "inspect",
+    "io",
+    "ipaddress",
+    "keyword",
+    "linecache",
+    "lzma",
+    "ntpath",
+    "numbers",
+    "opcode",
+    "operator",
+    "os",
+    "pathlib",
+    "pickle",
+    "platform",
+    "posixpath",
+    "random",
+    "re",
+    "re._casefix",
+    "re._compiler",
+    "re._constants",
+    "re._parser",
+    "reprlib",
+    "secrets",
+    "shutil",
+    "stat",
+    "struct",
+    "textwrap",
+    "threading",
+    "token",
+    "tokenize",
+    "types",
+    "typing",
+    "urllib",
+    "urllib.parse",
+    "warnings",
+    "weakref",
+    "zipfile",
 )
 
 
@@ -163,6 +234,32 @@ APPLICATIONS = (
         "attach",
     ),
 )
+
+
+class BuildLineOutput(Protocol):
+    """Output operations required for completed build lines."""
+
+    def write(self, text: str, /) -> None: ...
+
+    def write_progress(self, text: str, /) -> None: ...
+
+
+class BuildRenderOutput(BuildLineOutput, Protocol):
+    """Output operations required by the streamed build renderer."""
+
+    def write_partial(self, text: str, /) -> None: ...
+
+
+class BuildHeartbeatOutput(Protocol):
+    """Output operations required while a child process is silent."""
+
+    @property
+    def is_live(self) -> bool: ...
+
+    def write(self, text: str, /) -> None: ...
+
+    def write_partial(self, text: str, /) -> None: ...
+
 
 MERGED_APPLICATION_DIRECTORY = "AIBrain"
 
@@ -241,9 +338,7 @@ class WindowsConPty:
         self._closed = False
 
     def poll(self) -> int | None:
-        exit_code = kernel32.get_exit_code_process(
-            self.process_handle
-        )
+        exit_code = kernel32.get_exit_code_process(self.process_handle)
 
         if exit_code == kernel32.STILL_ACTIVE:
             return None
@@ -257,13 +352,9 @@ class WindowsConPty:
         )
 
         if result != kernel32.WAIT_OBJECT_0:
-            raise OSError(
-                f"WaitForSingleObject returned {result}"
-            )
+            raise OSError(f"WaitForSingleObject returned {result}")
 
-        return kernel32.get_exit_code_process(
-            self.process_handle
-        )
+        return kernel32.get_exit_code_process(self.process_handle)
 
     def close_terminal(self) -> None:
         """Close ConPTY so its output reader receives EOF."""
@@ -272,14 +363,10 @@ class WindowsConPty:
 
         self._terminal_closed = True
 
-        kernel32.close_handle(
-            self.input_handle
-        )
+        kernel32.close_handle(self.input_handle)
         self.input_handle = wintypes.HANDLE()
 
-        kernel32.close_pseudo_console(
-            self.pseudo_console
-        )
+        kernel32.close_pseudo_console(self.pseudo_console)
         self.pseudo_console = wintypes.HANDLE()
 
     def close(self) -> None:
@@ -291,22 +378,16 @@ class WindowsConPty:
 
         self.close_terminal()
 
-        kernel32.close_handle(
-            self.output_handle
-        )
+        kernel32.close_handle(self.output_handle)
         self.output_handle = wintypes.HANDLE()
 
-        kernel32.close_handle(
-            self.process_handle
-        )
+        kernel32.close_handle(self.process_handle)
         self.process_handle = wintypes.HANDLE()
 
 
 def _clean_terminal_output(text: str) -> str:
     """Remove terminal control sequences while preserving visible output."""
-    OSC_ESCAPE_RE = re.compile(
-        r"\x1b][^\x07\x1b]*(?:\x07|\x1b\\)"
-    )
+    OSC_ESCAPE_RE = re.compile(r"\x1b][^\x07\x1b]*(?:\x07|\x1b\\)")
     text = OSC_ESCAPE_RE.sub("", text)
     text = ANSI_ESCAPE_RE.sub("", text)
 
@@ -325,7 +406,11 @@ def _record_build_output(line: str) -> None:
 def _is_option_echo(line: str) -> bool:
     """Keep Nuitka's command replay in the log without hiding its warnings."""
     prefix, separator, message = line.lstrip().partition("Nuitka-Options:")
-    return bool(separator) and not prefix and not message.lstrip().startswith(("WARNING:", "ERROR:", "FATAL:"))
+    return (
+        bool(separator)
+        and not prefix
+        and not message.lstrip().startswith(("WARNING:", "ERROR:", "FATAL:"))
+    )
 
 
 def _is_build_noise(line: str) -> bool:
@@ -333,18 +418,20 @@ def _is_build_noise(line: str) -> bool:
     stripped = line.lstrip()
     if re.match(r"Nuitka[^:]*:\s*(?:WARNING|ERROR|FATAL):", stripped):
         return False
-    return _is_option_echo(line) or stripped.startswith((
-        "Nuitka-Memory: Total memory usage",
-        "Nuitka-Inclusion: Demoting module ",
-        "Nuitka-Progress: Doing module local optimizations ",
-        "Nuitka-Progress: Doing module dependency considerations ",
-        "Nuitka-Progress: Not finished with the module ",
-        "Nuitka-Progress: Not changed, but retrying ",
-        "Nuitka-Progress: Finished with the module.",
-    ))
+    return _is_option_echo(line) or stripped.startswith(
+        (
+            "Nuitka-Memory: Total memory usage",
+            "Nuitka-Inclusion: Demoting module ",
+            "Nuitka-Progress: Doing module local optimizations ",
+            "Nuitka-Progress: Doing module dependency considerations ",
+            "Nuitka-Progress: Not finished with the module ",
+            "Nuitka-Progress: Not changed, but retrying ",
+            "Nuitka-Progress: Finished with the module.",
+        )
+    )
 
 
-def _write_completed_build_line(output_box: CommandOutputBox, line: str) -> None:
+def _write_completed_build_line(output_box: BuildLineOutput, line: str) -> None:
     """Keep the full log and show meaningful build work at a readable rate."""
     _record_build_output(line)
     pip_progress = _format_pip_progress(line)
@@ -383,9 +470,9 @@ def _format_pip_progress(line: str) -> str | None:
 
 
 def _render_output_text(
-        text: str,
-        pending: str,
-        output_box: CommandOutputBox,
+    text: str,
+    pending: str,
+    output_box: BuildRenderOutput,
 ) -> str:
     """Render complete lines and immediately redraw carriage-return frames."""
     new_output = pending + _clean_terminal_output(text)
@@ -409,7 +496,7 @@ def _render_output_text(
 
         line = new_output[:newline]
         terminator = new_output[newline]
-        new_output = new_output[newline + 1:]
+        new_output = new_output[newline + 1 :]
 
         if terminator == "\r":
             # CRLF is a normal completed line.
@@ -441,17 +528,17 @@ def _render_output_text(
 
 
 def _render_new_build_output(
-        output_path: Path,
-        offset: int,
-        pending: str,
-        output_box: CommandOutputBox,
+    output_path: Path,
+    offset: int,
+    pending: str,
+    output_box: BuildRenderOutput,
 ) -> tuple[int, str]:
     """Fallback file tailer used when ConPTY is unavailable."""
     with output_path.open(
-            "r",
-            encoding="utf-8",
-            errors="replace",
-            newline="",
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline="",
     ) as output_file:
         output_file.seek(offset)
         text = output_file.read()
@@ -499,24 +586,27 @@ def _command_activity(command_line: list[str]) -> str:
 
 
 def _report_build_heartbeat(
-        output_box: CommandOutputBox,
-        last_heartbeat: float,
-        last_child_output: float,
-        *,
-        activity: str,
-        started_at: float | None = None,
-        process_id: int | None = None,
+    output_box: BuildHeartbeatOutput,
+    last_heartbeat: float,
+    last_child_output: float,
+    *,
+    activity: str,
+    started_at: float | None = None,
+    process_id: int | None = None,
 ) -> float:
     """Identify the active command during silence without implying progress."""
     now = time.monotonic()
-    interval = BUILD_HEARTBEAT_SECONDS if output_box.is_live else BUILD_LOG_HEARTBEAT_SECONDS
+    interval = (
+        BUILD_HEARTBEAT_SECONDS if output_box.is_live else BUILD_LOG_HEARTBEAT_SECONDS
+    )
     if now - last_heartbeat < interval:
         return last_heartbeat
 
     silent_seconds = now - last_child_output
     explanation = (
         " Source generation, compilation, and linking can be silent."
-        if activity == "Nuitka" else ""
+        if activity == "Nuitka"
+        else ""
     )
     details = ""
     if started_at is not None:
@@ -535,10 +625,10 @@ def _report_build_heartbeat(
 
 
 def _monitor_build_stall(
-        last_child_output: float,
-        state: BuildStallState,
-        *,
-        activity: str,
+    last_child_output: float,
+    state: BuildStallState,
+    *,
+    activity: str,
 ) -> tuple[str | None, BuildStallState]:
     """Report extended silence without blocking the output pump or Qt event loop."""
     now = time.monotonic()
@@ -547,7 +637,8 @@ def _monitor_build_stall(
 
     explanation = (
         "Native linking can remain silent for a long time. "
-        if activity == "Nuitka" else ""
+        if activity == "Nuitka"
+        else ""
     )
     message = (
         f"No new output from {activity} for {now - last_child_output:.0f}s. "
@@ -576,7 +667,7 @@ def _stop_process_tree(process_id: int) -> None:
 
 
 def _stop_interrupted_build(
-        process: subprocess.Popen,
+    process: subprocess.Popen,
 ) -> None:
     """Stop Nuitka and its compiler children before temporary cleanup."""
     try:
@@ -618,7 +709,7 @@ def _create_pipe() -> tuple[wintypes.HANDLE, wintypes.HANDLE]:
 
 
 def _create_conpty_process(
-        command_line: list[str],
+    command_line: list[str],
 ) -> WindowsConPty:
     """Launch a command inside a Windows ConPTY pseudo console."""
     input_read = wintypes.HANDLE()
@@ -654,9 +745,7 @@ def _create_conpty_process(
         kernel32.close_handle(output_write)
         output_write = wintypes.HANDLE()
 
-        attribute_buffer, attribute_list = (
-            kernel32.initialize_attribute_list()
-        )
+        attribute_buffer, attribute_list = kernel32.initialize_attribute_list()
 
         kernel32.update_pseudo_console_attribute(
             attribute_list,
@@ -664,23 +753,17 @@ def _create_conpty_process(
         )
 
         startup_info = _StartupInfoExW()
-        startup_info.StartupInfo.cb = ctypes.sizeof(
-            _StartupInfoExW
-        )
+        startup_info.StartupInfo.cb = ctypes.sizeof(_StartupInfoExW)
         startup_info.lpAttributeList = attribute_list
 
-        command_text = subprocess.list2cmdline(
-            command_line
-        )
+        command_text = subprocess.list2cmdline(command_line)
 
-        mutable_command = ctypes.create_unicode_buffer(
-            command_text
-        )
+        mutable_command = ctypes.create_unicode_buffer(command_text)
 
         creation_flags = (
-                kernel32.EXTENDED_STARTUPINFO_PRESENT
-                | kernel32.CREATE_UNICODE_ENVIRONMENT
-                | kernel32.CREATE_NEW_PROCESS_GROUP
+            kernel32.EXTENDED_STARTUPINFO_PRESENT
+            | kernel32.CREATE_UNICODE_ENVIRONMENT
+            | kernel32.CREATE_NEW_PROCESS_GROUP
         )
 
         kernel32.create_process(
@@ -691,16 +774,12 @@ def _create_conpty_process(
             creation_flags,
         )
 
-        kernel32.close_handle(
-            process_information.hThread
-        )
+        kernel32.close_handle(process_information.hThread)
         process_information.hThread = wintypes.HANDLE()
 
         return WindowsConPty(
             process_handle=process_information.hProcess,
-            process_id=int(
-                process_information.dwProcessId
-            ),
+            process_id=int(process_information.dwProcessId),
             pseudo_console=pseudo_console,
             input_handle=input_write,
             output_handle=output_read,
@@ -708,14 +787,10 @@ def _create_conpty_process(
 
     except BaseException:
         if process_information.hThread:
-            kernel32.close_handle(
-                process_information.hThread
-            )
+            kernel32.close_handle(process_information.hThread)
 
         if process_information.hProcess:
-            kernel32.close_handle(
-                process_information.hProcess
-            )
+            kernel32.close_handle(process_information.hProcess)
 
         if input_read:
             kernel32.close_handle(input_read)
@@ -730,17 +805,13 @@ def _create_conpty_process(
             kernel32.close_handle(output_write)
 
         if pseudo_console:
-            kernel32.close_pseudo_console(
-                pseudo_console
-            )
+            kernel32.close_pseudo_console(pseudo_console)
 
         raise
 
     finally:
         if attribute_list is not None:
-            kernel32.delete_attribute_list(
-                attribute_list
-            )
+            kernel32.delete_attribute_list(attribute_list)
 
         # Keeps the backing memory alive for the lifetime of the
         # attribute list above.
@@ -748,14 +819,12 @@ def _create_conpty_process(
 
 
 def _conpty_reader(
-        output_handle: wintypes.HANDLE,
-        output_queue: queue.Queue[bytes | None],
+    output_handle: wintypes.HANDLE,
+    output_queue: queue.Queue[bytes | None],
 ) -> None:
     try:
         while True:
-            chunk = kernel32.read_file(
-                output_handle
-            )
+            chunk = kernel32.read_file(output_handle)
 
             if chunk is None:
                 break
@@ -787,9 +856,7 @@ def _run_with_conpty(
     )
     reader.start()
 
-    decoder = codecs.getincrementaldecoder("utf-8")(
-        errors="replace"
-    )
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
     pending = ""
     captured_tail = ""
@@ -910,9 +977,7 @@ def _run_with_conpty(
         process.close()
 
     captured_output = captured_tail.rstrip()
-    log_completed_command(
-        command_line, "", return_code=return_code
-    )
+    log_completed_command(command_line, "", return_code=return_code)
     if return_code:
         raise subprocess.CalledProcessError(
             return_code,
@@ -926,43 +991,42 @@ def _build_process_environment(command_line: list[str]) -> dict[str, str] | None
     activity = _command_activity(command_line)
     if activity.startswith("pip "):
         environment = os.environ.copy()
-        environment.update({
-            "PIP_PROGRESS_BAR": "raw",
-            "PYTHONUNBUFFERED": "1",
-        })
+        environment.update(
+            {
+                "PIP_PROGRESS_BAR": "raw",
+                "PYTHONUNBUFFERED": "1",
+            }
+        )
         return environment
     if activity != "Nuitka":
         return None
     environment = os.environ.copy()
-    environment.update({
-        "TTY_COMPATIBLE": "1",
-        "TTY_INTERACTIVE": "1",
-        "TERM": "xterm-256color",
-        "COLUMNS": str(max(terminal_width() - COMMAND_INDENT - 4, 16)),
-        "PYTHONIOENCODING": "utf-8",
-        "PYTHONUNBUFFERED": "1",
-    })
+    environment.update(
+        {
+            "TTY_COMPATIBLE": "1",
+            "TTY_INTERACTIVE": "1",
+            "TERM": "xterm-256color",
+            "COLUMNS": str(max(terminal_width() - COMMAND_INDENT - 4, 16)),
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUNBUFFERED": "1",
+        }
+    )
     return environment
 
 
 def _run_with_file_tailer(
-        command_line: list[str],
+    command_line: list[str],
 ) -> None:
     """Fallback runner for platforms without Windows ConPTY."""
     activity = _command_activity(command_line)
-    with tempfile.TemporaryDirectory(
-            prefix="aibrain-nuitka-"
-    ) as temporary_directory:
-        output_path = (
-                Path(temporary_directory)
-                / "nuitka-output.txt"
-        )
+    with tempfile.TemporaryDirectory(prefix="aibrain-nuitka-") as temporary_directory:
+        output_path = Path(temporary_directory) / "nuitka-output.txt"
 
         with output_path.open(
-                "w",
-                encoding="utf-8",
-                errors="replace",
-                newline="",
+            "w",
+            encoding="utf-8",
+            errors="replace",
+            newline="",
         ) as output_file:
             process = subprocess.Popen(
                 command_line,
@@ -1052,11 +1116,11 @@ def _run_with_file_tailer(
         # stream has already been logged; retain only a bounded exception tail.
         with output_path.open("rb") as captured_file:
             captured_file.seek(max(0, output_path.stat().st_size - 65536))
-            captured_output = captured_file.read().decode("utf-8", errors="replace").rstrip()
+            captured_output = (
+                captured_file.read().decode("utf-8", errors="replace").rstrip()
+            )
 
-    log_completed_command(
-        command_line, "", return_code=return_code
-    )
+    log_completed_command(command_line, "", return_code=return_code)
     if return_code:
         raise subprocess.CalledProcessError(
             return_code,
@@ -1078,30 +1142,22 @@ def run(command_line: list[str]) -> None:
 
 def runtime_dlls() -> list[Path]:
     system32 = (
-            Path(
-                os.environ.get(
-                    "SystemRoot",
-                    r"C:\Windows",
-                )
+        Path(
+            os.environ.get(
+                "SYSTEMROOT",
+                r"C:\Windows",
             )
-            / "System32"
+        )
+        / "System32"
     )
 
-    resolved = [
-        system32 / name
-        for name in RUNTIME_DLLS
-    ]
+    resolved = [system32 / name for name in RUNTIME_DLLS]
 
-    missing = [
-        path.name
-        for path in resolved
-        if not path.is_file()
-    ]
+    missing = [path.name for path in resolved if not path.is_file()]
 
     if missing:
         raise RuntimeError(
-            "Required Visual C++ runtime DLLs are unavailable: "
-            + ", ".join(missing)
+            "Required Visual C++ runtime DLLs are unavailable: " + ", ".join(missing)
         )
 
     return resolved
@@ -1147,10 +1203,10 @@ def stage_numpy_runtime(build_root: Path) -> tuple[Path, Path]:
 
 
 def nuitka_command(
-        target: ApplicationTarget,
-        build_root: Path,
-        runtimes: list[Path],
-        numpy_runtime: tuple[Path, Path] | None = None,
+    target: ApplicationTarget,
+    build_root: Path,
+    runtimes: list[Path],
+    numpy_runtime: tuple[Path, Path] | None = None,
 ) -> list[str]:
     """Build a reproducible standalone Nuitka command."""
     command_line = [
@@ -1166,10 +1222,7 @@ def nuitka_command(
         f"--windows-icon-from-ico={target.icon}",
         f"--output-filename={target.executable}",
         f"--output-dir={build_root}",
-        (
-            f"--include-data-files={NATIVE_LIBRARY}="
-            f"dll/{NATIVE_LIBRARY.name}"
-        ),
+        (f"--include-data-files={NATIVE_LIBRARY}=dll/{NATIVE_LIBRARY.name}"),
         str(target.entry_point),
     ]
 
@@ -1197,64 +1250,41 @@ def nuitka_command(
 
 
 def _produced_distribution(
-        build_root: Path,
+    build_root: Path,
 ) -> Path:
-    candidates = list(
-        build_root.glob("*.dist")
-    )
+    candidates = list(build_root.glob("*.dist"))
 
-    if (
-            len(candidates) != 1
-            or not candidates[0].is_dir()
-    ):
+    if len(candidates) != 1 or not candidates[0].is_dir():
         raise RuntimeError(
-            "Nuitka did not produce exactly one "
-            "standalone distribution directory"
+            "Nuitka did not produce exactly one standalone distribution directory"
         )
 
     return candidates[0]
 
 
 def _verify_application(
-        application: Path,
-        target: ApplicationTarget,
+    application: Path,
+    target: ApplicationTarget,
 ) -> Path:
-    executable = (
-            application
-            / target.executable
-    )
+    executable = application / target.executable
 
-    if (
-            not executable.is_file()
-            or executable.stat().st_size < 100_000
-    ):
+    if not executable.is_file() or executable.stat().st_size < 100_000:
         raise RuntimeError(
             "Standalone output is missing "
             f"{target.executable} or it is "
             "unexpectedly small"
         )
 
-    if not (
-            application
-            / "dll"
-            / NATIVE_LIBRARY.name
-    ).is_file():
-        raise RuntimeError(
-            f"{target.executable} is missing "
-            "the native connectome DLL"
-        )
+    if not (application / "dll" / NATIVE_LIBRARY.name).is_file():
+        raise RuntimeError(f"{target.executable} is missing the native connectome DLL")
 
     for runtime_name in (
-            "msvcp140.dll",
-            *RUNTIME_DLLS,
+        "msvcp140.dll",
+        *RUNTIME_DLLS,
     ):
-        if not (
-                application
-                / runtime_name
-        ).is_file():
+        if not (application / runtime_name).is_file():
             raise RuntimeError(
-                f"{target.executable} is missing "
-                f"required runtime {runtime_name}"
+                f"{target.executable} is missing required runtime {runtime_name}"
             )
 
     return executable
@@ -1294,8 +1324,8 @@ def _merge_application_tree(source: Path, destination: Path) -> None:
 
 
 def merge_application_distributions(
-        release: Path,
-        targets: tuple[ApplicationTarget, ...],
+    release: Path,
+    targets: tuple[ApplicationTarget, ...],
 ) -> Path:
     """Create one verified folder containing every independently built app."""
     merged = release / MERGED_APPLICATION_DIRECTORY
@@ -1303,8 +1333,7 @@ def merge_application_distributions(
 
     if merged.exists() or staging.exists():
         raise RuntimeError(
-            "Refusing to overwrite an existing merged distribution: "
-            f"{merged}"
+            f"Refusing to overwrite an existing merged distribution: {merged}"
         )
 
     info(f"Creating merged application folder: {merged}")
@@ -1315,8 +1344,7 @@ def merge_application_distributions(
             source = release / target.directory
             if not source.is_dir():
                 raise RuntimeError(
-                    "Cannot merge missing standalone application folder: "
-                    f"{source}"
+                    f"Cannot merge missing standalone application folder: {source}"
                 )
             info(f"Merging {target.directory} into {MERGED_APPLICATION_DIRECTORY}")
             _merge_application_tree(source, staging)
@@ -1332,59 +1360,42 @@ def merge_application_distributions(
         raise
 
     main_target = next(
-        (
-            target
-            for target in targets
-            if target.executable == "ai_brain.exe"
-        ),
+        (target for target in targets if target.executable == "ai_brain.exe"),
         None,
     )
     if main_target is not None:
         info("Setting the merged application's Windows GPU preference")
-        set_windows_executable_gpu_preference(
-            merged / main_target.executable
-        )
+        set_windows_executable_gpu_preference(merged / main_target.executable)
 
     info(f"Merged application folder complete: {merged}")
     return merged
 
 
 def _is_full_application_build(
-        targets: tuple[ApplicationTarget, ...],
+    targets: tuple[ApplicationTarget, ...],
 ) -> bool:
-    return (
-        len(targets) == len(APPLICATIONS)
-        and {
-            target.executable
-            for target in targets
-        } == {
-            target.executable
-            for target in APPLICATIONS
-        }
-    )
+    return len(targets) == len(APPLICATIONS) and {
+        target.executable for target in targets
+    } == {target.executable for target in APPLICATIONS}
 
 
 def _selected_application_targets(
-        selection: str | None,
+    selection: str | None,
 ) -> tuple[ApplicationTarget, ...]:
     """Resolve a focused target while retaining the former CLI alias."""
     if selection is None:
         return APPLICATIONS
 
     directory = "main" if selection == "ai_brain" else selection
-    return tuple(
-        target
-        for target in APPLICATIONS
-        if target.directory == directory
-    )
+    return tuple(target for target in APPLICATIONS if target.directory == directory)
 
 
 def build(
-        timestamp: str | None = None,
-        targets: tuple[
-            ApplicationTarget,
-            ...,
-        ] = APPLICATIONS,
+    timestamp: str | None = None,
+    targets: tuple[
+        ApplicationTarget,
+        ...,
+    ] = APPLICATIONS,
 ) -> Path:
     if not VENV_PYTHON.is_file():
         raise RuntimeError(
@@ -1400,19 +1411,15 @@ def build(
 
     for target in targets:
         if not target.icon.is_file():
-            raise RuntimeError(
-                "Required application icon is missing: "
-                f"{target.icon}"
-            )
+            raise RuntimeError(f"Required application icon is missing: {target.icon}")
 
-    release_timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+    release_timestamp = timestamp or datetime.now().astimezone().strftime(
+        "%Y%m%d_%H%M%S"
+    )
     release = DIST_ROOT / f"AIBrain_{release_timestamp}"
 
     if release.exists():
-        raise RuntimeError(
-            "Refusing to overwrite existing distribution: "
-            f"{release}"
-        )
+        raise RuntimeError(f"Refusing to overwrite existing distribution: {release}")
 
     release.mkdir(parents=True)
 
@@ -1422,19 +1429,15 @@ def build(
 
     try:
         for index, target in enumerate(
-                targets,
-                start=2,
+            targets,
+            start=2,
         ):
             section(
                 f"Compile {target.executable}",
                 index,
             )
 
-            build_root = (
-                    release
-                    / "_nuitka"
-                    / target.directory
-            )
+            build_root = release / "_nuitka" / target.directory
             target_started = time.monotonic()
             info(f"Target {index - 1}/{len(targets)}: {target.executable}")
 
@@ -1449,17 +1452,10 @@ def build(
                 )
             )
 
-            application = (
-                    release
-                    / target.directory
-            )
+            application = release / target.directory
 
             shutil.move(
-                str(
-                    _produced_distribution(
-                        build_root
-                    )
-                ),
+                str(_produced_distribution(build_root)),
                 application,
             )
 
@@ -1471,10 +1467,10 @@ def build(
 
             if target.executable == "ai_brain.exe":
                 info("Setting the application's Windows GPU preference")
-                set_windows_executable_gpu_preference(
-                    executable
-                )
-            info(f"Completed {target.executable} in {time.monotonic() - target_started:.1f}s")
+                set_windows_executable_gpu_preference(executable)
+            info(
+                f"Completed {target.executable} in {time.monotonic() - target_started:.1f}s"
+            )
 
         if _is_full_application_build(targets):
             section(
@@ -1499,33 +1495,25 @@ def build(
 def main() -> int:
     runtime_log, _ = configure_cli_logging("build_dist")
     if not require_managed_runtime(
-            ROOT,
-            "build_dist",
+        ROOT,
+        "build_dist",
     ):
         return 1
 
     parser = argparse.ArgumentParser(
-        description=(
-            "Build timestamped standalone "
-            "AIBrain desktop applications."
-        )
+        description=("Build timestamped standalone AIBrain desktop applications.")
     )
 
     parser.add_argument(
         "--timestamp",
         help=(
-            "Override the YYYYMMDD_HHMMSS "
-            "distribution suffix for "
-            "reproducible builds"
+            "Override the YYYYMMDD_HHMMSS distribution suffix for reproducible builds"
         ),
     )
 
     parser.add_argument(
         "--only",
-        choices=[
-            target.directory
-            for target in APPLICATIONS
-        ] + ["ai_brain"],
+        choices=[target.directory for target in APPLICATIONS] + ["ai_brain"],
         help=(
             "Build one application target "
             "for focused package verification "
@@ -1542,12 +1530,12 @@ def main() -> int:
     )
     section("Build session", 1)
     info(f"Log file: {runtime_log}")
-    info("Native Nuitka progress bars, build stages, warnings, and results appear below")
+    info(
+        "Native Nuitka progress bars, build stages, warnings, and results appear below"
+    )
 
     try:
-        selected = _selected_application_targets(
-            arguments.only
-        )
+        selected = _selected_application_targets(arguments.only)
 
         release = build(
             arguments.timestamp,
@@ -1555,9 +1543,9 @@ def main() -> int:
         )
 
     except (
-            OSError,
-            RuntimeError,
-            subprocess.CalledProcessError,
+        OSError,
+        RuntimeError,
+        subprocess.CalledProcessError,
     ) as exc:
         error(str(exc))
         return 1
@@ -1600,7 +1588,7 @@ if __name__ == "__main__":
 
     except KeyboardInterrupt:
         report_keyboard_interrupt("the distribution build")
-        raise SystemExit(130)
-    except Exception as exc:
+        raise SystemExit(130) from None
+    except REPORTABLE_EXCEPTIONS as exc:
         report_exception("AIBrain distribution build failed", exc)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

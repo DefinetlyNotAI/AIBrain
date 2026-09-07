@@ -34,7 +34,9 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertFalse(panel.open_analysis.isEnabled())
         panel.deleteLater()
 
-    def test_mode_switch_clears_messages_and_changes_the_available_actions(self) -> None:
+    def test_mode_switch_clears_messages_and_changes_the_available_actions(
+        self,
+    ) -> None:
         panel = ChatPanel(GenerationConfig())
         panel.set_model_available(True)
         panel.add_message("user", "A prior conversation")
@@ -56,7 +58,9 @@ class ChatAnalysisActionTests(unittest.TestCase):
         self.assertTrue(panel.send.isEnabled())
         self.assertEqual(panel.send.text(), "🎲")
         self.assertIn("random World prompt", panel.send.accessibleName())
-        with patch("src.app.chat_panel.random_world_opening", return_value=WORLD_OPENINGS[3]):
+        with patch(
+            "src.app.chat_panel.random_world_opening", return_value=WORLD_OPENINGS[3]
+        ):
             panel.send.click()
 
         self.assertEqual(requested, [WORLD_OPENINGS[3]])

@@ -123,7 +123,14 @@ class NNAnalysisExportTests(unittest.TestCase):
                 self.analyzer,
                 [],
                 records=records,
-                cache_status={"paged_records": 1, "resident_records": 1},
+                cache_status={
+                    "paged_records": 1,
+                    "resident_records": 1,
+                    "cache_bytes": 128,
+                    "cache_limit_bytes": 1024,
+                    "cache_enabled": True,
+                    "oldest_pages_discarded": False,
+                },
             )
             payload = json.loads(path.read_text(encoding="utf-8"))
 
@@ -148,9 +155,12 @@ class NNAnalysisExportTests(unittest.TestCase):
         locked = PermissionError(13, "The destination is in use")
         locked.winerror = 5
 
-        with patch("src.connectome.analysis.os.replace", side_effect=[locked, None]) as replace, patch(
-            "src.connectome.analysis.time.sleep"
-        ) as sleep:
+        with (
+            patch(
+                "src.connectome.analysis.os.replace", side_effect=[locked, None]
+            ) as replace,
+            patch("src.connectome.analysis.time.sleep") as sleep,
+        ):
             saved = self.analyzer.save_model()
 
         self.assertTrue(saved)
@@ -158,9 +168,12 @@ class NNAnalysisExportTests(unittest.TestCase):
         sleep.assert_called_once_with(0.025)
 
     def test_model_save_stops_retrying_after_a_non_locking_io_error(self) -> None:
-        with patch(
-            "src.connectome.analysis.os.replace", side_effect=OSError("disk full")
-        ) as replace, patch("src.connectome.analysis.time.sleep") as sleep:
+        with (
+            patch(
+                "src.connectome.analysis.os.replace", side_effect=OSError("disk full")
+            ) as replace,
+            patch("src.connectome.analysis.time.sleep") as sleep,
+        ):
             saved = self.analyzer.save_model()
 
         self.assertFalse(saved)
@@ -263,8 +276,9 @@ class NNAnalysisExportTests(unittest.TestCase):
     def test_default_memory_path_is_user_writable_not_the_application_directory(
         self,
     ) -> None:
-        with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"LOCALAPPDATA": directory}
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(os.environ, {"LOCALAPPDATA": directory}),
         ):
             path = ConnectomeAnalyzer.default_model_path()
 

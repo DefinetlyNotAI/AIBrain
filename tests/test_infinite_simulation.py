@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,20 +18,23 @@ from src.models.instrumented_backend import (
     LogitMetrics,
 )
 from src.models.llama_backend import GenerationConfig
+from src.models.message_types import ChatMessage, ConversationTurn
 
 
 class FakeBackend:
     def __init__(self, chunks: list[str]) -> None:
         self.chunks = chunks
         self.loaded: list[Path] = []
-        self.calls: list[list[dict[str, str]]] = []
+        self.calls: list[list[ChatMessage]] = []
         self.unloaded = False
 
     def load(self, path: Path, _config: GenerationConfig) -> None:
         self.loaded.append(path)
 
-    def stream_chat(self, messages: list[dict[str, str]], _config: GenerationConfig):  # type: ignore[no-untyped-def]
-        self.calls.append([dict(message) for message in messages])
+    def stream_chat(
+        self, messages: Sequence[ChatMessage], _config: GenerationConfig
+    ) -> Iterator[GenerationChunk]:
+        self.calls.append([message.copy() for message in messages])
         for index, text in enumerate(self.chunks, 1):
             yield GenerationChunk(
                 text,
@@ -47,8 +51,11 @@ class FakeBackend:
 
 class InfiniteSimulationContextTests(unittest.TestCase):
     def test_context_keeps_system_message_and_recent_turns(self) -> None:
-        messages = [{"role": "system", "content": "system"}]
-        messages.extend({"role": "user", "content": str(index)} for index in range(_CONTEXT_TURNS + 8))
+        messages: list[ChatMessage] = [{"role": "system", "content": "system"}]
+        messages.extend(
+            {"role": "user", "content": str(index)}
+            for index in range(_CONTEXT_TURNS + 8)
+        )
 
         trimmed = InfiniteSimulationWorker._trim(messages)
 
@@ -57,7 +64,10 @@ class InfiniteSimulationContextTests(unittest.TestCase):
         self.assertEqual(trimmed[1:], messages[-_CONTEXT_TURNS:])
 
     def test_context_does_not_duplicate_system_message_when_short(self) -> None:
-        messages = [{"role": "system", "content": "system"}, {"role": "user", "content": "scene"}]
+        messages: list[ChatMessage] = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "scene"},
+        ]
 
         self.assertEqual(InfiniteSimulationWorker._trim(messages), messages)
 
@@ -65,8 +75,8 @@ class InfiniteSimulationContextTests(unittest.TestCase):
         worker = InfiniteSimulationWorker()
         world = FakeBackend(["A door opens."])
         participant = FakeBackend(["I step through it."])
-        worker.world = world  # type: ignore[assignment]
-        worker.participant = participant  # type: ignore[assignment]
+        worker.world = world
+        worker.participant = participant
         frames = []
         finished = []
 
@@ -106,25 +116,31 @@ class InfiniteSimulationContextTests(unittest.TestCase):
         self.assertTrue(world.unloaded and participant.unloaded)
 
     def test_random_opening_uses_the_pregenerated_set(self) -> None:
-        with patch("src.models.infinite_simulation.choice", return_value=WORLD_OPENINGS[-1]) as chooser:
+        with patch(
+            "src.models.infinite_simulation.choice", return_value=WORLD_OPENINGS[-1]
+        ) as chooser:
             self.assertEqual(random_world_opening(), WORLD_OPENINGS[-1])
         chooser.assert_called_once_with(WORLD_OPENINGS)
         self.assertEqual(len(WORLD_OPENINGS), 10)
 
     def test_infinite_mode_overrides_low_randomness_settings(self) -> None:
-        effective = infinite_generation_config(GenerationConfig(temperature=.1, top_p=.2, max_tokens=2048))
+        effective = infinite_generation_config(
+            GenerationConfig(temperature=0.1, top_p=0.2, max_tokens=2048)
+        )
 
         self.assertGreaterEqual(effective.temperature, 1.25)
-        self.assertGreaterEqual(effective.top_p, .96)
+        self.assertGreaterEqual(effective.top_p, 0.96)
         self.assertEqual(effective.max_tokens, 2048)
 
     def test_continuation_restores_both_roles_and_the_last_turn_number(self) -> None:
-        transcript = [
+        transcript: list[ConversationTurn] = [
             {"role": "world", "content": "A bell rings.", "turn": 1},
             {"role": "participant", "content": "I follow the sound.", "turn": 2},
         ]
 
-        world, participant, turn, next_role = InfiniteSimulationWorker._histories("direction", transcript)
+        world, participant, turn, next_role = InfiniteSimulationWorker._histories(
+            "direction", transcript
+        )
 
         self.assertEqual(turn, 2)
         self.assertEqual(next_role, "world")
@@ -134,9 +150,13 @@ class InfiniteSimulationContextTests(unittest.TestCase):
         self.assertEqual(participant[-1]["content"], "I follow the sound.")
 
     def test_continuation_after_world_event_resumes_with_participant(self) -> None:
-        transcript = [{"role": "world", "content": "A bell rings.", "turn": 7}]
+        transcript: list[ConversationTurn] = [
+            {"role": "world", "content": "A bell rings.", "turn": 7}
+        ]
 
-        world, participant, turn, next_role = InfiniteSimulationWorker._histories("unused", transcript)
+        world, participant, turn, next_role = InfiniteSimulationWorker._histories(
+            "unused", transcript
+        )
 
         self.assertEqual(turn, 7)
         self.assertEqual(next_role, "participant")

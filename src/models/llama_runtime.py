@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 import sys
@@ -9,11 +10,20 @@ import sysconfig
 from pathlib import Path
 from threading import Lock
 from types import ModuleType
-from typing import Any
+from typing import Protocol
 
-_DLL_HANDLES: dict[Path, Any] = {}
+
+class _NativeLogCallback(Protocol):
+    """Callable signature retained by llama.cpp for native log delivery."""
+
+    def __call__(
+        self, level: int, text: bytes | None, _user_data: ctypes.c_void_p
+    ) -> None: ...
+
+
+_DLL_HANDLES: dict[Path, object] = {}
 _DLL_LOCK = Lock()
-_LOG_CALLBACK: Any = None
+_LOG_CALLBACK: _NativeLogCallback | None = None
 _LOG_LOCK = Lock()
 _LOG = logging.getLogger(__name__)
 _LAST_NATIVE_SEVERITY = logging.DEBUG
@@ -46,7 +56,7 @@ def _handle_native_log(level: int, text: bytes | None, _user_data: object) -> No
         if "ggml_cuda_init:" in message or message.startswith("Device "):
             severity = logging.INFO
         _LOG.log(severity, "llama.cpp: %s", message)
-    except Exception:
+    except (OSError, TypeError, UnicodeError, ValueError):
         # A ctypes callback must never propagate across the C boundary.
         return
 
@@ -84,7 +94,8 @@ def prepare_cuda_dll_search() -> list[Path]:
         existing = os.environ.get("PATH", "").split(os.pathsep)
         known = {os.path.normcase(os.path.normpath(path)) for path in existing if path}
         additions = [
-            str(directory) for directory in directories
+            str(directory)
+            for directory in directories
             if os.path.normcase(os.path.normpath(str(directory))) not in known
         ]
         if additions:
@@ -100,8 +111,15 @@ def load_llama_cpp() -> ModuleType:
     global _LOG_CALLBACK
     with _LOG_LOCK:
         if _LOG_CALLBACK is None:
-            _LOG_CALLBACK = llama_cpp.llama_log_callback(_handle_native_log)
+            callback_factory = getattr(llama_cpp, "llama_log_callback", None)
+            _LOG_CALLBACK = (
+                callback_factory(_handle_native_log)
+                if callback_factory is not None
+                else _handle_native_log
+            )
         # Install before any probe can initialize ggml/CUDA. Keeping the callback
         # alive at module scope also protects later native calls from GC.
-        llama_cpp.llama_log_set(_LOG_CALLBACK, None)
+        log_set = getattr(llama_cpp, "llama_log_set", None)
+        if callable(log_set):
+            log_set(_LOG_CALLBACK, None)
     return llama_cpp

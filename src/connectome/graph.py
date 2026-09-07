@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..utils.array_api import array_api as np
+import numpy as np
+from numpy.typing import NDArray
 
 
 @dataclass(slots=True)
 class ConnectomeGraph:
-    positions: np.ndarray
-    regions: np.ndarray
-    edges: np.ndarray
+    positions: NDArray[np.float32]
+    regions: NDArray[np.int16]
+    edges: NDArray[np.int32]
     region_names: tuple[str, ...]

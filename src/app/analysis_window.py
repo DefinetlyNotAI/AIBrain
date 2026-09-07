@@ -8,9 +8,11 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
 import numpy as np
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -45,9 +47,77 @@ _TENSOR_NAMES = (
 _REQUIRED_NAMES = (*_TENSOR_NAMES, "frames_seen", "feature_schema")
 
 
+class TensorSummary(TypedDict):
+    shape: list[int]
+    dtype: str
+    values: int
+    bytes: int
+    finite_values: int
+    poisoned_values: int
+    minimum: float | None
+    maximum: float | None
+    mean: float | None
+    standard_deviation: float | None
+
+
+class HealthFactor(TypedDict):
+    score: int
+    detail: str
+
+
+class HealthSummary(TypedDict):
+    score_percent: int
+    factors: dict[str, HealthFactor]
+
+
+class FileSummary(TypedDict):
+    size_bytes: int
+    modified_at_utc: str
+    age: str
+
+
+class MaturitySummary(TypedDict):
+    state: str
+    next_state: str | None
+    progress_percent: int
+    progress_detail: str
+    metrics_persisted: bool
+    consistency_sustained: bool
+    weights_frozen: bool
+    readiness: str
+    note: str
+
+
+class LearningSummary(TypedDict):
+    lifetime_frames_seen: int
+    maturity: MaturitySummary
+    quality_note: str
+
+
+class ArchitectureSummary(TypedDict):
+    type: str
+    feature_schema: str
+    input_features: int
+    latent_features: int
+    shape: str
+    learned_parameters: int
+    numerical_backend: str
+
+
+class AnalysisMetadata(TypedDict):
+    status: str
+    health: HealthSummary
+    health_checks: dict[str, str]
+    path: str
+    file: FileSummary
+    learning: LearningSummary
+    architecture: ArchitectureSummary
+    tensors: dict[str, TensorSummary]
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisInspectionResult:
-    metadata: dict[str, object]
+    metadata: AnalysisMetadata
     npz_contents: str
 
 
@@ -63,7 +133,7 @@ def _age_text(seconds: float) -> str:
     return "just now"
 
 
-def _tensor_summary(value: np.ndarray) -> dict[str, object]:
+def _tensor_summary(value: np.ndarray) -> TensorSummary:
     finite = value[np.isfinite(value)]
     return {
         "shape": list(value.shape),
@@ -79,7 +149,7 @@ def _tensor_summary(value: np.ndarray) -> dict[str, object]:
     }
 
 
-def inspect_npz_model(path: Path) -> dict[str, object]:
+def inspect_npz_model(path: Path) -> AnalysisMetadata:
     """Validate the persisted model and expose its health, age, and learned data."""
     path = Path(path)
     stat = path.stat()
@@ -179,7 +249,7 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
     next_state = {"Baby": "Teen", "Teen": "Adult", "Adult": "Elder", "Elder": None}[
         state
     ]
-    maturity = {
+    maturity: MaturitySummary = {
         "state": state,
         "next_state": next_state,
         "progress_percent": (
@@ -230,7 +300,9 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
             (
                 15
                 if history_present and history_finite
-                else 5 if not history_present else 0
+                else 5
+                if not history_present
+                else 0
             ),
             (
                 "Rolling learning histories are finite."
@@ -256,7 +328,9 @@ def inspect_npz_model(path: Path) -> dict[str, object]:
     status = (
         "Healthy"
         if health_score >= 90
-        else "Degraded" if health_score >= 70 else "Critical"
+        else "Degraded"
+        if health_score >= 70
+        else "Critical"
     )
     parameter_count = sum(
         int(tensors[name].size)
@@ -472,14 +546,18 @@ class AnalysisWindow(QMainWindow):
         overview_layout.addStretch(1)
         self.raw = QPlainTextEdit()
         self.raw.setReadOnly(True)
-        self.raw.setPlaceholderText("Select an exported Analysis JSON file to inspect it.")
+        self.raw.setPlaceholderText(
+            "Select an exported Analysis JSON file to inspect it."
+        )
         self.raw.setToolTip(
             "Complete contents of an explicitly selected JSON or JSON.GZ analysis export"
         )
         self.npz = QPlainTextEdit()
         self.npz.setReadOnly(True)
         self.npz.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.npz.setPlaceholderText("Persisted NPZ values appear after model inspection.")
+        self.npz.setPlaceholderText(
+            "Persisted NPZ values appear after model inspection."
+        )
         self.npz.setToolTip(
             "Read-only names, shapes, data types, and complete values stored in the Analysis+ NPZ"
         )
@@ -487,8 +565,12 @@ class AnalysisWindow(QMainWindow):
         self.tabs.addTab(self.npz, "NPZ contents")
         self.tabs.addTab(self.raw, "JSON export")
         self.tabs.setTabToolTip(0, "Model-health dashboard")
-        self.tabs.setTabToolTip(1, "Complete values persisted in the Analysis+ NPZ archive")
-        self.tabs.setTabToolTip(2, "Complete contents of a selected JSON analysis export")
+        self.tabs.setTabToolTip(
+            1, "Complete values persisted in the Analysis+ NPZ archive"
+        )
+        self.tabs.setTabToolTip(
+            2, "Complete contents of a selected JSON analysis export"
+        )
         layout.addWidget(self.tabs, 1)
         self.setCentralWidget(page)
         if auto_refresh:
@@ -510,7 +592,9 @@ class AnalysisWindow(QMainWindow):
             return
         LOG.info("Starting Analysis+ model inspection for %s", path)
         if self._selected_export is None:
-            self.raw.setPlainText("Reading persisted Analysis+ model in the background…")
+            self.raw.setPlainText(
+                "Reading persisted Analysis+ model in the background…"
+            )
         self.npz.setPlainText("Reading persisted NPZ contents in the background…")
         thread = QThread(self)
         worker = AnalysisInspectionWorker(path)
@@ -582,7 +666,7 @@ class AnalysisWindow(QMainWindow):
         LOG.info("Analysis+ inspection cycle finished (healthy=%s)", self._last_healthy)
         self.inspection_finished.emit(self._last_healthy)
 
-    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def closeEvent(self, event: QCloseEvent) -> None:
         if self._inspection_thread is not None:
             LOG.info(
                 "Deferring Analysis inspector close until background inspection finishes"
@@ -610,7 +694,7 @@ class AnalysisWindow(QMainWindow):
             else:
                 payload = json.loads(selected.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
-                raise ValueError("Analysis export root must be a JSON object")
+                raise TypeError("Analysis export root must be a JSON object")
             conversation = payload.get("conversation", [])
             summary = {
                 "path": str(selected),
@@ -640,7 +724,9 @@ class AnalysisWindow(QMainWindow):
             )
             self._selected_export = selected
             self.raw.setPlainText(rendered)
-            self.raw.verticalScrollBar().setValue(self.raw.verticalScrollBar().minimum())
+            self.raw.verticalScrollBar().setValue(
+                self.raw.verticalScrollBar().minimum()
+            )
             self.tabs.setCurrentWidget(self.raw)
             self.statusBar().showMessage(f"Loaded analysis export: {selected.name}")
         except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -690,7 +776,7 @@ class AnalysisWindow(QMainWindow):
             f"Status: No NPZ contents are available yet.\n\nExpected location:\n{path}"
         )
 
-    def _show_metadata(self, metadata: dict[str, object]) -> None:
+    def _show_metadata(self, metadata: AnalysisMetadata) -> None:
         learning = metadata.get("learning", {})
         architecture = metadata.get("architecture", {})
         file_data = metadata.get("file", {})

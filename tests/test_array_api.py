@@ -3,7 +3,12 @@ from __future__ import annotations
 import builtins
 import importlib
 import unittest
+from collections.abc import Mapping, Sequence
+from types import ModuleType
 from unittest.mock import patch
+
+import numpy as np
+from numpy.typing import NDArray
 
 from src.connectome.analysis import _normal
 from src.utils.array_api import BACKEND_NAME, array_api, to_numpy
@@ -21,13 +26,22 @@ class ArrayApiTests(unittest.TestCase):
         module = importlib.import_module("src.utils.array_api")
         original_import = builtins.__import__
 
-        def import_without_cupy(name: str, *args: object, **kwargs: object) -> object:
+        def import_without_cupy(
+            name: str,
+            global_namespace: Mapping[str, object] | None = None,
+            local_namespace: Mapping[str, object] | None = None,
+            fromlist: Sequence[str] = (),
+            level: int = 0,
+        ) -> ModuleType:
             if name == "cupy":
                 raise ModuleNotFoundError("No module named 'cupy'")
-            return original_import(name, *args, **kwargs)
+            return original_import(
+                name, global_namespace, local_namespace, fromlist, level
+            )
 
-        with self.assertNoLogs(module.__name__, level="DEBUG"), patch(
-            "builtins.__import__", side_effect=import_without_cupy
+        with (
+            self.assertNoLogs(module.__name__, level="DEBUG"),
+            patch("builtins.__import__", side_effect=import_without_cupy),
         ):
             backend, backend_name, fallback_reason = module._select_backend()
 
@@ -40,9 +54,13 @@ class ArrayApiTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.requested_size: tuple[int, ...] | None = None
 
-            def standard_normal(self, size: tuple[int, ...]) -> object:
+            def standard_normal(
+                self, size: int | tuple[int, ...]
+            ) -> NDArray[np.float32]:
+                if isinstance(size, int):
+                    size = (size,)
                 self.requested_size = size
-                return array_api.ones(size, dtype=array_api.float32)
+                return np.ones(size, dtype=np.float32)
 
             def normal(self, *_: object) -> object:
                 raise AssertionError("NumPy-only normal() must not be called")

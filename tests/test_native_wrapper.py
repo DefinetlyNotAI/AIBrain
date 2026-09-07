@@ -12,12 +12,12 @@ class NativeConnectomeTests(unittest.TestCase):
         self.assertEqual(_DLL_PATH.name, "aibrain.connectome.dll")
 
     def test_region_activity_matches_expected_sums(self) -> None:
-        values = np.array([.4, .7, .2, .9], dtype=np.float32)
+        values = np.array([0.4, 0.7, 0.2, 0.9], dtype=np.float32)
         regions = np.array([0, 1, 1, 2], dtype=np.int16)
 
-        sums, active = native.regions(values, regions, 3, threshold=.3)
+        sums, active = native.regions(values, regions, 3, threshold=0.3)
 
-        np.testing.assert_allclose(sums, np.array([.4, .9, .9], dtype=np.float32))
+        np.testing.assert_allclose(sums, np.array([0.4, 0.9, 0.9], dtype=np.float32))
         self.assertEqual(active, 3)
 
 

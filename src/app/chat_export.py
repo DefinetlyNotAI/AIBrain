@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+
+from ..models.message_types import TranscriptTurn
 
 
 def write_chat_export(
     path: Path,
-    conversation: list[dict[str, object]],
+    conversation: Sequence[TranscriptTurn],
     *,
     mode: str,
     model: str,

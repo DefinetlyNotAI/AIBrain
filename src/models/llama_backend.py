@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
 from .instrumented_backend import GenerationChunk, LogitMetrics
 from .llama_runtime import load_llama_cpp
+from .message_types import ChatMessage
 
 if TYPE_CHECKING:
     from llama_cpp import Llama
@@ -27,6 +28,20 @@ class GenerationConfig:
     context_length: int = 4096
     gpu_layers: int = -1
     speed: float = 1.0
+
+
+class GenerationBackend(Protocol):
+    """Backend contract used by chat and infinite-simulation workers."""
+
+    def load(self, path: Path, config: GenerationConfig, /) -> None: ...
+
+    def stream_chat(
+        self, messages: Sequence[ChatMessage], config: GenerationConfig, /
+    ) -> Iterator[GenerationChunk]: ...
+
+    def tokenize(self, text: str, /) -> list[int]: ...
+
+    def unload(self) -> None: ...
 
 
 _SENTENCE_END_RE = re.compile(r"[.!?][\"')\]]*\s*$")
@@ -53,8 +68,7 @@ class _LogitTelemetryProbe:
             return scores
         probabilities = weights / total
         entropy_nats = float(
-            np.log(total)
-            - np.sum(probabilities * (values - maximum), dtype=np.float64)
+            np.log(total) - np.sum(probabilities * (values - maximum), dtype=np.float64)
         )
         maximum_entropy = float(np.log(vocabulary_size))
         entropy_nats = min(maximum_entropy, max(0.0, entropy_nats))
@@ -73,9 +87,7 @@ class _LogitTelemetryProbe:
                 1.0, max(0.0, entropy_nats / max(maximum_entropy, 1e-6))
             ),
             raw_top_probability=top_probability,
-            raw_top_five_mass=min(
-                1.0, max(0.0, float(top.sum(dtype=np.float64)))
-            ),
+            raw_top_five_mass=min(1.0, max(0.0, float(top.sum(dtype=np.float64)))),
             raw_confidence_margin=min(
                 1.0, max(0.0, top_probability - second_probability)
             ),
@@ -93,7 +105,9 @@ def sentence_grace_config(config: GenerationConfig) -> GenerationConfig:
     return replace(config, max_tokens=min(config.max_tokens + 64, 8192))
 
 
-def reached_sentence_end(text: str, token_count: int, requested_max_tokens: int) -> bool:
+def reached_sentence_end(
+    text: str, token_count: int, requested_max_tokens: int
+) -> bool:
     return token_count >= requested_max_tokens and bool(_SENTENCE_END_RE.search(text))
 
 
@@ -148,25 +162,39 @@ class LlamaBackend:
         self.loaded_path = path
 
     def stream_chat(
-            self,
-            messages: list[ChatCompletionRequestMessage],
-            config: GenerationConfig,
+        self,
+        messages: Sequence[ChatMessage],
+        config: GenerationConfig,
     ) -> Iterator[GenerationChunk]:
         if self._llm is None:
             raise RuntimeError("No model is loaded")
 
         llm = self._llm
         telemetry = _LogitTelemetryProbe(lambda: llm.n_tokens)
+        request_messages: list[ChatCompletionRequestMessage] = []
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            if role == "system":
+                request_messages.append({"role": "system", "content": content})
+            elif role == "user":
+                request_messages.append({"role": "user", "content": content})
+            else:
+                request_messages.append({"role": "assistant", "content": content})
         response = self._llm.create_chat_completion(
-            messages=messages,
+            messages=request_messages,
             temperature=config.temperature,
             top_p=config.top_p,
             max_tokens=config.max_tokens,
             stream=True,
-            logits_processor=[telemetry],
+            logits_processor=load_llama_cpp().LogitsProcessorList([telemetry]),
         )
 
+        if isinstance(response, dict):
+            raise TypeError("llama.cpp returned a non-streaming chat response")
         for chunk in response:
+            if not isinstance(chunk, dict):
+                continue
             choices = chunk.get("choices")
 
             if not isinstance(choices, list) or not choices:

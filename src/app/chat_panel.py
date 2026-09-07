@@ -50,7 +50,9 @@ def markdown_to_html(markdown: str) -> str:
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<i>\1</i>", escaped)
-    escaped = re.sub(r"\[([^]]+)]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', escaped)
+    escaped = re.sub(
+        r"\[([^]]+)]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', escaped
+    )
     escaped = re.sub(r"(?m)^### (.+)$", r"<h3>\1</h3>", escaped)
     escaped = re.sub(r"(?m)^## (.+)$", r"<h2>\1</h2>", escaped)
     escaped = re.sub(r"(?m)^# (.+)$", r"<h1>\1</h1>", escaped)
@@ -69,13 +71,13 @@ class MarkdownLabel(QLabel):
         self._render_timer.timeout.connect(self._flush_markdown)
         self.setText(text)
 
-    def setText(self, text: str) -> None:  # type: ignore[override]
+    def setText(self, text: str) -> None:
         self._markdown = text
         if hasattr(self, "_render_timer"):
             self._render_timer.stop()
         self._flush_markdown()
 
-    def text(self) -> str:  # type: ignore[override]
+    def text(self) -> str:
         return self._markdown
 
     def append_markdown(self, text: str) -> None:
@@ -139,10 +141,13 @@ class ChatPanel(QWidget):
         runtime_layout.addWidget(subtitle)
         self.models = QComboBox()
         self.models.setAccessibleName("Validated local GGUF models")
-        self.models.currentIndexChanged.connect(lambda _: self.modelChanged.emit(self.models.currentData()))
+        self.models.currentIndexChanged.connect(
+            lambda _: self.modelChanged.emit(self.models.currentData())
+        )
         self.diagnostics = QPushButton("Repair and Diagnostics")
         self.diagnostics.setToolTip(
-            "Inspect invalid Ollama manifests, repair a selected model, or remove a stale manifest")
+            "Inspect invalid Ollama manifests, repair a selected model, or remove a stale manifest"
+        )
         self.diagnostics.clicked.connect(self.diagnosticsRequested)
         model_row = QHBoxLayout()
         model_row.addWidget(self.models, 1)
@@ -157,13 +162,15 @@ class ChatPanel(QWidget):
         self.messages_layout.addStretch(1)
         container = QWidget()
         container.setLayout(self.messages_layout)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setWidget(container)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.message_scroll = QScrollArea()
+        self.message_scroll.setWidgetResizable(True)
+        self.message_scroll.setWidget(container)
+        self.message_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._follow_output = True
-        self.scroll.verticalScrollBar().valueChanged.connect(self._refresh_follow_output)
-        layout.addWidget(self.scroll, 1)
+        self.message_scroll.verticalScrollBar().valueChanged.connect(
+            self._refresh_follow_output
+        )
+        layout.addWidget(self.message_scroll, 1)
         self.stats = QLabel("Ready · select an installed GGUF model")
         self.stats.setObjectName("muted")
         self.stats.setWordWrap(True)
@@ -185,7 +192,9 @@ class ChatPanel(QWidget):
         self.send.setObjectName("sendButton")
         self.send.setText("➤")
         self.send.setAccessibleName("Start generation")
-        self.send.setToolTip("Send the compose text; changes to Stop while generation is running")
+        self.send.setToolTip(
+            "Send the compose text; changes to Stop while generation is running"
+        )
         self.send.clicked.connect(self._start_or_stop)
         compose_layout.addWidget(self.send, 0, Qt.AlignmentFlag.AlignBottom)
         layout.addWidget(compose_row)
@@ -197,9 +206,13 @@ class ChatPanel(QWidget):
         self.mode_actions_toggle.setText("Hide Mode Actions")
         self.mode_actions_toggle.setCheckable(True)
         self.mode_actions_toggle.setChecked(True)
-        self.mode_actions_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.mode_actions_toggle.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
         self.mode_actions_toggle.setArrowType(Qt.ArrowType.DownArrow)
-        self.mode_actions_toggle.setToolTip("Show or hide mode and conversation actions")
+        self.mode_actions_toggle.setToolTip(
+            "Show or hide mode and conversation actions"
+        )
         self.mode_actions_toggle.toggled.connect(self._set_mode_actions_visible)
         action_layout.addWidget(self.mode_actions_toggle)
         mode_actions_body = QWidget()
@@ -207,7 +220,9 @@ class ChatPanel(QWidget):
         mode_actions_layout.setContentsMargins(0, 0, 0, 0)
         mode_row = QHBoxLayout()
         self.infinite_mode = QCheckBox("Infinite Mode")
-        self.infinite_mode.setToolTip("Switch modes and clear the current conversation and replay")
+        self.infinite_mode.setToolTip(
+            "Switch modes and clear the current conversation and replay"
+        )
         self.infinite_mode.toggled.connect(self._set_mode)
         mode_row.addWidget(self.infinite_mode)
         mode_row.addStretch(1)
@@ -217,10 +232,14 @@ class ChatPanel(QWidget):
         self.rewind = QPushButton("Rewind")
         self.rewind.setToolTip("Enter frame-by-frame connectome replay below the graph")
         self.infinite = QPushButton("Continue")
-        self.infinite.setToolTip("Continue the current Infinite Mode scenario after it has stopped")
+        self.infinite.setToolTip(
+            "Continue the current Infinite Mode scenario after it has stopped"
+        )
         self.clear = QPushButton("Clear")
         self.open_analysis = QPushButton("Analysis")
-        self.open_analysis.setToolTip("Export NN Analysis+ for recorded frames from the selected model")
+        self.open_analysis.setToolTip(
+            "Export NN Analysis+ for recorded frames from the selected model"
+        )
         self.open_analysis.setEnabled(False)
         self.export_chat = QPushButton("Export chat")
         self.export_chat.setToolTip(
@@ -259,9 +278,13 @@ class ChatPanel(QWidget):
         self.speed = self.advanced_dialog.speed
         self.speed_value = self.advanced_dialog.speed_value
         self.advanced_settings = QPushButton("Advanced settings")
-        self.advanced_settings.setToolTip("Open generation, context, GPU, replay, and Analysis+ settings")
+        self.advanced_settings.setToolTip(
+            "Open generation, context, GPU, replay, and Analysis+ settings"
+        )
         self.advanced_settings.clicked.connect(self._open_advanced_settings)
-        self.regenerate.setToolTip("Generate a new answer for the most recent normal-chat prompt")
+        self.regenerate.setToolTip(
+            "Generate a new answer for the most recent normal-chat prompt"
+        )
         self.clear.setToolTip("Clear the current conversation and recorded replay")
         self.models.setToolTip("Select an available local GGUF model")
         layout.addWidget(self.advanced_settings)
@@ -304,8 +327,12 @@ class ChatPanel(QWidget):
         if visible:
             scrollbar = self.mode_actions_content.verticalScrollBar()
             scrollbar.setValue(scrollbar.minimum())
-        self.mode_actions_toggle.setArrowType(Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow)
-        self.mode_actions_toggle.setText("Hide Mode Actions" if visible else "Show Mode Actions")
+        self.mode_actions_toggle.setArrowType(
+            Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow
+        )
+        self.mode_actions_toggle.setText(
+            "Hide Mode Actions" if visible else "Show Mode Actions"
+        )
 
     def _set_mode(self, infinite: bool) -> None:
         if self._infinite_mode == infinite:
@@ -316,7 +343,9 @@ class ChatPanel(QWidget):
         self.infinite_mode.blockSignals(False)
         self.input.setPlaceholderText(
             "Describe the first World event, or use Random…"
-            if infinite else "Message your local model…  (Ctrl+Enter to send)")
+            if infinite
+            else "Message your local model…  (Ctrl+Enter to send)"
+        )
         # Keep every action in the same physical slot across modes. Unavailable
         # actions are disabled instead of disappearing and shifting the UI.
         self.infinite.setEnabled(infinite)
@@ -374,7 +403,12 @@ class ChatPanel(QWidget):
         bubble.setWordWrap(True)
         bubble.setTextInteractionFlags(_SELECTABLE_TEXT_FLAGS)
         bubble.setObjectName(
-            "userBubble" if role == "user" else "worldBubble" if role == "world" else "assistantBubble")
+            "userBubble"
+            if role == "user"
+            else "worldBubble"
+            if role == "world"
+            else "assistantBubble"
+        )
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, bubble)
         self._schedule_scroll_to_bottom(follow_output)
         return bubble
@@ -385,7 +419,7 @@ class ChatPanel(QWidget):
         return maximum - value <= 2
 
     def _refresh_follow_output(self, value: int) -> None:
-        scrollbar = self.scroll.verticalScrollBar()
+        scrollbar = self.message_scroll.verticalScrollBar()
         self._follow_output = self._is_at_bottom(value, scrollbar.maximum())
 
     def append_message_text(self, bubble: QLabel, text: str) -> None:
@@ -405,7 +439,7 @@ class ChatPanel(QWidget):
 
     def _scroll_to_bottom_if_following(self) -> None:
         if self._follow_output:
-            scrollbar = self.scroll.verticalScrollBar()
+            scrollbar = self.message_scroll.verticalScrollBar()
             scrollbar.setValue(scrollbar.maximum())
 
     def clear_latest_playback(self) -> None:
@@ -452,7 +486,8 @@ class ChatPanel(QWidget):
     def set_analysis_mode(self, infinite: bool) -> None:
         self.open_analysis.setText("Analysis+" if infinite else "Analysis")
         self.open_analysis.setToolTip(
-            "Export compact neural findings for an Infinite simulation" if infinite
+            "Export compact neural findings for an Infinite simulation"
+            if infinite
             else "Export normal chat session data without neural-network findings"
         )
 
@@ -461,24 +496,45 @@ class ChatPanel(QWidget):
         self._refresh_actions()
 
     def set_rewind_mode(self, active: bool) -> None:
-        """The graph owns rewind navigation; chat remains read-only until exit."""
+        """Keep chat read-only while the graph owns rewind navigation."""
         self._rewind_active = active
         self.rewind.setText("Exit rewind" if active else "Rewind")
-        self.rewind.setToolTip("Return to normal chat actions" if active else "Enter frame-by-frame connectome replay")
+        self.rewind.setToolTip(
+            "Return to normal chat actions"
+            if active
+            else "Enter frame-by-frame connectome replay"
+        )
         if active:
-            for control in (self.send, self.regenerate, self.open_analysis, self.export_chat, self.clear, self.infinite,
-                            self.models, self.infinite_mode, self.advanced_settings):
+            for control in (
+                self.send,
+                self.regenerate,
+                self.open_analysis,
+                self.export_chat,
+                self.clear,
+                self.infinite,
+                self.models,
+                self.infinite_mode,
+                self.advanced_settings,
+            ):
                 control.setEnabled(False)
             self.rewind.setEnabled(not self._replay_active)
             return
         self._refresh_actions()
 
     def set_analysis_memory_exceeded(self, exceeded: bool) -> None:
-        label = "⚠ Analysis+" if exceeded and self._infinite_mode else "Analysis+" if self._infinite_mode else "Analysis"
+        label = (
+            "⚠ Analysis+"
+            if exceeded and self._infinite_mode
+            else "Analysis+"
+            if self._infinite_mode
+            else "Analysis"
+        )
         self.open_analysis.setText(label)
         self.open_analysis.setToolTip(
             "Analysis+ cache is full or disabled. Oldest records were discarded; export soon."
-            if exceeded else "Export compact neural findings for an Infinite simulation" if self._infinite_mode
+            if exceeded
+            else "Export compact neural findings for an Infinite simulation"
+            if self._infinite_mode
             else "Export normal chat session data without neural-network findings"
         )
 
@@ -498,28 +554,40 @@ class ChatPanel(QWidget):
         elif self._infinite_mode and not has_compose_text:
             self.send.setText("🎲")
             self.send.setAccessibleName("Start with a random World prompt")
-            self.send.setToolTip("Choose a random pre-made World event and start with the Participant response")
+            self.send.setToolTip(
+                "Choose a random pre-made World event and start with the Participant response"
+            )
         else:
             self.send.setText("➤")
             self.send.setAccessibleName("Start generation")
             self.send.setToolTip(
                 "Send this World event and start with the Participant response"
-                if self._infinite_mode else "Send the compose text; changes to Stop while generation is running"
+                if self._infinite_mode
+                else "Send the compose text; changes to Stop while generation is running"
             )
         can_start = self._infinite_mode or has_compose_text
-        self.send.setEnabled(self._running or (ready and can_start and not self._rewind_active))
+        self.send.setEnabled(
+            self._running or (ready and can_start and not self._rewind_active)
+        )
         self.regenerate.setEnabled(
-            ready and self._regenerate_available and not self._running and not self._infinite_mode)
+            ready
+            and self._regenerate_available
+            and not self._running
+            and not self._infinite_mode
+        )
         self.rewind.setEnabled(
-            (self._rewind_active or (ready and self._rewind_available and not self._running))
+            (
+                self._rewind_active
+                or (ready and self._rewind_available and not self._running)
+            )
             and not self._replay_active
         )
         self.infinite.setEnabled(ready and not self._running and self._infinite_mode)
         self.clear.setEnabled(not self._running)
         self.models.setEnabled(not self._running and self.models.count() > 1)
-        self.open_analysis.setEnabled(ready and not self._running and self._analysis_available)
-        self.export_chat.setEnabled(
-            not self._running and self._chat_export_available
+        self.open_analysis.setEnabled(
+            ready and not self._running and self._analysis_available
         )
+        self.export_chat.setEnabled(not self._running and self._chat_export_available)
         self.infinite_mode.setEnabled(not self._running and not self._rewind_active)
         self.advanced_settings.setEnabled(not self._running and not self._rewind_active)

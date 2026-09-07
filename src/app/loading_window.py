@@ -4,6 +4,7 @@ import logging
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtGui import (
+    QCloseEvent,
     QGuiApplication,
     QOffscreenSurface,
     QOpenGLContext,
@@ -40,7 +41,11 @@ class GpuProbe(QObject):
             gl_context = moderngl.create_context(require=330)
             renderer = str(gl_context.info.get("GL_RENDERER", "Unknown renderer"))
             vendor = str(gl_context.info.get("GL_VENDOR", "Unknown vendor"))
-            LOG.info("Startup loader detected OpenGL adapter: vendor=%s renderer=%s", vendor, renderer)
+            LOG.info(
+                "Startup loader detected OpenGL adapter: vendor=%s renderer=%s",
+                vendor,
+                renderer,
+            )
             self.completed.emit(vendor, renderer)
             gl_context.release()
         except Exception as exc:
@@ -56,12 +61,12 @@ class LoadingWindow(QWidget):
     cancelled = Signal()
 
     def __init__(
-            self,
-            *,
-            eyebrow_text: str = "AIBRAIN  /  STARTUP",
-            title_text: str = "Preparing your local workspace",
-            subtitle_text: str = "Checking installed GGUF models before opening the connectome.",
-            detail_text: str = "Starting local services",
+        self,
+        *,
+        eyebrow_text: str = "AIBRAIN  /  STARTUP",
+        title_text: str = "Preparing your local workspace",
+        subtitle_text: str = "Checking installed GGUF models before opening the connectome.",
+        detail_text: str = "Starting local services",
     ) -> None:
         super().__init__()
         self._completed = False
@@ -113,7 +118,9 @@ class LoadingWindow(QWidget):
         if screen is not None:
             available = screen.availableGeometry()
             self.move(available.center() - self.frameGeometry().center())
-        LOG.info("Showing compact startup loader (size=%sx%s)", self.width(), self.height())
+        LOG.info(
+            "Showing compact startup loader (size=%sx%s)", self.width(), self.height()
+        )
         self.show()
 
     def set_progress(self, current: int, total: int, detail: str) -> None:
@@ -129,7 +136,7 @@ class LoadingWindow(QWidget):
         LOG.info("Startup loader handoff completed")
         self.close()
 
-    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def closeEvent(self, event: QCloseEvent) -> None:
         if not self._completed:
             LOG.info("Startup loader was cancelled")
             self.cancelled.emit()

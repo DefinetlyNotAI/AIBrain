@@ -41,15 +41,19 @@ class ModelValidatorTests(unittest.TestCase):
             ]
             with (
                 patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache"),
-                patch("src.models.llama_backend.LlamaBackend") as backend_type,
+                patch("src.models.model_validator.LlamaBackend") as backend_type,
             ):
                 validated = ModelValidator.validate(
                     models, Event(), lambda *_: None, verify_backend=True
                 )
 
         self.assertTrue(all(not model.available for model in validated))
+        self.assertTrue(all(model.error is not None for model in validated))
         self.assertTrue(
-            all("vision-capable Ollama model" in model.error for model in validated)
+            all(
+                "vision-capable Ollama model" in (model.error or "")
+                for model in validated
+            )
         )
         backend_type.return_value.load.assert_not_called()
 
@@ -68,7 +72,7 @@ class ModelValidatorTests(unittest.TestCase):
             )
             with (
                 patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache"),
-                patch("src.models.llama_backend.LlamaBackend") as backend_type,
+                patch("src.models.model_validator.LlamaBackend") as backend_type,
             ):
                 validated = ModelValidator.validate(
                     [model], Event(), lambda *_: None, verify_backend=True
@@ -132,10 +136,15 @@ class ModelValidatorTests(unittest.TestCase):
 
             progress: list[str] = []
             validated = ModelValidator.validate(
-                [model], Event(), lambda _current, _total, message: progress.append(message), verify_backend=False
+                [model],
+                Event(),
+                lambda _current, _total, message: progress.append(message),
+                verify_backend=False,
             )
 
         self.assertFalse(validated[0].available)
+        self.assertIsNotNone(validated[0].error)
+        assert validated[0].error is not None
         self.assertIn("Invalid HASH", validated[0].error)
         self.assertIn("Hashing demo:latest (start)", progress)
         self.assertIn("Hashing demo:latest (complete)", progress)
@@ -180,7 +189,7 @@ class ModelValidatorTests(unittest.TestCase):
                     "src.models.model_validator.OllamaDiscovery._validate_gguf",
                     return_value=None,
                 ),
-                patch("src.models.llama_backend.LlamaBackend") as backend_type,
+                patch("src.models.model_validator.LlamaBackend") as backend_type,
             ):
                 backend_type.return_value.load.return_value = None
                 ModelValidator.validate(
@@ -199,12 +208,14 @@ class ModelValidatorTests(unittest.TestCase):
             blob.write_bytes(b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
             model = ModelInfo("demo", "latest", blob, size_bytes=blob.stat().st_size)
             with (
-                patch.object(model_validator, "CACHE_DIRECTORY", root / ".cache" / "validation"),
+                patch.object(
+                    model_validator, "CACHE_DIRECTORY", root / ".cache" / "validation"
+                ),
                 patch(
                     "src.models.model_validator.OllamaDiscovery._validate_gguf",
                     return_value=None,
                 ),
-                patch("src.models.llama_backend.LlamaBackend") as backend_type,
+                patch("src.models.model_validator.LlamaBackend") as backend_type,
             ):
                 backend_type.return_value.load.side_effect = RuntimeError(
                     "unsupported model architecture"
@@ -213,10 +224,14 @@ class ModelValidatorTests(unittest.TestCase):
                     [model], Event(), lambda *_: None, verify_backend=True
                 )
 
+        self.assertIsNotNone(validated[0].error)
+        assert validated[0].error is not None
         self.assertIn("llama.cpp compatibility check failed", validated[0].error)
         self.assertIn("Traceback", validated[0].error)
         self.assertIn("unsupported model architecture", validated[0].error)
 
-    def test_validation_cache_lives_in_the_repairable_validation_directory(self) -> None:
+    def test_validation_cache_lives_in_the_repairable_validation_directory(
+        self,
+    ) -> None:
         self.assertEqual(model_validator.CACHE_DIRECTORY.name, "validation")
         self.assertEqual(model_validator.CACHE_DIRECTORY.parent.name, ".cache")

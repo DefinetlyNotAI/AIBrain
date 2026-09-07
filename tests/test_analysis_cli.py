@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Literal
 from unittest.mock import patch
 
 import numpy as np
@@ -16,11 +17,47 @@ from PySide6.QtWidgets import QApplication, QFrame, QPushButton
 from src.app.analysis_window import (
     AnalysisInspectionResult,
     AnalysisInspectionWorker,
+    AnalysisMetadata,
     AnalysisWindow,
     inspect_npz_contents,
     inspect_npz_model,
 )
 from src.connectome.analysis import FEATURE_SCHEMA
+
+
+def _healthy_metadata() -> AnalysisMetadata:
+    return {
+        "status": "Healthy",
+        "health": {"score_percent": 100, "factors": {}},
+        "health_checks": {},
+        "path": "analysis.npz",
+        "file": {"size_bytes": 0, "modified_at_utc": "", "age": "just now"},
+        "learning": {
+            "lifetime_frames_seen": 17,
+            "maturity": {
+                "state": "Baby",
+                "next_state": "Teen",
+                "progress_percent": 1,
+                "progress_detail": "17 persisted frames",
+                "metrics_persisted": True,
+                "consistency_sustained": False,
+                "weights_frozen": False,
+                "readiness": "caution",
+                "note": "Early training state.",
+            },
+            "quality_note": "Early training state.",
+        },
+        "architecture": {
+            "type": "online autoencoder",
+            "feature_schema": FEATURE_SCHEMA,
+            "input_features": 1,
+            "latent_features": 1,
+            "shape": "1 -> 1 -> 1",
+            "learned_parameters": 4,
+            "numerical_backend": "NumPy / CPU",
+        },
+        "tensors": {},
+    }
 
 
 class AnalysisCliTests(unittest.TestCase):
@@ -71,7 +108,9 @@ class AnalysisCliTests(unittest.TestCase):
             missing_model = Path(directory) / "missing-analysis-model.npz"
             worker = AnalysisInspectionWorker(missing_model)
 
-            with self.assertLogs("src.app.analysis_window", level="WARNING") as captured:
+            with self.assertLogs(
+                "src.app.analysis_window", level="WARNING"
+            ) as captured:
                 worker.run()
 
         self.assertIn("Analysis model inspection failed", captured.output[0])
@@ -136,12 +175,28 @@ class AnalysisCliTests(unittest.TestCase):
             original_formatter = np.array2string
             replaced = False
 
-            def replace_while_formatting(value, **kwargs):  # type: ignore[no-untyped-def]
+            def replace_while_formatting(
+                value: np.ndarray,
+                *,
+                separator: str = " ",
+                threshold: int | None = None,
+                max_line_width: int | None = None,
+                precision: int | None = None,
+                floatmode: Literal["fixed", "unique", "maxprec", "maxprec_equal"]
+                | None = None,
+            ) -> str:
                 nonlocal replaced
                 if not replaced:
                     replacement.replace(path)
                     replaced = True
-                return original_formatter(value, **kwargs)
+                return original_formatter(
+                    value,
+                    separator=separator,
+                    threshold=threshold,
+                    max_line_width=max_line_width,
+                    precision=precision,
+                    floatmode=floatmode,
+                )
 
             with patch(
                 "src.app.analysis_window.np.array2string",
@@ -160,7 +215,7 @@ class AnalysisCliTests(unittest.TestCase):
         window = AnalysisWindow(auto_refresh=False)
         try:
             result = AnalysisInspectionResult(
-                metadata={"status": "Healthy"},
+                metadata=_healthy_metadata(),
                 npz_contents="[frames_seen]\nvalues (1):\n17",
             )
 
@@ -182,7 +237,7 @@ class AnalysisCliTests(unittest.TestCase):
                 "recorded_frame_summary": {"frames": 12},
                 "smart_analysis": {
                     "frames_processed": 12,
-                    "session_findings": {"novelty": .4},
+                    "session_findings": {"novelty": 0.4},
                 },
             }
             path.write_text(json.dumps(payload), encoding="utf-8")
@@ -211,7 +266,7 @@ class AnalysisCliTests(unittest.TestCase):
             window._selected_export = Path("selected-analysis.json")
             window.raw.setPlainText("imported JSON remains visible")
             result = AnalysisInspectionResult(
-                metadata={"status": "Healthy"},
+                metadata=_healthy_metadata(),
                 npz_contents="[frames_seen]\nvalues (1):\n17",
             )
 
@@ -236,8 +291,12 @@ class AnalysisCliTests(unittest.TestCase):
                     window.inspect_export()
 
                 self.assertIs(window.tabs.currentWidget(), window.raw)
-                self.assertIn("Could not read analysis export", window.raw.toPlainText())
-                self.assertIn("could not be loaded", window.statusBar().currentMessage())
+                self.assertIn(
+                    "Could not read analysis export", window.raw.toPlainText()
+                )
+                self.assertIn(
+                    "could not be loaded", window.statusBar().currentMessage()
+                )
             finally:
                 window.close()
                 self.app.processEvents()
@@ -294,7 +353,9 @@ class AnalysisCliTests(unittest.TestCase):
                 frames_seen=np.array(7),
             )
 
-            with self.assertRaisesRegex(ValueError, "may contain legacy simulated features"):
+            with self.assertRaisesRegex(
+                ValueError, "may contain legacy simulated features"
+            ):
                 inspect_npz_model(path)
 
 

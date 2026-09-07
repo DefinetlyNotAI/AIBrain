@@ -4,11 +4,37 @@ import json
 import logging
 import struct
 from pathlib import Path
-from typing import Any
+from typing import NotRequired, TypedDict
 
 from .model_info import ModelInfo
 
 LOG = logging.getLogger(__name__)
+
+
+class _OllamaDetails(TypedDict):
+    parameter_size: NotRequired[str]
+    quantization_level: NotRequired[str]
+
+
+class _OllamaConfig(TypedDict):
+    family: NotRequired[str]
+    model_family: NotRequired[str]
+    parameter_size: NotRequired[str]
+    quantization: NotRequired[str]
+    details: NotRequired[_OllamaDetails]
+
+
+class _OllamaLayer(TypedDict):
+    digest: NotRequired[str]
+    mediaType: NotRequired[str]
+    size: NotRequired[int]
+
+
+class _OllamaManifest(TypedDict):
+    name: NotRequired[str]
+    model: NotRequired[str]
+    config: NotRequired[_OllamaConfig]
+    layers: NotRequired[list[_OllamaLayer]]
 
 
 class OllamaDiscovery:
@@ -38,7 +64,7 @@ class OllamaDiscovery:
         return sorted(models, key=lambda item: (item.name, item.tag))
 
     def _parse_manifest(self, path: Path, manifest_root: Path) -> ModelInfo:
-        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        data: _OllamaManifest = json.loads(path.read_text(encoding="utf-8"))
         relative = path.relative_to(manifest_root).parts
         name_parts = list(relative[:-1])
         if name_parts and name_parts[0].startswith("registry."):

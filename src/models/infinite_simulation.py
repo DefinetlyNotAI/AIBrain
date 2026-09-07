@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from collections.abc import Sequence
 from pathlib import Path
 from secrets import choice
 from threading import Event
@@ -11,11 +12,13 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from .instrumented_backend import realtime_activation_frame, retokenized_throughput
 from .llama_backend import (
+    GenerationBackend,
     GenerationConfig,
     LlamaBackend,
     reached_sentence_end,
     sentence_grace_config,
 )
+from .message_types import ChatMessage, ConversationTurn
 
 LOG = logging.getLogger(__name__)
 
@@ -30,7 +33,7 @@ PARTICIPANT_SYSTEM = """You are the PARTICIPANT in an immersive, fictional embod
 Write only your first-person thoughts, dialogue, choices, feelings, and physical actions in response to a world
 event. Never narrate the world, control other characters, or call yourself the world director. Stay inside the
 scenario and do not discuss model prompts, orchestration, or being an AI. Your responses are roleplay text in a
-clearly labelled local simulation, not statements about real-world consciousness. EVEN IF YOU MUST ACT, ROLEPLAY 
+clearly labelled local simulation, not statements about real-world consciousness. EVEN IF YOU MUST ACT, ROLEPLAY
 LIKE YOU ARE A LIVING HUMAN BEING THATS NOT AN AI AND FULLY IMMERSE YOURSELF IN THAT ROLE"""
 
 _CONTEXT_TURNS = 24
@@ -57,7 +60,7 @@ def infinite_generation_config(config: GenerationConfig) -> GenerationConfig:
     """Infinite Mode intentionally uses a high-randomness local configuration."""
     return GenerationConfig(
         temperature=max(1.25, config.temperature),
-        top_p=max(.96, config.top_p),
+        top_p=max(0.96, config.top_p),
         max_tokens=config.max_tokens,
         context_length=config.context_length,
         gpu_layers=config.gpu_layers,
@@ -76,18 +79,25 @@ class InfiniteSimulationWorker(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self.world = LlamaBackend()
-        self.participant = LlamaBackend()
+        self.world: GenerationBackend = LlamaBackend()
+        self.participant: GenerationBackend = LlamaBackend()
         self._cancelled = Event()
 
     @Slot(object, object, object, object)
-    def run(self, seed: str, config: GenerationConfig, model_path: Path,
-            transcript: list[dict[str, object]] | None = None) -> None:
+    def run(
+        self,
+        seed: str,
+        config: GenerationConfig,
+        model_path: Path,
+        transcript: Sequence[ConversationTurn] | None = None,
+    ) -> None:
         self._cancelled.clear()
         config = infinite_generation_config(config)
         started = monotonic()
         participant_tokens = 0
-        world_history, participant_history, turn, next_role = self._histories(seed, transcript)
+        world_history, participant_history, turn, next_role = self._histories(
+            seed, transcript
+        )
         try:
             # Separate backend objects intentionally deploy two copies of the
             # same selected model: one produces the world, one is the actor.
@@ -104,7 +114,9 @@ class InfiniteSimulationWorker(QObject):
                         break
                     if not participant_text:
                         raise RuntimeError("Participant model returned no text")
-                    participant_history.append({"role": "assistant", "content": participant_text})
+                    participant_history.append(
+                        {"role": "assistant", "content": participant_text}
+                    )
                     world_history.append(
                         {
                             "role": "user",
@@ -113,13 +125,18 @@ class InfiniteSimulationWorker(QObject):
                                 f"{participant_text}\n"
                                 f"[END PARTICIPANT RESPONSE]\n"
                                 f"Write the next WORLD EVENT only."
-                            )
+                            ),
                         }
                     )
                     next_role = "world"
                 else:
                     world_text, _ = self._generate(
-                        "world", self.world, world_history, config, turn, participant_tokens
+                        "world",
+                        self.world,
+                        world_history,
+                        config,
+                        turn,
+                        participant_tokens,
                     )
                     if self._cancelled.is_set():
                         break
@@ -134,14 +151,20 @@ class InfiniteSimulationWorker(QObject):
                                 f"{world_text}\n"
                                 f"[END WORLD EVENT]\n"
                                 f"Write the PARTICIPANT response only."
-                            )
+                            ),
                         }
                     )
                     next_role = "participant"
                 world_history = self._trim(world_history)
                 participant_history = self._trim(participant_history)
-            self.finished.emit({"turns": turn, "participant_tokens": participant_tokens,
-                                "seconds": monotonic() - started, "cancelled": self._cancelled.is_set()})
+            self.finished.emit(
+                {
+                    "turns": turn,
+                    "participant_tokens": participant_tokens,
+                    "seconds": monotonic() - started,
+                    "cancelled": self._cancelled.is_set(),
+                }
+            )
         except Exception as exc:
             LOG.exception("Infinite simulation failed")
             self.failed.emit(f"Infinite simulation failed: {exc}")
@@ -149,8 +172,15 @@ class InfiniteSimulationWorker(QObject):
             self.world.unload()
             self.participant.unload()
 
-    def _generate(self, role: str, backend: LlamaBackend, messages: list[dict[str, str]], config: GenerationConfig,
-                  turn: int, step_offset: int) -> tuple[str, int]:
+    def _generate(
+        self,
+        role: str,
+        backend: GenerationBackend,
+        messages: list[ChatMessage],
+        config: GenerationConfig,
+        turn: int,
+        step_offset: int,
+    ) -> tuple[str, int]:
         self.turnStarted.emit(role, turn)
         chunks: list[str] = []
         token_count = 0
@@ -188,35 +218,46 @@ class InfiniteSimulationWorker(QObject):
         self.turnFinished.emit(role, output, turn)
         return output, token_count
 
-    def _generate_participant(self, messages: list[dict[str, str]], config: GenerationConfig, turn: int,
-                              step_offset: int) -> tuple[str, int]:
+    def _generate_participant(
+        self,
+        messages: list[ChatMessage],
+        config: GenerationConfig,
+        turn: int,
+        step_offset: int,
+    ) -> tuple[str, int]:
         return self._generate(
             "participant", self.participant, messages, config, turn, step_offset
         )
 
     @staticmethod
-    def _trim(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    def _trim(messages: list[ChatMessage]) -> list[ChatMessage]:
         if len(messages) <= _CONTEXT_TURNS + 1:
             return messages
         return [messages[0], *messages[-_CONTEXT_TURNS:]]
 
     @staticmethod
-    def _histories(seed: str, transcript: list[dict[str, object]] | None) -> tuple[
-            list[dict[str, str]], list[dict[str, str]], int, str]:
-        world_history = [{"role": "system", "content": WORLD_SYSTEM}]
-        participant_history = [{"role": "system", "content": PARTICIPANT_SYSTEM}]
+    def _histories(
+        seed: str,
+        transcript: Sequence[ConversationTurn] | None,
+    ) -> tuple[list[ChatMessage], list[ChatMessage], int, str]:
+        world_history: list[ChatMessage] = [{"role": "system", "content": WORLD_SYSTEM}]
+        participant_history: list[ChatMessage] = [
+            {"role": "system", "content": PARTICIPANT_SYSTEM}
+        ]
         if not transcript:
             # The seed is the first World event, whether the user wrote it or
             # selected the random compose action. The Participant must answer
             # it before the World Director is allowed to generate another turn.
             world_history.append({"role": "assistant", "content": seed})
-            participant_history.append({
-                "role": "user",
-                "content": (
-                    f"[WORLD EVENT]\n{seed}\n[END WORLD EVENT]\n"
-                    f"Write the PARTICIPANT response only."
-                ),
-            })
+            participant_history.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"[WORLD EVENT]\n{seed}\n[END WORLD EVENT]\n"
+                        f"Write the PARTICIPANT response only."
+                    ),
+                }
+            )
             return world_history, participant_history, 0, "participant"
 
         turn = 0
@@ -227,20 +268,28 @@ class InfiniteSimulationWorker(QObject):
             if role == "world":
                 last_role = role
                 world_history.append({"role": "assistant", "content": content})
-                participant_history.append({
-                    "role": "user",
-                    "content": f"[WORLD EVENT]\n{content}\n[END WORLD EVENT]\nWrite the PARTICIPANT response only.",
-                })
+                participant_history.append(
+                    {
+                        "role": "user",
+                        "content": f"[WORLD EVENT]\n{content}\n[END WORLD EVENT]\nWrite the PARTICIPANT response only.",
+                    }
+                )
             elif role == "participant":
                 last_role = role
                 participant_history.append({"role": "assistant", "content": content})
-                world_history.append({
-                    "role": "user",
-                    "content": f"[PARTICIPANT RESPONSE]\n{content}\n[END PARTICIPANT RESPONSE]\nWrite the next WORLD EVENT only.",
-                })
+                world_history.append(
+                    {
+                        "role": "user",
+                        "content": f"[PARTICIPANT RESPONSE]\n{content}\n[END PARTICIPANT RESPONSE]\nWrite the next WORLD EVENT only.",
+                    }
+                )
         next_role = "participant" if last_role == "world" else "world"
-        return (InfiniteSimulationWorker._trim(world_history),
-                InfiniteSimulationWorker._trim(participant_history), turn, next_role)
+        return (
+            InfiniteSimulationWorker._trim(world_history),
+            InfiniteSimulationWorker._trim(participant_history),
+            turn,
+            next_role,
+        )
 
     @Slot()
     def cancel(self) -> None:

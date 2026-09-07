@@ -15,7 +15,13 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QCloseEvent,
+    QGuiApplication,
+    QKeySequence,
+    QShortcut,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QFileDialog,
     QLabel,
@@ -27,7 +33,9 @@ from PySide6.QtWidgets import (
 
 from ..models.generation_worker import GenerationWorker
 from ..models.infinite_simulation import InfiniteSimulationWorker
+from ..models.instrumented_backend import ActivationFrame
 from ..models.llama_backend import LlamaBackend
+from ..models.message_types import ChatMessage, ConversationTurn
 from ..models.model_info import ModelInfo
 from ..utils.gpu import GPU_RELAUNCH_EXIT_CODE
 from .chat_export import write_chat_export
@@ -65,13 +73,13 @@ class MainWindow(QMainWindow):
         self.colours = load_colours()
         self.setStyleSheet(stylesheet(self.colours))
         self.config = load_generation_settings()
-        self.history: list[dict[str, str]] = []
+        self.history: list[ChatMessage] = []
         self.current_model: ModelInfo | None = None
         self._assistant_bubble: QLabel | None = None
         self._awaiting_first_token = False
         self._started = 0.0
         self._simulation_bubbles: dict[tuple[str, int], QLabel] = {}
-        self.simulation_transcript: list[dict[str, object]] = []
+        self.simulation_transcript: list[ConversationTurn] = []
         self._analysis_is_infinite = False
         self._gpu_relaunching = False
         self._closing = False
@@ -135,7 +143,7 @@ class MainWindow(QMainWindow):
         self._escape_shortcut.activated.connect(self._handle_escape)
         self._set_models(models)
 
-    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if not self._display_fitted:
             self._display_fitted = True
@@ -167,7 +175,6 @@ class MainWindow(QMainWindow):
         self.simulation_worker = InfiniteSimulationWorker()
         self.simulation_worker.moveToThread(self.simulation_thread)
         self.startInfiniteSimulation.connect(self.simulation_worker.run)
-        # noinspection DuplicatedCode
         self.simulation_worker.turnStarted.connect(self._simulation_turn_started)
         self.simulation_worker.token.connect(self._simulation_token)
         self.simulation_worker.turnFinished.connect(self._simulation_turn_finished)
@@ -283,9 +290,7 @@ class MainWindow(QMainWindow):
             else "unknown"
         )
         try:
-            write_chat_export(
-                Path(filename), conversation, mode=mode, model=model
-            )
+            write_chat_export(Path(filename), conversation, mode=mode, model=model)
         except OSError as exc:
             QMessageBox.critical(self, "Chat export failed", str(exc))
             return
@@ -420,19 +425,29 @@ class MainWindow(QMainWindow):
         bubble = self.chat.add_message(role, f"{label} {turn}: ")
         self._simulation_bubbles[(role, turn)] = bubble
 
-    def _simulation_token(self, role: str, turn: int, text: str, frame: object) -> None:
+    def _simulation_token(
+        self, role: str, turn: int, text: str, frame: ActivationFrame
+    ) -> None:
         bubble = self._simulation_bubbles.get((role, turn))
         if bubble is not None:
             self.chat.append_message_text(bubble, text)
-        if role == "participant" and frame is not None:
-            self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
+        if role == "participant":
+            self.visualizer.apply_frame(frame)
 
     def _simulation_turn_finished(self, role: str, text: str, turn: int) -> None:
-        if text:
-            self.simulation_transcript.append(
-                {"role": role, "content": text, "turn": turn}
-            )
-            self.visualizer.set_conversation(self.simulation_transcript)
+        if not text:
+            return
+        if role == "world":
+            transcript_role = "world"
+        elif role == "participant":
+            transcript_role = "participant"
+        else:
+            LOG.warning("Ignoring unknown Infinite Mode role: %s", role)
+            return
+        self.simulation_transcript.append(
+            {"role": transcript_role, "content": text, "turn": turn}
+        )
+        self.visualizer.set_conversation(self.simulation_transcript)
 
     def _simulation_finished(self, stats: SimulationStats) -> None:
         seconds = stats["seconds"]
@@ -482,7 +497,8 @@ class MainWindow(QMainWindow):
                 self._assistant_bubble.setText("")
                 self._awaiting_first_token = False
             self.chat.append_message_text(self._assistant_bubble, text)
-        self.visualizer.apply_frame(frame)  # type: ignore[arg-type]
+        if isinstance(frame, ActivationFrame):
+            self.visualizer.apply_frame(frame)
 
     def _finished(self, stats: GenerationStats) -> None:
         text = (
@@ -520,9 +536,7 @@ class MainWindow(QMainWindow):
         LOG.error("%s", error)
         self.chat.stats.setText(error)
         partial = (
-            self._assistant_bubble.text()
-            if self._assistant_bubble is not None
-            else ""
+            self._assistant_bubble.text() if self._assistant_bubble is not None else ""
         )
         exportable = bool(partial) and partial != "Thinking…"
         self.chat.set_analysis_available(exportable)
@@ -533,7 +547,7 @@ class MainWindow(QMainWindow):
         self._awaiting_first_token = False
         self._show_repairable_error("Generation error", error)
 
-    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def closeEvent(self, event: QCloseEvent) -> None:
         QSettings().setValue("main_splitter_sizes", self._splitter.sizes())
         if not self._shutdown_saved:
             self.visualizer.analyzer.save_model()

@@ -10,11 +10,12 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from .instrumented_backend import realtime_activation_frame, retokenized_throughput
 from .llama_backend import (
+    GenerationBackend,
     GenerationConfig,
-    LlamaBackend,
     reached_sentence_end,
     sentence_grace_config,
 )
+from .message_types import ChatMessage
 
 LOG = logging.getLogger(__name__)
 
@@ -24,29 +25,38 @@ class GenerationWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, backend: LlamaBackend) -> None:
+    def __init__(self, backend: GenerationBackend) -> None:
         super().__init__()
         self.backend = backend
         self._cancelled = Event()
 
     @Slot(object, object, object)
-    def generate(self, messages: list[dict[str, str]], config: GenerationConfig, model_path: Path) -> None:
+    def generate(
+        self,
+        messages: list[ChatMessage],
+        config: GenerationConfig,
+        model_path: Path,
+    ) -> None:
         self._cancelled.clear()
         start = monotonic()
         generated_tokens = 0
         previous_token_at = monotonic()
-        normal_interval = .04
+        normal_interval = 0.04
         try:
             self.backend.load(model_path, config)
-            prompt_tokens = sum(len(self.backend.tokenize(message["content"])) for message in messages)
+            prompt_tokens = sum(
+                len(self.backend.tokenize(message["content"])) for message in messages
+            )
             response_chunks: list[str] = []
             recent_output: deque[str] = deque(maxlen=32)
-            for chunk in self.backend.stream_chat(messages, sentence_grace_config(config)):
+            for chunk in self.backend.stream_chat(
+                messages, sentence_grace_config(config)
+            ):
                 if self._cancelled.is_set():
                     break
                 now = monotonic()
                 latency = now - previous_token_at
-                normal_interval = normal_interval * .8 + latency * .2
+                normal_interval = normal_interval * 0.8 + latency * 0.2
                 text = chunk.text
                 retokenized_ids = chunk.retokenized_ids
                 retokenized_count = len(retokenized_ids)
@@ -66,14 +76,24 @@ class GenerationWorker(QObject):
                 )
                 recent_output.append(text)
                 self.token.emit(text, frame)
-                if reached_sentence_end("".join(response_chunks), generated_tokens, config.max_tokens):
+                if reached_sentence_end(
+                    "".join(response_chunks), generated_tokens, config.max_tokens
+                ):
                     break
                 if config.speed < 1.0:
-                    self._cancelled.wait(max(0.0, normal_interval * (1.0 / config.speed - 1.0)))
+                    self._cancelled.wait(
+                        max(0.0, normal_interval * (1.0 / config.speed - 1.0))
+                    )
                 previous_token_at = monotonic()
             elapsed = monotonic() - start
-            self.finished.emit({"prompt_tokens": prompt_tokens, "generated_tokens": generated_tokens,
-                                "seconds": elapsed, "cancelled": self._cancelled.is_set()})
+            self.finished.emit(
+                {
+                    "prompt_tokens": prompt_tokens,
+                    "generated_tokens": generated_tokens,
+                    "seconds": elapsed,
+                    "cancelled": self._cancelled.is_set(),
+                }
+            )
         except Exception as exc:
             LOG.exception("Local model generation failed")
             self.failed.emit(f"Generation failed: {exc}")

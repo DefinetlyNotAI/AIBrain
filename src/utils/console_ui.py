@@ -1,4 +1,5 @@
 """The shared terminal presentation library for all AIBrain CLI commands."""
+
 from __future__ import annotations
 
 import ctypes
@@ -12,7 +13,7 @@ import time
 from collections.abc import Callable, Mapping
 from ctypes import wintypes
 from pathlib import Path
-from typing import TextIO, cast
+from typing import Self, TextIO, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WIDTH = 82
@@ -95,7 +96,6 @@ _OPEN_EXISTING = 3
 class _Kernel32Bindings:
     """Explicit callable contracts for the Windows console APIs we use."""
 
-    # noinspection bad-argument-type
     def __init__(self) -> None:
         library = ctypes.WinDLL("kernel32", use_last_error=True)
         self.get_std_handle: Callable[[int], int] = cast(
@@ -201,7 +201,7 @@ def _render_prompt_answer(prompt: str, answer: str, *styles: str) -> None:
 def _choice_label(key: str, label: str) -> str:
     """Highlight a mnemonic key without assuming labels have one character."""
     if label.casefold().startswith(key.casefold()):
-        return f"[{key.upper()}]{label[len(key):]}"
+        return f"[{key.upper()}]{label[len(key) :]}"
     return f"[{key.upper()}] {label}"
 
 
@@ -293,7 +293,9 @@ def terminal_width() -> int:
             info = _ConsoleScreenBufferInfo()
             kernel32 = _kernel32_bindings()
             handle = kernel32.get_std_handle(-11)
-            if handle and kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
+            if handle and kernel32.get_console_screen_buffer_info(
+                handle, ctypes.byref(info)
+            ):
                 width = info.window.right - info.window.left + 1
         except (AttributeError, OSError):
             pass
@@ -306,7 +308,9 @@ def _clear_native_console() -> bool:
     handle = kernel32.get_std_handle(-11)
     owns_handle = False
     info = _ConsoleScreenBufferInfo()
-    if not handle or not kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
+    if not handle or not kernel32.get_console_screen_buffer_info(
+        handle, ctypes.byref(info)
+    ):
         # stdout may be captured by an IDE or redirected while the process still
         # owns an interactive console. CONOUT$ addresses that console directly.
         handle = kernel32.create_file(
@@ -319,7 +323,9 @@ def _clear_native_console() -> bool:
             None,
         )
         owns_handle = True
-        if not handle or not kernel32.get_console_screen_buffer_info(handle, ctypes.byref(info)):
+        if not handle or not kernel32.get_console_screen_buffer_info(
+            handle, ctypes.byref(info)
+        ):
             if handle:
                 kernel32.close_handle(handle)
             return False
@@ -330,10 +336,12 @@ def _clear_native_console() -> bool:
         characters_written = wintypes.DWORD()
         attributes_written = wintypes.DWORD()
         origin = _ConsoleCoord(0, 0)
-        characters_cleared = kernel32.fill_console_output_character(handle, " ", cells, origin,
-                                                                    ctypes.byref(characters_written))
-        attributes_cleared = kernel32.fill_console_output_attribute(handle, info.attributes, cells, origin,
-                                                                    ctypes.byref(attributes_written))
+        characters_cleared = kernel32.fill_console_output_character(
+            handle, " ", cells, origin, ctypes.byref(characters_written)
+        )
+        attributes_cleared = kernel32.fill_console_output_attribute(
+            handle, info.attributes, cells, origin, ctypes.byref(attributes_written)
+        )
         cursor_reset = kernel32.set_console_cursor_position(handle, origin)
         return bool(
             characters_cleared
@@ -375,11 +383,10 @@ def _enable_virtual_terminal() -> bool:
 
 def clear_screen() -> None:
     """Clear the visible terminal and its scrollback where supported."""
-    if sys.stdout.isatty():
-        if os.name != "nt" or _enable_virtual_terminal():
-            sys.stdout.write("\x1b[2J\x1b[3J\x1b[H")
-            sys.stdout.flush()
-            return
+    if sys.stdout.isatty() and (os.name != "nt" or _enable_virtual_terminal()):
+        sys.stdout.write("\x1b[2J\x1b[3J\x1b[H")
+        sys.stdout.flush()
+        return
 
     if os.name == "nt":
         try:
@@ -410,7 +417,7 @@ def relative_path(path: str | Path) -> str:
     path_obj = Path(path)
     try:
         resolved = path_obj.resolve()
-        return str(Path(".") / resolved.relative_to(ROOT.resolve()))
+        return str(Path(resolved.relative_to(ROOT.resolve())))
     except (OSError, ValueError):
         return str(path_obj)
 
@@ -418,8 +425,10 @@ def relative_path(path: str | Path) -> str:
 def shorten_command_argument(argument: str) -> str:
     root_text = str(ROOT.resolve())
     normalized = argument.replace("/", "\\")
-    if normalized.lower() == root_text.lower() or normalized.lower().startswith(root_text.lower() + "\\"):
-        relative = normalized[len(root_text):].lstrip("\\/")
+    if normalized.lower() == root_text.lower() or normalized.lower().startswith(
+        root_text.lower() + "\\"
+    ):
+        relative = normalized[len(root_text) :].lstrip("\\/")
         return rf".\{relative}" if relative else "."
 
     # Omit an absolute executable path only when PATH resolves its basename to
@@ -439,7 +448,9 @@ def shorten_command_argument(argument: str) -> str:
 
 def display_command(command_line: list[str]) -> str:
     """Render a command preview that can be pasted safely into PowerShell."""
-    arguments = [shorten_output_paths(shorten_command_argument(part)) for part in command_line]
+    arguments = [
+        shorten_output_paths(shorten_command_argument(part)) for part in command_line
+    ]
     rendered = [_powershell_quote(argument) for argument in arguments]
     if rendered and rendered[0] != arguments[0]:
         return "& " + " ".join(rendered)
@@ -456,7 +467,9 @@ def _powershell_quote(argument: str) -> str:
 def shorten_output_paths(text: str) -> str:
     root = str(ROOT.resolve())
     for variant in (root, root.replace("\\", "/")):
-        text = re.sub(re.escape(variant) + r"(?=[\\/]|$|[\"'])", ".", text, flags=re.IGNORECASE)
+        text = re.sub(
+            re.escape(variant) + r"(?=[\\/]|$|[\"'])", ".", text, flags=re.IGNORECASE
+        )
     return text
 
 
@@ -474,12 +487,18 @@ def wrap_console_line(text: str, width: int) -> list[str]:
     return [*lines, text]
 
 
-def wrap_prefixed_text(prefix: str, text: str, *, width: int, continuation: str | None = None) -> list[str]:
+def wrap_prefixed_text(
+    prefix: str, text: str, *, width: int, continuation: str | None = None
+) -> list[str]:
     """Wrap each logical line with aligned gutters and its original indentation."""
-    continuation_prefix = continuation if continuation is not None else " " * len(prefix)
+    continuation_prefix = (
+        continuation if continuation is not None else " " * len(prefix)
+    )
     lines: list[str] = []
-    for index, raw_line in enumerate(strip_ansi(text).expandtabs(4).splitlines() or [""]):
-        indentation = raw_line[:len(raw_line) - len(raw_line.lstrip())]
+    for index, raw_line in enumerate(
+        strip_ansi(text).expandtabs(4).splitlines() or [""]
+    ):
+        indentation = raw_line[: len(raw_line) - len(raw_line.lstrip())]
         remaining = raw_line.lstrip().rstrip()
         current_prefix = (prefix if index == 0 else continuation_prefix) + indentation
         while len(remaining) > max(width - len(current_prefix), 1):
@@ -496,15 +515,19 @@ def wrap_prefixed_text(prefix: str, text: str, *, width: int, continuation: str 
 
 def console_message_lines(prefix: str, message: str) -> list[str]:
     """Apply project-relative paths and terminal-width wrapping to status text."""
-    return wrap_prefixed_text(prefix, shorten_output_paths(str(message)), width=terminal_width())
+    return wrap_prefixed_text(
+        prefix, shorten_output_paths(str(message)), width=terminal_width()
+    )
 
 
 def _box_line(content: str, *, width: int, tone: str) -> None:
     content_width = width - 4
     print(
-        color(BOX_VERTICAL, tone) + " " +
-        color(content.ljust(content_width), Color.WHITE) + " " +
         color(BOX_VERTICAL, tone)
+        + " "
+        + color(content.ljust(content_width), Color.WHITE)
+        + " "
+        + color(BOX_VERTICAL, tone)
     )
 
 
@@ -515,18 +538,29 @@ def header(title: str = "AIBrain", subtitle: str = "Neural Runtime Installer") -
     print(color(BOX_TOP_LEFT + BOX_HORIZONTAL * inner + BOX_TOP_RIGHT, Color.CYAN))
     _box_line(title.center(width - 4), width=width, tone=Color.CYAN)
     _box_line(subtitle.center(width - 4), width=width, tone=Color.CYAN)
-    print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, Color.CYAN))
+    print(
+        color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, Color.CYAN)
+    )
     print()
 
 
 def section(title: str, number: int) -> None:
     print()
-    print(color(f" {number:02d} ", Color.BOLD, Color.CYAN) + color(title, Color.BOLD, Color.WHITE))
+    print(
+        color(f" {number:02d} ", Color.BOLD, Color.CYAN)
+        + color(title, Color.BOLD, Color.WHITE)
+    )
     print(color(rule(), Color.GRAY))
 
 
-def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = None, footer: str | None = None,
-          tone: str = Color.CYAN) -> None:
+def panel(
+    title: str,
+    rows: list[tuple[str, str]],
+    *,
+    subtitle: str | None = None,
+    footer: str | None = None,
+    tone: str = Color.CYAN,
+) -> None:
     """Render a labeled summary panel shared by installer and build tools."""
     width = terminal_width()
     inner = width - 2
@@ -540,22 +574,38 @@ def panel(title: str, rows: list[tuple[str, str]], *, subtitle: str | None = Non
     for label, value in rows:
         prefix = f"  {label:<{label_width}}  "
         continuation = " " * len(prefix)
-        for line in wrap_prefixed_text(prefix, shorten_output_paths(value), width=width - 4, continuation=continuation):
+        for line in wrap_prefixed_text(
+            prefix,
+            shorten_output_paths(value),
+            width=width - 4,
+            continuation=continuation,
+        ):
             _box_line(line, width=width, tone=tone)
     if footer:
         print(color(BOX_MID_LEFT + BOX_HORIZONTAL * inner + BOX_MID_RIGHT, tone))
-        for line in wrap_prefixed_text("", shorten_output_paths(footer), width=width - 4):
+        for line in wrap_prefixed_text(
+            "", shorten_output_paths(footer), width=width - 4
+        ):
             _box_line(line, width=width, tone=tone)
     print(color(BOX_BOTTOM_LEFT + BOX_HORIZONTAL * inner + BOX_BOTTOM_RIGHT, tone))
     print()
 
 
-def instruction_list(steps: list[tuple[str, str, str]], *, stream: TextIO | None = None) -> None:
+def instruction_list(
+    steps: list[tuple[str, str, str]], *, stream: TextIO | None = None
+) -> None:
     output = stream or sys.stdout
     print(file=output)
     for number, description, command_text in steps:
-        print("  " + color(number, Color.CYAN, Color.BOLD) + " " + color(description, Color.GRAY) + "   " + color(
-            command_text, Color.WHITE, Color.BOLD), file=output)
+        print(
+            "  "
+            + color(number, Color.CYAN, Color.BOLD)
+            + " "
+            + color(description, Color.GRAY)
+            + "   "
+            + color(command_text, Color.WHITE, Color.BOLD),
+            file=output,
+        )
     print(file=output)
 
 
@@ -587,10 +637,15 @@ def error(message: str) -> None:
     _print_status_message(CROSS, message, Color.RED, stream=sys.stderr)
 
 
-def _print_status_message(marker: str, message: str, tone: str, *, stream: TextIO | None = None) -> None:
+def _print_status_message(
+    marker: str, message: str, tone: str, *, stream: TextIO | None = None
+) -> None:
     prefix = f"  {marker} "
     lines = console_message_lines(prefix, message)
-    print(color(prefix, tone, Color.BOLD) + lines[0][len(prefix):], file=stream or sys.stdout)
+    print(
+        color(prefix, tone, Color.BOLD) + lines[0][len(prefix) :],
+        file=stream or sys.stdout,
+    )
     for line in lines[1:]:
         print(line, file=stream or sys.stdout)
 
@@ -598,7 +653,10 @@ def _print_status_message(marker: str, message: str, tone: str, *, stream: TextI
 def detail(label: str, value: str) -> None:
     prefix = "     " + label.ljust(12)
     for line in console_message_lines(prefix, value):
-        print(color(line[:len(prefix)], Color.GRAY) + color(line[len(prefix):], Color.WHITE))
+        print(
+            color(line[: len(prefix)], Color.GRAY)
+            + color(line[len(prefix) :], Color.WHITE)
+        )
 
 
 def status(label: str, message: str, tone: str = Color.CYAN) -> None:
@@ -655,8 +713,11 @@ def command_preview(command_line: list[str]) -> None:
     print()
     for index, line in enumerate(lines):
         if index == 0:
-            print(color(line[:len(prefix) - 1], Color.MAGENTA, Color.BOLD) + " " + color(line[len(prefix):], Color.DIM,
-                                                                                         Color.WHITE))
+            print(
+                color(line[: len(prefix) - 1], Color.MAGENTA, Color.BOLD)
+                + " "
+                + color(line[len(prefix) :], Color.DIM, Color.WHITE)
+            )
         else:
             print(color(line, Color.DIM, Color.WHITE))
 
@@ -664,7 +725,9 @@ def command_preview(command_line: list[str]) -> None:
 class CommandOutputBox:
     """An indented, live-rendered container for subprocess output."""
 
-    def __init__(self, *, indent: int = COMMAND_INDENT, live: bool | None = None) -> None:
+    def __init__(
+        self, *, indent: int = COMMAND_INDENT, live: bool | None = None
+    ) -> None:
         self.prefix = " " * indent
         self.inner = max(terminal_width() - indent, 20) - 2
         self.content_width = self.inner - 2
@@ -687,7 +750,7 @@ class CommandOutputBox:
         """Whether transient status can be redrawn instead of appended."""
         return self._live
 
-    def __enter__(self) -> CommandOutputBox:
+    def __enter__(self) -> Self:
         self.open()
         return self
 
@@ -704,7 +767,11 @@ class CommandOutputBox:
         self._last_progress_at = None
 
     def _border_line(self, left: str, right: str) -> str:
-        return self.prefix + color(left + BOX_HORIZONTAL * self.inner + right, Color.GRAY) + "\n"
+        return (
+            self.prefix
+            + color(left + BOX_HORIZONTAL * self.inner + right, Color.GRAY)
+            + "\n"
+        )
 
     def _rendered_lines(self, output: str) -> list[str]:
         rendered = shorten_output_paths(strip_ansi(output)).rstrip("\r\n")
@@ -747,7 +814,9 @@ class CommandOutputBox:
     def write(self, output: str) -> None:
         """Append output immediately, preserving the framed presentation."""
         if not self._is_open:
-            raise RuntimeError("The command output box must be opened before writing output")
+            raise RuntimeError(
+                "The command output box must be opened before writing output"
+            )
         lines = self._rendered_lines(output)
         if not lines:
             return
@@ -757,7 +826,9 @@ class CommandOutputBox:
     def write_progress(self, output: str, *, interval: float = 3.0) -> None:
         """Show current work in place, or periodically in a captured console."""
         if not self._is_open:
-            raise RuntimeError("The command output box must be opened before writing output")
+            raise RuntimeError(
+                "The command output box must be opened before writing output"
+            )
         if self._live:
             self.write_partial(output)
             return
@@ -769,7 +840,9 @@ class CommandOutputBox:
     def write_partial(self, output: str) -> None:
         """Redraw an unterminated subprocess line, including progress bars."""
         if not self._is_open:
-            raise RuntimeError("The command output box must be opened before writing output")
+            raise RuntimeError(
+                "The command output box must be opened before writing output"
+            )
         # Captured streams cannot erase their previous rows; delaying partial
         # output prevents duplicate fragments in IDE consoles and log capture.
         if not self._live:

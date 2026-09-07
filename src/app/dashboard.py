@@ -1,4 +1,5 @@
 """Small, reusable dashboard primitives shared by AIBrain Qt surfaces."""
+
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
@@ -18,7 +19,9 @@ def status_badge(text: str, tone: str = "neutral") -> QLabel:
     return badge
 
 
-def metric_card(title: str, value: str = "—", detail: str = "") -> tuple[QFrame, QLabel, QLabel]:
+def metric_card(
+    title: str, value: str = "—", detail: str = ""
+) -> tuple[QFrame, QLabel, QLabel]:
     card = QFrame()
     card.setObjectName("metricCard")
     layout = QVBoxLayout(card)

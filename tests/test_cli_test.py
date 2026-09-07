@@ -12,7 +12,7 @@ from cli import test
 
 class TestLauncherTests(unittest.TestCase):
     @patch("cli.test.subprocess.run")
-    def test_run_suite_renders_command_output_and_status(self, run_mock) -> None:  # type: ignore[no-untyped-def]
+    def test_run_suite_renders_command_output_and_status(self, run_mock) -> None:
         run_mock.return_value = subprocess.CompletedProcess(["python"], 0, "ok", "")
         output = StringIO()
 
@@ -38,13 +38,10 @@ class TestLauncherTests(unittest.TestCase):
 
     def test_all_launcher_suites_cover_every_test_module(self) -> None:
         registered = {
-            module
-            for _title, suite in test.SUITES.values()
-            for module in suite
+            module for _title, suite in test.SUITES.values() for module in suite
         }
         discovered = {
-            f"tests.{path.stem}"
-            for path in Path(__file__).parent.glob("test_*.py")
+            f"tests.{path.stem}" for path in Path(__file__).parent.glob("test_*.py")
         }
 
         self.assertEqual(registered, discovered)
@@ -54,7 +51,7 @@ class TestLauncherTests(unittest.TestCase):
     @patch("pathlib.Path.is_file", return_value=True)
     def test_global_python_relaunches_the_managed_test_runtime(
         self, _is_file, run_mock, _managed
-    ) -> None:  # type: ignore[no-untyped-def]
+    ) -> None:
         run_mock.return_value = subprocess.CompletedProcess([], 0)
 
         self.assertEqual(test.main(), 0)
@@ -64,7 +61,7 @@ class TestLauncherTests(unittest.TestCase):
         self.assertEqual(Path(command[1]).name, "test.py")
 
     @patch("cli.test.subprocess.run")
-    def test_empty_suite_runs_discovery_for_every_test_file(self, run_mock) -> None:  # type: ignore[no-untyped-def]
+    def test_empty_suite_runs_discovery_for_every_test_file(self, run_mock) -> None:
         run_mock.return_value = subprocess.CompletedProcess(["python"], 0, "ok", "")
 
         with redirect_stdout(StringIO()):
@@ -79,12 +76,16 @@ class TestLauncherTests(unittest.TestCase):
         )
 
     @patch("builtins.input", side_effect=EOFError)
-    def test_menu_exits_cleanly_when_interactive_input_is_unavailable(self, _input_mock) -> None:  # type: ignore[no-untyped-def]
+    def test_menu_exits_cleanly_when_interactive_input_is_unavailable(
+        self, _input_mock
+    ) -> None:
         with redirect_stdout(StringIO()):
             self.assertIsNone(test.choose_suite())
 
     @patch("builtins.input", side_effect=KeyboardInterrupt)
-    def test_menu_propagates_keyboard_interrupt_to_the_cli_exit_handler(self, _input_mock) -> None:  # type: ignore[no-untyped-def]
+    def test_menu_propagates_keyboard_interrupt_to_the_cli_exit_handler(
+        self, _input_mock
+    ) -> None:
         with redirect_stdout(StringIO()), self.assertRaises(KeyboardInterrupt):
             test.choose_suite()
 

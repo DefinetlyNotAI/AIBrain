@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 import unittest
+from collections.abc import Iterator
+from typing import Self
 from unittest.mock import patch
 
 from cli import build_native
@@ -12,7 +14,7 @@ class _OutputStream:
         self._lines = lines
         self._events = events
 
-    def __iter__(self):  # type: ignore[no-untyped-def]
+    def __iter__(self) -> Iterator[str]:
         for line in self._lines:
             self._events.append(f"read:{line.rstrip()}")
             yield line
@@ -36,7 +38,7 @@ class _OutputBox:
     def __init__(self, events: list[str]) -> None:
         self._events = events
 
-    def __enter__(self):  # type: ignore[no-untyped-def]
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -60,7 +62,9 @@ class NativeBuildCommandTests(unittest.TestCase):
 
         with (
             patch.object(build_native.subprocess, "Popen", return_value=process),
-            patch.object(build_native, "CommandOutputBox", return_value=_OutputBox(events)),
+            patch.object(
+                build_native, "CommandOutputBox", return_value=_OutputBox(events)
+            ),
             patch.object(build_native, "command_preview"),
             patch.object(build_native, "log_completed_command"),
         ):
@@ -80,7 +84,9 @@ class NativeBuildCommandTests(unittest.TestCase):
 
         with (
             patch.object(build_native.subprocess, "Popen", return_value=process),
-            patch.object(build_native, "CommandOutputBox", return_value=_OutputBox(events)),
+            patch.object(
+                build_native, "CommandOutputBox", return_value=_OutputBox(events)
+            ),
             patch.object(build_native, "command_preview"),
             patch.object(build_native, "log_completed_command") as log_command,
         ):
@@ -98,12 +104,14 @@ class NativeBuildCommandTests(unittest.TestCase):
 
         with (
             patch.object(build_native.subprocess, "Popen", return_value=process),
-            patch.object(build_native, "CommandOutputBox", return_value=_OutputBox(events)),
+            patch.object(
+                build_native, "CommandOutputBox", return_value=_OutputBox(events)
+            ),
             patch.object(build_native, "command_preview"),
             patch.object(build_native, "log_completed_command"),
+            self.assertRaises(subprocess.CalledProcessError) as raised,
         ):
-            with self.assertRaises(subprocess.CalledProcessError) as raised:
-                build_native.run_command(["compiler.exe"], check=True)
+            build_native.run_command(["compiler.exe"], check=True)
 
         self.assertEqual(raised.exception.returncode, 2)
         self.assertEqual(raised.exception.output, "compile failed")

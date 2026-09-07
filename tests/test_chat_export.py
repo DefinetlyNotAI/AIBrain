@@ -6,19 +6,18 @@ import unittest
 from pathlib import Path
 
 from src.app.chat_export import write_chat_export
+from src.models.message_types import ChatMessage
 
 
 class ChatExportTests(unittest.TestCase):
     def test_json_export_preserves_complete_conversation_metadata(self) -> None:
-        conversation = [
+        conversation: list[ChatMessage] = [
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there"},
         ]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "chat.json"
-            write_chat_export(
-                path, conversation, mode="normal", model="model:latest"
-            )
+            write_chat_export(path, conversation, mode="normal", model="model:latest")
             payload = json.loads(path.read_text(encoding="utf-8"))
 
         self.assertEqual(payload["schema"], "aibrain.chat.v1")

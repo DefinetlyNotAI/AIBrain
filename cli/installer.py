@@ -1,4 +1,4 @@
-﻿"""Windows bootstrapper for AIBrain.
+"""Windows bootstrapper for AIBrain.
 
 Run this script with an installed Python 3.11+ interpreter. It is the sole
 intentional exception to AIBrain's venv-only runtime rule: its job is to create
@@ -41,7 +41,11 @@ from src.utils.console_ui import (
     success,
     warning,
 )
-from src.utils.logging import configure_cli_logging, report_exception
+from src.utils.logging import (
+    REPORTABLE_EXCEPTIONS,
+    configure_cli_logging,
+    report_exception,
+)
 
 VENV_DIR = ROOT / ".venv"
 
@@ -116,6 +120,7 @@ def collect_final_health(
                     capture_output=True,
                     text=True,
                     timeout=15,
+                    check=False,
                 )
                 if probe.returncode == 0 and "CuPy / CUDA" in probe.stdout:
                     cuda_status = "Ready"
@@ -358,7 +363,9 @@ def select_install_action(
         return "install"
     if repair_requested:
         if not runtime_exists:
-            raise ValueError("Repair is unavailable until the managed runtime has been installed.")
+            raise ValueError(
+                "Repair is unavailable until the managed runtime has been installed."
+            )
         return "repair"
 
     default = "i"
@@ -416,10 +423,10 @@ def venv_python() -> Path:
 
 def verify_python() -> bool:
     version = sys.version_info
-    installed = f"{version.major}." f"{version.minor}." f"{version.micro}"
+    installed = f"{version.major}.{version.minor}.{version.micro}"
 
     if version < (3, 11):
-        error(f"Python 3.11 or newer is required. " f"Detected Python {installed}.")
+        error(f"Python 3.11 or newer is required. Detected Python {installed}.")
         return False
 
     success(f"Python {installed}")
@@ -547,9 +554,17 @@ def install_dependencies(
     ensure_pip(python)
     if force_reinstall:
         info("Reinstalling Python package manager")
-        run([
-            python, "-m", "pip", "install", "--upgrade", "--force-reinstall", "pip",
-        ])
+        run(
+            [
+                python,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "--force-reinstall",
+                "pip",
+            ]
+        )
         success("pip reinstalled")
     else:
         success("Existing pip installation is healthy")
@@ -567,7 +582,17 @@ def install_dependencies(
             # Reinstall only the broken root package. The normal resolver pass
             # below restores any missing transitive dependencies without
             # replacing healthy installed distributions.
-            run([python, "-m", "pip", "install", "--force-reinstall", "--no-deps", package])
+            run(
+                [
+                    python,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--force-reinstall",
+                    "--no-deps",
+                    package,
+                ]
+            )
 
     command = [python, "-m", "pip", "install"]
     if force_reinstall:
@@ -606,6 +631,7 @@ def broken_dependencies(python: str, requirements: tuple[str, ...]) -> list[str]
                 capture_output=True,
                 text=True,
                 timeout=30,
+                check=False,
             )
         except (OSError, subprocess.SubprocessError):
             broken.append(requirement)
@@ -617,7 +643,7 @@ def broken_dependencies(python: str, requirements: tuple[str, ...]) -> list[str]
 
 def llama_install_command(python: str, wheel_tag: str) -> list[str]:
     """Build a cache-safe current llama.cpp installation command."""
-    command = [
+    return [
         python,
         "-m",
         "pip",
@@ -630,7 +656,6 @@ def llama_install_command(python: str, wheel_tag: str) -> list[str]:
         f"{WHEEL_ROOT}/{wheel_tag}",
         LLAMA_CPP_PYTHON_REQUIREMENT,
     ]
-    return command
 
 
 def cuda_runtime_packages(wheel_tag: str) -> tuple[str, ...]:
@@ -684,6 +709,7 @@ def probe_llama_runtime(
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"Could not run the backend probe: {exc}"
@@ -704,7 +730,7 @@ def install_cpu_fallback(python: str, *, reason: str) -> str:
     ready, cpu_reason = probe_llama_runtime(python)
     if not ready:
         raise LlamaRuntimeError(
-            "The official CPU backend installed but could not load: " f"{cpu_reason}"
+            f"The official CPU backend installed but could not load: {cpu_reason}"
         )
     success("CPU fallback installed and loaded successfully")
     return "cpu"
@@ -750,10 +776,17 @@ def install_llama(
         runtime_packages = cuda_runtime_packages(wheel_tag)
         if runtime_packages:
             info("Ensuring the selected CUDA wheel's runtime DLLs are installed")
-            run([
-                python, "-m", "pip", "install", "--upgrade", "--only-binary=:all:",
-                *runtime_packages,
-            ])
+            run(
+                [
+                    python,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--upgrade",
+                    "--only-binary=:all:",
+                    *runtime_packages,
+                ]
+            )
         # CPU and CUDA wheels share a version. Even Install mode must replace
         # an existing wheel, otherwise pip can silently keep the old backend.
         run(llama_install_command(python, wheel_tag))
@@ -770,7 +803,9 @@ def install_llama(
             ) from exc
         print()
         warning(f"{wheel_tag} installation failed.")
-        return install_cpu_fallback(python, reason="the CUDA wheel could not be installed")
+        return install_cpu_fallback(
+            python, reason="the CUDA wheel could not be installed"
+        )
 
     ready, reason = probe_llama_runtime(python, require_cuda=wheel_tag != "cpu")
     if ready:
@@ -779,7 +814,7 @@ def install_llama(
 
     if wheel_tag == "cpu":
         raise LlamaRuntimeError(
-            "The official CPU backend installed but could not load: " f"{reason}"
+            f"The official CPU backend installed but could not load: {reason}"
         )
     if preference == "cuda":
         raise LlamaRuntimeError(
@@ -822,7 +857,9 @@ def completion_screen(
     backend = (
         "Existing installed backend"
         if wheel_tag == "existing"
-        else f"CUDA / {wheel_tag}" if wheel_tag != "cpu" else "CPU"
+        else f"CUDA / {wheel_tag}"
+        if wheel_tag != "cpu"
+        else "CPU"
     )
     panel(
         "INSTALLATION COMPLETE" if action == "install" else "REPAIR COMPLETE",
@@ -868,6 +905,7 @@ class BannerArgumentParser(argparse.ArgumentParser):
         self,
         file=None,
     ) -> None:
+        del file
         print_help_banner()
 
 
@@ -951,7 +989,7 @@ def main() -> int:
     if action == "install":
         try:
             create_environment()
-        except Exception as exc:
+        except REPORTABLE_EXCEPTIONS as exc:
             report_exception("Unable to create the virtual environment", exc)
             return 1
     else:
@@ -966,7 +1004,7 @@ def main() -> int:
         cleanup_invalid_distributions()
         install_dependencies(python, gpu, force_reinstall=action == "install")
     except subprocess.CalledProcessError as exc:
-        error("Dependency installation failed with " f"exit code {exc.returncode}.")
+        error(f"Dependency installation failed with exit code {exc.returncode}.")
         return 1
 
     section("Inference backend", 5)
@@ -979,9 +1017,7 @@ def main() -> int:
             force_reinstall=action == "install",
         )
     except subprocess.CalledProcessError as exc:
-        error(
-            "llama-cpp-python installation failed " f"with exit code {exc.returncode}."
-        )
+        error(f"llama-cpp-python installation failed with exit code {exc.returncode}.")
         return 1
     except LlamaRuntimeError as exc:
         error(str(exc))
@@ -1016,7 +1052,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         report_keyboard_interrupt("the installer")
-        raise SystemExit(130)
-    except Exception as exc:
+        raise SystemExit(130) from None
+    except REPORTABLE_EXCEPTIONS as exc:
         report_exception("AIBrain installer failed", exc)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

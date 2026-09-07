@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication, QShowEvent
 from PySide6.QtWidgets import (
     QColorDialog,
     QDialog,
@@ -88,47 +88,47 @@ def save_colours(colours: dict[str, str]) -> None:
 def stylesheet(colours: dict[str, str]) -> str:
     """Render the complete semantic application stylesheet from the palette."""
     return f"""
-QMainWindow {{ background: {colours['background']}; color: {colours['text']}; }}
-QWidget {{ font: 10pt 'Segoe UI'; color: {colours['text']}; }}
-QLabel#title {{ font-size: 22px; font-weight: 650; color: {colours['title']}; }}
-QLabel#muted {{ color: {colours['muted']}; }}
-QLabel#mode {{ background: {colours['accent']}; color: {colours['accent_text']}; border-radius: 9px; padding: 4px 8px; font-weight: 700; }}
-QFrame#runtimeCard, QFrame#actionCard, QFrame#composeCard, QGroupBox {{ background: {colours['panel']}; border: 1px solid {colours['panel_border']}; border-radius: 9px; }}
-QFrame#metricCard {{ background: {colours['panel']}; border: 1px solid {colours['panel_border']}; border-radius: 9px; }}
+QMainWindow {{ background: {colours["background"]}; color: {colours["text"]}; }}
+QWidget {{ font: 10pt 'Segoe UI'; color: {colours["text"]}; }}
+QLabel#title {{ font-size: 22px; font-weight: 650; color: {colours["title"]}; }}
+QLabel#muted {{ color: {colours["muted"]}; }}
+QLabel#mode {{ background: {colours["accent"]}; color: {colours["accent_text"]}; border-radius: 9px; padding: 4px 8px; font-weight: 700; }}
+QFrame#runtimeCard, QFrame#actionCard, QFrame#composeCard, QGroupBox {{ background: {colours["panel"]}; border: 1px solid {colours["panel_border"]}; border-radius: 9px; }}
+QFrame#metricCard {{ background: {colours["panel"]}; border: 1px solid {colours["panel_border"]}; border-radius: 9px; }}
 QFrame#runtimeCard, QFrame#actionCard {{ padding: 4px; }}
-QLabel#cardLabel {{ color: {colours['muted']}; font-size: 9px; font-weight: 700; }}
-QLabel#cardValue {{ color: {colours['title']}; font-size: 18px; font-weight: 700; }}
+QLabel#cardLabel {{ color: {colours["muted"]}; font-size: 9px; font-weight: 700; }}
+QLabel#cardValue {{ color: {colours["title"]}; font-size: 18px; font-weight: 700; }}
 QLabel#statusBadge_neutral, QLabel#statusBadge_ready, QLabel#statusBadge_caution {{ border-radius: 8px; padding: 4px 8px; font-weight: 700; }}
-QLabel#statusBadge_neutral {{ background: {colours['accent']}; color: {colours['accent_text']}; }}
-QLabel#statusBadge_ready {{ background: {colours['status_ready_background']}; color: {colours['status_ready_text']}; }}
-QLabel#statusBadge_caution {{ background: {colours['status_caution_background']}; color: {colours['status_caution_text']}; }}
-QProgressBar {{ background: {colours['background']}; border: 1px solid {colours['panel_border']}; border-radius: 5px; text-align: center; min-height: 16px; }}
-QProgressBar::chunk {{ background: {colours['accent_hover']}; border-radius: 4px; }}
-QGroupBox {{ margin-top: 10px; padding: 10px 8px 6px 8px; font-weight: 650; color: {colours['title']}; }}
+QLabel#statusBadge_neutral {{ background: {colours["accent"]}; color: {colours["accent_text"]}; }}
+QLabel#statusBadge_ready {{ background: {colours["status_ready_background"]}; color: {colours["status_ready_text"]}; }}
+QLabel#statusBadge_caution {{ background: {colours["status_caution_background"]}; color: {colours["status_caution_text"]}; }}
+QProgressBar {{ background: {colours["background"]}; border: 1px solid {colours["panel_border"]}; border-radius: 5px; text-align: center; min-height: 16px; }}
+QProgressBar::chunk {{ background: {colours["accent_hover"]}; border-radius: 4px; }}
+QGroupBox {{ margin-top: 10px; padding: 10px 8px 6px 8px; font-weight: 650; color: {colours["title"]}; }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
-QLabel#overlay {{ background: {colours['overlay']}; border: 1px solid {colours['panel_border']}; border-radius: 8px; padding: 8px; color: {colours['text']}; }}
+QLabel#overlay {{ background: {colours["overlay"]}; border: 1px solid {colours["panel_border"]}; border-radius: 8px; padding: 8px; color: {colours["text"]}; }}
 QLabel#userBubble, QLabel#assistantBubble {{ border-radius: 10px; padding: 10px; margin: 3px 0; }}
-QLabel#userBubble {{ background: {colours['user_bubble']}; }}
-QLabel#assistantBubble {{ background: {colours['assistant_bubble']}; border: 1px solid {colours['panel_border']}; }}
-QLabel#worldBubble {{ background: {colours['world_bubble']}; border: 1px solid {colours['world_border']}; border-radius: 10px; padding: 10px; margin: 3px 0; }}
-QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget {{ background: {colours['panel']}; border: 1px solid {colours['panel_border']}; border-radius: 6px; padding: 6px; color: {colours['text']}; alternate-background-color: {colours['background']}; }}
-QHeaderView::section {{ background: {colours['accent']}; color: {colours['accent_text']}; border: 0; border-right: 1px solid {colours['panel_border']}; padding: 7px 9px; font-weight: 650; }}
+QLabel#userBubble {{ background: {colours["user_bubble"]}; }}
+QLabel#assistantBubble {{ background: {colours["assistant_bubble"]}; border: 1px solid {colours["panel_border"]}; }}
+QLabel#worldBubble {{ background: {colours["world_bubble"]}; border: 1px solid {colours["world_border"]}; border-radius: 10px; padding: 10px; margin: 3px 0; }}
+QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget {{ background: {colours["panel"]}; border: 1px solid {colours["panel_border"]}; border-radius: 6px; padding: 6px; color: {colours["text"]}; alternate-background-color: {colours["background"]}; }}
+QHeaderView::section {{ background: {colours["accent"]}; color: {colours["accent_text"]}; border: 0; border-right: 1px solid {colours["panel_border"]}; padding: 7px 9px; font-weight: 650; }}
 QTreeWidget::item {{ min-height: 28px; padding: 4px; }}
-QTreeWidget::item:selected {{ background: {colours['accent_hover']}; color: {colours['accent_text']}; }}
-QTabWidget::pane {{ background: {colours['background']}; border: 1px solid {colours['panel_border']}; border-radius: 6px; }}
-QTabBar::tab {{ background: {colours['panel']}; color: {colours['muted']}; border: 1px solid {colours['panel_border']}; padding: 7px 12px; }}
-QTabBar::tab:selected {{ background: {colours['accent']}; color: {colours['accent_text']}; }}
-QPushButton, QToolButton {{ background: {colours['accent']}; border: none; border-radius: 6px; padding: 7px 12px; color: {colours['accent_text']}; font-weight: 600; }}
-QPushButton:hover, QToolButton:hover {{ background: {colours['accent_hover']}; }}
-QPushButton:disabled, QToolButton:disabled {{ background: {colours['disabled']}; color: {colours['disabled_text']}; }}
-QScrollArea {{ background: transparent; }} QSplitter::handle {{ background: {colours['panel_border']}; width: 8px; }}
+QTreeWidget::item:selected {{ background: {colours["accent_hover"]}; color: {colours["accent_text"]}; }}
+QTabWidget::pane {{ background: {colours["background"]}; border: 1px solid {colours["panel_border"]}; border-radius: 6px; }}
+QTabBar::tab {{ background: {colours["panel"]}; color: {colours["muted"]}; border: 1px solid {colours["panel_border"]}; padding: 7px 12px; }}
+QTabBar::tab:selected {{ background: {colours["accent"]}; color: {colours["accent_text"]}; }}
+QPushButton, QToolButton {{ background: {colours["accent"]}; border: none; border-radius: 6px; padding: 7px 12px; color: {colours["accent_text"]}; font-weight: 600; }}
+QPushButton:hover, QToolButton:hover {{ background: {colours["accent_hover"]}; }}
+QPushButton:disabled, QToolButton:disabled {{ background: {colours["disabled"]}; color: {colours["disabled_text"]}; }}
+QScrollArea {{ background: transparent; }} QSplitter::handle {{ background: {colours["panel_border"]}; width: 8px; }}
 """
 
 
 class ColourSettingsDialog(QDialog):
     """A semantic colour picker with Qt's wheel, RGB, and hexadecimal editor."""
 
-    def __init__(self, colours: dict[str, str], parent=None) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, colours: dict[str, str], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("AIBrain colour settings")
         self._colours = colours.copy()
@@ -153,7 +153,11 @@ class ColourSettingsDialog(QDialog):
             label = QLabel(name.replace("_", " ").title())
             button = QPushButton(value.upper())
             button.setMinimumWidth(112)
-            button.clicked.connect(lambda checked=False, key=name: self._choose(key))
+
+            def choose(_checked: bool = False, key: str = name) -> None:
+                self._choose(key)
+
+            button.clicked.connect(choose)
             self._buttons[name] = button
             item_layout.addWidget(label, 1)
             item_layout.addWidget(button)
@@ -168,7 +172,7 @@ class ColourSettingsDialog(QDialog):
         layout.addWidget(controls)
         self.resize(720, 500)
 
-    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def showEvent(self, event: QShowEvent) -> None:
         """Fit and centre the palette inside the active display."""
         super().showEvent(event)
         screen = self.screen() or QGuiApplication.primaryScreen()

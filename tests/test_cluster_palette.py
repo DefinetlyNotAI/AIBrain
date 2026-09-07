@@ -1,4 +1,5 @@
 """Stable visual-region colour contract."""
+
 from __future__ import annotations
 
 import unittest
@@ -19,5 +20,10 @@ class ClusterPaletteTests(unittest.TestCase):
         self.assertEqual(CLUSTER_COLOR_MAP["Recent output rarity"], "#C5F28A")
 
     def test_light_renderer_background_uses_a_contrasting_palette(self) -> None:
-        self.assertEqual(cluster_colour_map_for_background("#F8F8F8"), LIGHT_BACKGROUND_CLUSTER_COLOR_MAP)
-        self.assertEqual(cluster_colour_map_for_background("#071018"), CLUSTER_COLOR_MAP)
+        self.assertEqual(
+            cluster_colour_map_for_background("#F8F8F8"),
+            LIGHT_BACKGROUND_CLUSTER_COLOR_MAP,
+        )
+        self.assertEqual(
+            cluster_colour_map_for_background("#071018"), CLUSTER_COLOR_MAP
+        )

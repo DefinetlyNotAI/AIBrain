@@ -110,29 +110,52 @@ def gpu_relaunch_attempt() -> int:
 
 def can_request_gpu_relaunch() -> bool:
     """Allow one renderer-triggered restart after a wrong adapter is detected."""
-    return sys.platform == "win32" and gpu_relaunch_attempt() < _MAX_GPU_RELAUNCH_ATTEMPTS
+    return (
+        sys.platform == "win32" and gpu_relaunch_attempt() < _MAX_GPU_RELAUNCH_ATTEMPTS
+    )
 
 
 def discover_render_adapters() -> list[RenderAdapter]:
     """Discover Windows display adapters; Qt/OpenGL makes the final device choice."""
-    command = ["powershell", "-NoProfile", "-Command",
-               "Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | ConvertTo-Json -Compress"]
+    command = [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion | ConvertTo-Json -Compress",
+    ]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=5)
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=True, timeout=5
+        )
         raw = json.loads(result.stdout)
         entries = raw if isinstance(raw, list) else [raw]
-        adapters = [RenderAdapter(str(index), str(item.get("Name") or "Unknown adapter"),
-                                  str(item.get("DriverVersion") or "Unknown driver")) for index, item in
-                    enumerate(entries)]
+        adapters = [
+            RenderAdapter(
+                str(index),
+                str(item.get("Name") or "Unknown adapter"),
+                str(item.get("DriverVersion") or "Unknown driver"),
+            )
+            for index, item in enumerate(entries)
+        ]
         if adapters:
             return adapters
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError, TypeError):
         pass
     try:
-        result = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
-                                capture_output=True, text=True, check=True, timeout=5)
-        return [RenderAdapter(str(index), *[part.strip() for part in line.split(",", maxsplit=1)]) for index, line in
-                enumerate(result.stdout.splitlines()) if line.strip()]
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        return [
+            RenderAdapter(
+                str(index), *[part.strip() for part in line.split(",", maxsplit=1)]
+            )
+            for index, line in enumerate(result.stdout.splitlines())
+            if line.strip()
+        ]
     except (OSError, subprocess.SubprocessError):
         return []
 
@@ -161,14 +184,16 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
                         persisted = None
                     if persisted == desired:
                         continue
-                    winreg.SetValueEx(
-                        key, executable,
-                        0, winreg.REG_SZ, desired
-                    )
+                    winreg.SetValueEx(key, executable, 0, winreg.REG_SZ, desired)
                     persisted, _ = winreg.QueryValueEx(key, executable)
                     if persisted != desired:
-                        raise OSError(f"Windows did not persist the high-performance preference for {executable}")
-                    LOG.info("Windows high-performance GPU preference persisted for %s", executable)
+                        raise OSError(
+                            f"Windows did not persist the high-performance preference for {executable}"
+                        )
+                    LOG.info(
+                        "Windows high-performance GPU preference persisted for %s",
+                        executable,
+                    )
                 else:
                     try:
                         winreg.DeleteValue(key, executable)
@@ -180,7 +205,9 @@ def set_windows_gpu_preference(high_performance: bool) -> bool:
         return False
 
 
-def set_windows_executable_gpu_preference(executable: Path, high_performance: bool = True) -> bool:
+def set_windows_executable_gpu_preference(
+    executable: Path, high_performance: bool = True
+) -> bool:
     """Persist Windows' GPU preference for a standalone AIBrain executable."""
     if sys.platform != "win32":
         return False
@@ -189,10 +216,18 @@ def set_windows_executable_gpu_preference(executable: Path, high_performance: bo
 
         key_path = r"Software\Microsoft\DirectX\UserGpuPreferences"
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
-            winreg.SetValueEx(key, str(executable.resolve()), 0, winreg.REG_SZ,
-                              "GpuPreference=2;" if high_performance else "GpuPreference=0;")
-        LOG.info("Requested Windows %s GPU for packaged executable %s",
-                 "high-performance" if high_performance else "system-default", executable)
+            winreg.SetValueEx(
+                key,
+                str(executable.resolve()),
+                0,
+                winreg.REG_SZ,
+                "GpuPreference=2;" if high_performance else "GpuPreference=0;",
+            )
+        LOG.info(
+            "Requested Windows %s GPU for packaged executable %s",
+            "high-performance" if high_performance else "system-default",
+            executable,
+        )
         return True
     except OSError as exc:
         LOG.warning("Could not set packaged executable GPU preference: %s", exc)
@@ -206,7 +241,9 @@ def should_prefer_high_performance_gpu() -> bool:
     try:
         import winreg
 
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\AIBrain\AIBrain") as key:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Software\AIBrain\AIBrain"
+        ) as key:
             value, _ = winreg.QueryValueEx(key, "render_adapter")
             return str(value) != "system"
     except (FileNotFoundError, OSError):

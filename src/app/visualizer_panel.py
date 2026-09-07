@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 
 import numpy as np
 from PySide6.QtCore import QSettings, Qt, QTimer, Signal
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -26,13 +28,14 @@ from PySide6.QtWidgets import (
 )
 
 from ..connectome.activity import ActivityField
-from ..connectome.analysis import ConnectomeAnalyzer
+from ..connectome.analysis import AnalysisRecord, ConnectomeAnalyzer
 from ..connectome.analysis_cache import AnalysisPageCache
 from ..connectome.export import export_nn_analysis_plus, export_session_analysis
 from ..connectome.generator import build_connectome
 from ..connectome.mapper import ActivityMapper
 from ..connectome.renderer import ConnectomeRenderer
 from ..models.instrumented_backend import ActivationFrame
+from ..models.message_types import TranscriptTurn
 from ..utils.gpu import discover_render_adapters, set_windows_gpu_preference
 from .theme import ColourSettingsDialog, load_colours, save_colours
 
@@ -44,6 +47,29 @@ class PlaybackStep:
     peaks: np.ndarray
 
 
+def _trim_analysis_memory_data(
+    playback: list[PlaybackStep],
+    retained_bytes: int,
+    memory_limit_bytes: int | None,
+    records: list[AnalysisRecord],
+    cache: AnalysisPageCache,
+) -> tuple[int, bool]:
+    """Move old playback and analysis records into the bounded disk cache."""
+    if memory_limit_bytes is None:
+        return retained_bytes, False
+    data_lost = False
+    while playback and retained_bytes > memory_limit_bytes:
+        oldest = playback.pop(0)
+        retained_bytes -= VisualizerPanel._signal_bytes(oldest)
+        if records:
+            record = records.pop(0)
+            overflowed = cache.append(record)
+        else:
+            overflowed = False
+        data_lost = data_lost or overflowed or not cache.enabled
+    return retained_bytes, data_lost
+
+
 class SignalNodeInspectorLabel(QLabel):
     """Selectable inspector text with a click target only over the signal-node number."""
 
@@ -53,7 +79,7 @@ class SignalNodeInspectorLabel(QLabel):
     def set_node_details(self, index: int, details: str) -> None:
         self.setText(f"{self._prefix}{index:05d}{details}")
 
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         prefix_width = self.fontMetrics().horizontalAdvance(self._prefix)
         number_width = self.fontMetrics().horizontalAdvance("00000")
         if (
@@ -89,7 +115,7 @@ class VisualizerPanel(QWidget):
         self._replay_active = False
         self._playback_timer = QTimer(self)
         self._playback_timer.timeout.connect(self._advance_playback)
-        self._conversation: list[dict[str, object]] = []
+        self._conversation: list[TranscriptTurn] = []
         self._analysis_memory_limit_bytes: int | None = None
         self._analysis_memory_exceeded = False
         self._analysis_retained_bytes = 0
@@ -111,8 +137,8 @@ class VisualizerPanel(QWidget):
         self.renderer.gpuRestartRequested.connect(self.gpuRestartRequested)
 
     def _build_ui(self) -> None:
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(8, 18, 18, 18)
+        self.root_layout = QVBoxLayout(self)
+        self.root_layout.setContentsMargins(8, 18, 18, 18)
 
         header = QGridLayout()
         header.setHorizontalSpacing(8)
@@ -201,7 +227,7 @@ class VisualizerPanel(QWidget):
         self.reset_view.setToolTip(
             "Restore the default 2D or 3D camera position and zoom"
         )
-        self.reset_view.clicked.connect(lambda: self.renderer.reset_camera())
+        self.reset_view.clicked.connect(self.renderer.reset_camera)
         self.settings_toggle = QPushButton("View settings")
         self.settings_toggle.setCheckable(True)
         self.settings_toggle.setToolTip(
@@ -226,7 +252,7 @@ class VisualizerPanel(QWidget):
         header.addWidget(self.colour_settings, 1, 0)
         header.setColumnStretch(0, 1)
 
-        self.layout.addLayout(header)
+        self.root_layout.addLayout(header)
         settings_body = QWidget()
         settings_layout = QFormLayout(settings_body)
         settings_layout.setContentsMargins(0, 2, 0, 6)
@@ -256,8 +282,8 @@ class VisualizerPanel(QWidget):
         self.settings_panel.setFixedHeight(154)
         self.settings_panel.setWidget(settings_body)
         self.settings_panel.setVisible(False)
-        self.layout.addWidget(self.settings_panel)
-        self.layout.addWidget(self.renderer, 1)
+        self.root_layout.addWidget(self.settings_panel)
+        self.root_layout.addWidget(self.renderer, 1)
         self.rewind_controls = QWidget()
         rewind_layout = QHBoxLayout(self.rewind_controls)
         rewind_layout.setContentsMargins(0, 4, 0, 4)
@@ -276,7 +302,7 @@ class VisualizerPanel(QWidget):
         self.replay_rewind.clicked.connect(lambda: self.start_playback(1.0))
         self.next_rewind.clicked.connect(self.playback_next)
         self.rewind_controls.setVisible(False)
-        self.layout.addWidget(self.rewind_controls)
+        self.root_layout.addWidget(self.rewind_controls)
 
         selectable_text_flags = Qt.TextInteractionFlag(
             Qt.TextInteractionFlag.TextSelectableByMouse.value
@@ -312,9 +338,9 @@ class VisualizerPanel(QWidget):
         inspect_controls.addWidget(self.importance)
         inspect_controls.addStretch(1)
 
-        self.layout.addWidget(self.overlay)
-        self.layout.addWidget(self.inspector)
-        self.layout.addLayout(inspect_controls)
+        self.root_layout.addWidget(self.overlay)
+        self.root_layout.addWidget(self.inspector)
+        self.root_layout.addLayout(inspect_controls)
 
         self._set_node_borders(self.node_borders.isChecked())
         self._refresh_overlay()
@@ -323,8 +349,8 @@ class VisualizerPanel(QWidget):
         self.analyzer.save_model()
         self.begin_recording()
         old = self.renderer
-        index = self.layout.indexOf(old)
-        self.layout.takeAt(index)
+        index = self.root_layout.indexOf(old)
+        self.root_layout.takeAt(index)
         old.setParent(None)
         old.deleteLater()
         self._build_graph(quality)
@@ -335,7 +361,7 @@ class VisualizerPanel(QWidget):
             self.renderer.set_node_borders(
                 self.node_borders.isChecked(), self.border_width.value()
             )
-        self.layout.insertWidget(index, self.renderer, 1)
+        self.root_layout.insertWidget(index, self.renderer, 1)
         self._refresh_overlay()
 
     def _set_settings_visible(self, visible: bool) -> None:
@@ -439,7 +465,7 @@ class VisualizerPanel(QWidget):
     def has_analysis_records(self) -> bool:
         return bool(self.analyzer.records) or self._analysis_cache.record_count > 0
 
-    def iter_analysis_records(self):  # type: ignore[no-untyped-def]
+    def iter_analysis_records(self) -> Iterator[AnalysisRecord]:
         yield from self._analysis_cache.iter_records()
         yield from self.analyzer.records
 
@@ -456,23 +482,16 @@ class VisualizerPanel(QWidget):
         )
 
     def _trim_analysis_memory(self) -> None:
-        if self._analysis_memory_limit_bytes is None:
-            return
-        while (
-            self._playback
-            and self._analysis_retained_bytes > self._analysis_memory_limit_bytes
-        ):
-            oldest = self._playback.pop(0)
-            self._analysis_retained_bytes -= self._signal_bytes(oldest)
-            if self.analyzer.records:
-                record = self.analyzer.records.pop(0)
-                overflowed = self._analysis_cache.append(record)
-            else:
-                overflowed = False
-            data_lost = overflowed or not self._analysis_cache.enabled
-            if data_lost and not self._analysis_memory_exceeded:
-                self._analysis_memory_exceeded = True
-                self.analysisMemoryExceeded.emit(True)
+        self._analysis_retained_bytes, data_lost = _trim_analysis_memory_data(
+            self._playback,
+            self._analysis_retained_bytes,
+            self._analysis_memory_limit_bytes,
+            self.analyzer.records,
+            self._analysis_cache,
+        )
+        if data_lost and not self._analysis_memory_exceeded:
+            self._analysis_memory_exceeded = True
+            self.analysisMemoryExceeded.emit(True)
 
     def begin_response_recording(self) -> None:
         """Start a new replay while retaining session-wide NN Analysis+ data."""
@@ -481,8 +500,8 @@ class VisualizerPanel(QWidget):
         self._playback_index = -1
         self._analysis_retained_bytes = 0
 
-    def set_conversation(self, conversation: list[dict[str, object]]) -> None:
-        self._conversation = [dict(turn) for turn in conversation]
+    def set_conversation(self, conversation: Sequence[TranscriptTurn]) -> None:
+        self._conversation = [turn.copy() for turn in conversation]
 
     def start_playback(self, speed: float) -> None:
         if not self._playback:

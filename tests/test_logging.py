@@ -57,8 +57,15 @@ class LoggingTests(unittest.TestCase):
         self.assertEqual(len(source), 28)
         self.assertTrue(message.startswith("first line"))
         self.assertTrue(continuations)
-        self.assertTrue(all(len(line) <= FILE_LOG_LINE_WIDTH for line in rendered.splitlines()))
-        self.assertTrue(all(line.startswith(" " * 19 + " | " + " " * 8 + " | ") for line in continuations))
+        self.assertTrue(
+            all(len(line) <= FILE_LOG_LINE_WIDTH for line in rendered.splitlines())
+        )
+        self.assertTrue(
+            all(
+                line.startswith(" " * 19 + " | " + " " * 8 + " | ")
+                for line in continuations
+            )
+        )
 
     def test_console_formatter_uses_ui_style_messages_without_log_columns(self) -> None:
         record = logging.LogRecord(
@@ -80,17 +87,27 @@ class LoggingTests(unittest.TestCase):
         self.assertNotRegex(rendered, r"\d{2}:\d{2}:\d{2}")
         self.assertNotIn("WARNING", rendered)
 
-    def test_console_records_wrap_relative_paths_without_mutating_the_file_message(self) -> None:
+    def test_console_records_wrap_relative_paths_without_mutating_the_file_message(
+        self,
+    ) -> None:
         path = console_ui.ROOT / "logs" / "aibrain.build_dist.log"
         message = f"Log file: {path}\n  This indented runtime detail has enough words to require more than one row"
-        record = logging.LogRecord("aibrain.build", logging.INFO, "", 0, message, (), None)
+        record = logging.LogRecord(
+            "aibrain.build", logging.INFO, "", 0, message, (), None
+        )
         with patch.object(console_ui, "terminal_width", return_value=42):
             rendered = ConsoleFormatter(colour=False).format(record)
         lines = rendered.splitlines()
         self.assertTrue(all(len(line) <= 42 for line in lines))
         self.assertNotIn(str(console_ui.ROOT), rendered)
         self.assertIn(r".\logs\aibrain.build_dist.log", rendered)
-        self.assertTrue(all(line.startswith("      ") for line in lines if "indented" in line or "words" in line))
+        self.assertTrue(
+            all(
+                line.startswith("      ")
+                for line in lines
+                if "indented" in line or "words" in line
+            )
+        )
         self.assertEqual(record.getMessage(), message)
 
     def test_feature_logs_are_scoped_and_crash_logs_are_lazy(self) -> None:
@@ -117,7 +134,9 @@ class LoggingTests(unittest.TestCase):
             self.assertIn("RuntimeError: boom", crash_log.read_text(encoding="utf-8"))
             self._close_root_handlers()
 
-    def test_handled_exception_preserves_traceback_in_runtime_and_crash_logs(self) -> None:
+    def test_handled_exception_preserves_traceback_in_runtime_and_crash_logs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runtime_log, crash_log = configure_logging("test", Path(directory))
             try:
@@ -191,7 +210,9 @@ class LoggingTests(unittest.TestCase):
         first_line = captured.splitlines()[0]
         self.assertRegex(first_line, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| INFO")
 
-    def test_completed_command_output_is_logged_once_without_console_decoration(self) -> None:
+    def test_completed_command_output_is_logged_once_without_console_decoration(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             console = StringIO()
             with redirect_stderr(console):
@@ -251,7 +272,9 @@ class LoggingTests(unittest.TestCase):
         self.assertEqual(runtime_log.name, "aibrain.main.log")
         self.assertEqual(crash_log.name, "crash.main.log")
 
-    def test_reconfiguring_logging_closes_existing_handlers_before_log_rotation(self) -> None:
+    def test_reconfiguring_logging_closes_existing_handlers_before_log_rotation(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             log_directory = Path(directory)
             first_runtime, _ = configure_logging("main", log_directory)

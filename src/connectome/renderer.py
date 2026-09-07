@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
+import struct
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import numpy as np
 from PySide6.QtCore import QPointF, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QWheelEvent
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from ..native.wrapper.connectome_kernels import native
@@ -14,9 +17,72 @@ from .activity import ActivityField
 from .generator import CLUSTER_COLOR_MAP, cluster_colour_map_for_background
 from .graph import ConnectomeGraph
 
+
+def _projection_matrix(
+    mode: str,
+    zoom: float,
+    width: int,
+    height: int,
+    *,
+    yaw: float = 0.25,
+    pitch: float = -0.2,
+    pan_x: float = 0.0,
+    pan_y: float = 0.0,
+) -> np.ndarray:
+    """Build the host-side projection matrix for a renderer camera state."""
+    aspect = max(width, 1) / max(height, 1)
+    scale = 1.0 / (16.0 * zoom)
+    depth_scale = 0.0 if mode == "2d" else 0.035
+    projection = np.array(
+        (
+            (scale / aspect, 0, 0, 0),
+            (0, scale, 0, 0),
+            (0, 0, depth_scale, 0),
+            (0, 0, 0, 1),
+        ),
+        dtype="f4",
+    )
+    if mode == "2d":
+        projection[0, 3] = pan_x
+        projection[1, 3] = pan_y
+        return np.ascontiguousarray(projection.T)
+    cy, sy, cp, sp = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch)
+    rotate_y = np.array(
+        ((cy, 0, sy, 0), (0, 1, 0, 0), (-sy, 0, cy, 0), (0, 0, 0, 1)),
+        dtype="f4",
+    )
+    rotate_x = np.array(
+        ((1, 0, 0, 0), (0, cp, -sp, 0), (0, sp, cp, 0), (0, 0, 0, 1)),
+        dtype="f4",
+    )
+    return np.ascontiguousarray((projection @ rotate_x @ rotate_y).T)
+
+
+def _validated_region_filter(
+    mode: str, region_filter: int | None, region_count: int
+) -> int | None:
+    """Validate a projection request and return its effective region filter."""
+    if mode not in {"2d", "3d"}:
+        raise ValueError(f"Unsupported connectome projection mode: {mode}")
+    if region_filter is not None and not 0 <= region_filter < region_count:
+        raise ValueError("The selected sector is outside the connectome region list")
+    return region_filter if mode == "2d" else None
+
+
+def _visible_region_indices(
+    positions: np.ndarray, regions: np.ndarray, region_filter: int | None
+) -> np.ndarray:
+    """Return host indices visible under an optional region filter."""
+    if region_filter is None:
+        return np.arange(len(positions))
+    return np.flatnonzero(to_numpy(regions) == region_filter)
+
+
 LOG = logging.getLogger(__name__)
 
-# noinspection LongLine
+if TYPE_CHECKING:
+    import moderngl
+
 POINT_VERTEX_SHADER = """#version 330
 in vec3 in_position; in float in_region; in float in_activity;
 uniform mat4 u_mvp; uniform float u_region_filter; out float region; out float activity;
@@ -25,7 +91,7 @@ void main() { if (u_region_filter >= 0.0 && abs(in_region - u_region_filter) > .
 """
 
 
-def _shader_palette(colour_map: dict[str, str] = CLUSTER_COLOR_MAP) -> str:
+def _shader_palette(colour_map: Mapping[str, str] = CLUSTER_COLOR_MAP) -> str:
     colours = tuple(colour_map.values())
     clauses = []
     for index, colour in enumerate(colours):
@@ -38,7 +104,7 @@ def _shader_palette(colour_map: dict[str, str] = CLUSTER_COLOR_MAP) -> str:
     return "\n ".join((*clauses, "return vec3(.35, .65, .85);"))
 
 
-def _point_fragment_shader(colour_map: dict[str, str]) -> str:
+def _point_fragment_shader(colour_map: Mapping[str, str]) -> str:
     return f"""#version 330
 in float region; in float activity; uniform float u_border_width; uniform float u_idle_strength; out vec4 f_color;
 vec3 cluster_colour(int cluster) {{ {_shader_palette(colour_map)} }}
@@ -57,7 +123,7 @@ void main() { if (u_region_filter >= 0.0 && abs(in_region - u_region_filter) > .
 """
 
 
-def _edge_fragment_shader(colour_map: dict[str, str]) -> str:
+def _edge_fragment_shader(colour_map: Mapping[str, str]) -> str:
     return f"""#version 330
 in float region; in float activity; uniform float u_idle_strength; out vec4 f_color;
 vec3 cluster_colour(int cluster) {{ {_shader_palette(colour_map)} }}
@@ -84,11 +150,14 @@ class ConnectomeRenderer(QOpenGLWidget):
         self.pan_x, self.pan_y = 0.0, 0.0
         self._last_pos: QPointF | None = None
         self.paused = False
-        self._ctx = self._moderngl = None
-        self._framebuffer = None
-        self._point_vao = self._edge_vao = None
-        self._node_activity_buffer = self._edge_activity_buffer = None
-        self._point_program = self._edge_program = None
+        self._ctx: moderngl.Context | None = None
+        self._framebuffer: moderngl.Framebuffer | None = None
+        self._point_vao: moderngl.VertexArray | None = None
+        self._edge_vao: moderngl.VertexArray | None = None
+        self._node_activity_buffer: moderngl.Buffer | None = None
+        self._edge_activity_buffer: moderngl.Buffer | None = None
+        self._point_program: moderngl.Program | None = None
+        self._edge_program: moderngl.Program | None = None
         self._render_edges = self._select_render_edges()
         self._edge_activity_values = np.zeros(len(self._render_edges) * 2, dtype="f4")
         self._gpu_error: str | None = None
@@ -112,7 +181,9 @@ class ConnectomeRenderer(QOpenGLWidget):
         target = (
             20_000
             if len(self.graph.positions) <= 5_000
-            else 50_000 if len(self.graph.positions) <= 12_000 else 110_000
+            else 50_000
+            if len(self.graph.positions) <= 12_000
+            else 110_000
         )
         selected = self.graph.edges[:: max(1, len(self.graph.edges) // target)]
         return np.ascontiguousarray(to_numpy(selected), dtype=np.int32)
@@ -121,7 +192,6 @@ class ConnectomeRenderer(QOpenGLWidget):
         try:
             import moderngl
 
-            self._moderngl = moderngl
             self._ctx = moderngl.create_context(require=330)
             # QOpenGLWidget renders into a Qt-owned FBO, not OpenGL FBO 0.
             # Capturing this current FBO is essential: otherwise ModernGL draws
@@ -237,35 +307,16 @@ class ConnectomeRenderer(QOpenGLWidget):
             self.update()
 
     def _mvp(self) -> np.ndarray:
-        aspect = max(self.width(), 1) / max(self.height(), 1)
-        scale = 1.0 / ((16.0 if self.view_mode == "2d" else 16.0) * self.zoom)
-        depth_scale = 0.0 if self.view_mode == "2d" else 0.035
-        projection = np.array(
-            (
-                (scale / aspect, 0, 0, 0),
-                (0, scale, 0, 0),
-                (0, 0, depth_scale, 0),
-                (0, 0, 0, 1),
-            ),
-            dtype="f4",
+        return _projection_matrix(
+            self.view_mode,
+            self.zoom,
+            self.width(),
+            self.height(),
+            yaw=self.yaw,
+            pitch=self.pitch,
+            pan_x=self.pan_x,
+            pan_y=self.pan_y,
         )
-        if self.view_mode == "2d":
-            projection[0, 3] = getattr(self, "pan_x", 0.0)
-            projection[1, 3] = getattr(self, "pan_y", 0.0)
-            return np.ascontiguousarray(projection.T)
-        cy, sy, cp, sp = (
-            np.cos(self.yaw),
-            np.sin(self.yaw),
-            np.cos(self.pitch),
-            np.sin(self.pitch),
-        )
-        rotate_y = np.array(
-            ((cy, 0, sy, 0), (0, 1, 0, 0), (-sy, 0, cy, 0), (0, 0, 0, 1)), dtype="f4"
-        )
-        rotate_x = np.array(
-            ((1, 0, 0, 0), (0, cp, -sp, 0), (0, sp, cp, 0), (0, 0, 0, 1)), dtype="f4"
-        )
-        return np.ascontiguousarray((projection @ rotate_x @ rotate_y).T)
 
     def _upload_activity(self) -> None:
         assert (
@@ -282,6 +333,8 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._paint_fallback()
             return
         try:
+            import moderngl
+
             self._framebuffer = self._ctx.detect_framebuffer()
             self._framebuffer.use()
             if self._palette_resources_pending:
@@ -296,30 +349,59 @@ class ConnectomeRenderer(QOpenGLWidget):
             )
             matrix = self._mvp().tobytes()
             self._upload_activity()
+            point_program = self._point_program
+            edge_program = self._edge_program
+            point_vao = self._point_vao
+            edge_vao = self._edge_vao
+            if (
+                point_program is None
+                or edge_program is None
+                or point_vao is None
+                or edge_vao is None
+            ):
+                raise RuntimeError("ModernGL resources were not initialized")
             colour = QColor(self.background_colour)
             self._ctx.clear(
                 colour.redF(), colour.greenF(), colour.blueF(), 1.0, depth=1.0
             )
-            self._edge_program["u_mvp"].write(matrix)
-            self._point_program["u_mvp"].write(matrix)
-            self._point_program["u_border_width"].value = (
-                self.node_border_width if self.show_node_borders else 0.0
+            self._write_uniform(edge_program, "u_mvp", matrix)
+            self._write_uniform(point_program, "u_mvp", matrix)
+            self._write_uniform_float(
+                point_program,
+                "u_border_width",
+                self.node_border_width if self.show_node_borders else 0.0,
             )
             idle_strength = 0.58 if self.view_mode == "2d" else 0.42
-            self._point_program["u_idle_strength"].value = idle_strength
-            self._edge_program["u_idle_strength"].value = idle_strength
+            self._write_uniform_float(point_program, "u_idle_strength", idle_strength)
+            self._write_uniform_float(edge_program, "u_idle_strength", idle_strength)
             region_filter = (
                 float(self.region_filter) if self.region_filter is not None else -1.0
             )
-            self._point_program["u_region_filter"].value = region_filter
-            self._edge_program["u_region_filter"].value = region_filter
-            self._edge_vao.render(self._moderngl.LINES)
-            self._point_vao.render(self._moderngl.POINTS)
+            self._write_uniform_float(point_program, "u_region_filter", region_filter)
+            self._write_uniform_float(edge_program, "u_region_filter", region_filter)
+            edge_vao.render(moderngl.LINES)
+            point_vao.render(moderngl.POINTS)
         except Exception as exc:
             self._gpu_error = str(exc)
             LOG.exception("ModernGL frame failed; using fallback")
             self.backendChanged.emit("GPU frame failed — reduced fallback renderer")
             self._paint_fallback()
+
+    @staticmethod
+    def _write_uniform(program: moderngl.Program, name: str, data: bytes) -> None:
+        """Write bytes only to a real shader uniform."""
+        import moderngl
+
+        resource = program[name]
+        if not isinstance(resource, moderngl.Uniform):
+            raise TypeError(f"Shader resource {name} is not a uniform")
+        resource.write(data)
+
+    @classmethod
+    def _write_uniform_float(
+        cls, program: moderngl.Program, name: str, value: float
+    ) -> None:
+        cls._write_uniform(program, name, struct.pack("f", value))
 
     def _paint_fallback(self) -> None:
         painter = QPainter(self)
@@ -333,6 +415,7 @@ class ConnectomeRenderer(QOpenGLWidget):
             points[::stride],
             activities[::stride],
             regions[::stride],
+            strict=True,
         ):
             colour = QColor(
                 self._cluster_colour_map[self.graph.region_names[int(region)]]
@@ -367,10 +450,10 @@ class ConnectomeRenderer(QOpenGLWidget):
             (self.width() / 2 + x * scale, self.height() / 2 - y * scale)
         )
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         self._last_pos = event.position()
 
-    def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if (
             self.view_mode == "3d"
             and self._last_pos is not None
@@ -392,7 +475,7 @@ class ConnectomeRenderer(QOpenGLWidget):
             self._last_pos = event.position()
             self.update()
 
-    def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if (
             self._last_pos is not None
             and (event.position() - self._last_pos).manhattanLength() < 5
@@ -406,7 +489,7 @@ class ConnectomeRenderer(QOpenGLWidget):
                 )
         self._last_pos = None
 
-    def wheelEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def wheelEvent(self, event: QWheelEvent) -> None:
         # Smaller zoom is closer. 0.025 gives ~40x closer inspection than
         # the default view while retaining a finite, numerically stable scale.
         self.zoom = min(
@@ -440,19 +523,13 @@ class ConnectomeRenderer(QOpenGLWidget):
 
     def set_projection_mode(self, mode: str, region_filter: int | None = None) -> None:
         """Switch between depth-aware 3D and flat, optionally sector-filtered 2D."""
-        if mode not in {"2d", "3d"}:
-            raise ValueError(f"Unsupported connectome projection mode: {mode}")
-        if region_filter is not None and not 0 <= region_filter < len(
-            self.graph.region_names
-        ):
-            raise ValueError(
-                "The selected sector is outside the connectome region list"
-            )
         self.view_mode = mode
-        self.region_filter = region_filter if mode == "2d" else None
+        self.region_filter = _validated_region_filter(
+            mode, region_filter, len(self.graph.region_names)
+        )
         self.update()
 
     def _visible_indices(self) -> np.ndarray:
-        if self.region_filter is None:
-            return np.arange(len(self.graph.positions))
-        return np.flatnonzero(to_numpy(self.graph.regions) == self.region_filter)
+        return _visible_region_indices(
+            self.graph.positions, self.graph.regions, self.region_filter
+        )

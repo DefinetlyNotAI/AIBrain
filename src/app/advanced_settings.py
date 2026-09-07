@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -39,11 +39,11 @@ class AdvancedSettingsDialog(QDialog):
         form = QFormLayout(body)
         self.temperature = QDoubleSpinBox()
         self.temperature.setRange(0, 2)
-        self.temperature.setSingleStep(.05)
+        self.temperature.setSingleStep(0.05)
         self.temperature.setValue(config.temperature)
         self.top_p = QDoubleSpinBox()
-        self.top_p.setRange(.05, 1)
-        self.top_p.setSingleStep(.05)
+        self.top_p.setRange(0.05, 1)
+        self.top_p.setSingleStep(0.05)
         self.top_p.setValue(config.top_p)
         self.max_tokens = QSpinBox()
         self.max_tokens.setRange(1, 8192)
@@ -95,7 +95,9 @@ class AdvancedSettingsDialog(QDialog):
         self.top_p.setToolTip("Nucleus sampling limit for Normal Chat")
         self.max_tokens.setToolTip("Maximum generated tokens per Normal Chat response")
         self.context.setToolTip("Local model context window size")
-        self.gpu_layers.setToolTip("Number of layers requested on the GPU; -1 is automatic")
+        self.gpu_layers.setToolTip(
+            "Number of layers requested on the GPU; -1 is automatic"
+        )
         self.speed.setToolTip("Replay presentation speed")
 
         self.settings_scroll = QScrollArea()
@@ -111,7 +113,7 @@ class AdvancedSettingsDialog(QDialog):
         layout.addWidget(buttons)
         self.resize(520, 460)
 
-    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def showEvent(self, event: QShowEvent) -> None:
         """Fit the settings screen to the active display and show its top."""
         super().showEvent(event)
         screen = self.screen() or QGuiApplication.primaryScreen()

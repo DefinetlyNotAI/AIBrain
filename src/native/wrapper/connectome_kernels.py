@@ -3,8 +3,10 @@ from __future__ import annotations
 import ctypes
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import numpy as _numpy
+from numpy.typing import NDArray
 
 from ...utils.array_api import GPU_ACCELERATED
 from ...utils.array_api import array_api as np
@@ -22,7 +24,7 @@ _INT32_PTR = ctypes.POINTER(ctypes.c_int32)
 _INT16_PTR = ctypes.POINTER(ctypes.c_int16)
 
 
-def _array_module(array: object):  # type: ignore[no-untyped-def]
+def _array_module(array: _numpy.ndarray) -> ModuleType:
     """Use NumPy fallback operations for NumPy input under a CUDA runtime."""
     return _numpy if isinstance(array, _numpy.ndarray) else np
 
@@ -75,7 +77,7 @@ class NativeConnectome:
 
     def decay(
         self,
-        values: np.ndarray,
+        values: NDArray[_numpy.float32],
         factor: float,
         threshold: float,
     ) -> int:
@@ -96,9 +98,9 @@ class NativeConnectome:
 
     def edges(
         self,
-        values: np.ndarray,
-        edges: np.ndarray,
-        output: np.ndarray,
+        values: NDArray[_numpy.float32],
+        edges: NDArray[_numpy.int32],
+        output: NDArray[_numpy.float32],
     ) -> None:
         self._validate_float32(values, "values")
         self._validate_int32(edges, "edges")
@@ -150,11 +152,11 @@ class NativeConnectome:
 
     def regions(
         self,
-        values: np.ndarray,
-        region_ids: np.ndarray,
+        values: NDArray[_numpy.float32],
+        region_ids: NDArray[_numpy.int16],
         region_count: int,
         threshold: float = 0.1,
-    ) -> tuple[np.ndarray, int]:
+    ) -> tuple[NDArray[_numpy.float32], int]:
         self._validate_float32(values, "values")
         self._validate_int16(region_ids, "region_ids")
 
@@ -199,7 +201,7 @@ class NativeConnectome:
         return sums, int(active)
 
     @staticmethod
-    def _validate_float32(array: np.ndarray, name: str) -> None:
+    def _validate_float32(array: _numpy.ndarray, name: str) -> None:
         if array.dtype != np.float32:
             raise TypeError(f"{name} must use float32, got {array.dtype.name}")
 
@@ -207,7 +209,7 @@ class NativeConnectome:
             raise ValueError(f"{name} must be C-contiguous")
 
     @staticmethod
-    def _validate_int32(array: np.ndarray, name: str) -> None:
+    def _validate_int32(array: _numpy.ndarray, name: str) -> None:
         if array.dtype != np.int32:
             raise TypeError(f"{name} must use int32, got {array.dtype.name}")
 
@@ -215,7 +217,7 @@ class NativeConnectome:
             raise ValueError(f"{name} must be C-contiguous")
 
     @staticmethod
-    def _validate_int16(array: np.ndarray, name: str) -> None:
+    def _validate_int16(array: _numpy.ndarray, name: str) -> None:
         if array.dtype != np.int16:
             raise TypeError(f"{name} must use int16, got {array.dtype.name}")
 

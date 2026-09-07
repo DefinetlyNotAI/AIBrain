@@ -1,4 +1,5 @@
 """Managed-runtime checks shared by every supported CLI entry point."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -41,27 +42,43 @@ def require_managed_runtime(root: Path, feature: str) -> bool:
         return True
 
     if not in_managed_virtual_environment(root):
-        header("AIBrain", f"{feature.replace('_', ' ').title()} requires the managed runtime")
+        header(
+            "AIBrain",
+            f"{feature.replace('_', ' ').title()} requires the managed runtime",
+        )
         venv_python = root / ".venv" / "Scripts" / "python.exe"
         if venv_python.is_file():
-            error("Activate the managed virtual environment before running this command.")
+            error(
+                "Activate the managed virtual environment before running this command."
+            )
             instruction_list(
-                [("1.", "Activate:", r".\.venv\Scripts\Activate.ps1"),
-                 ("2.", "Run again:", f"python cli\\{feature}.py")],
+                [
+                    ("1.", "Activate:", r".\.venv\Scripts\Activate.ps1"),
+                    ("2.", "Run again:", f"python cli\\{feature}.py"),
+                ],
                 stream=sys.stderr,
             )
         else:
             error("The managed virtual environment has not been installed.")
             instruction_list(
-                [("1.", "Create and install:", r"py cli\installer.py"),
-                 ("2.", "Activate:", r".\.venv\Scripts\Activate.ps1")],
+                [
+                    ("1.", "Create and install:", r"py cli\installer.py"),
+                    ("2.", "Activate:", r".\.venv\Scripts\Activate.ps1"),
+                ],
                 stream=sys.stderr,
             )
         return False
-    missing = [name for module, name in REQUIRED_MODULES.items() if importlib.util.find_spec(module) is None]
+    missing = [
+        name
+        for module, name in REQUIRED_MODULES.items()
+        if importlib.util.find_spec(module) is None
+    ]
     if missing:
         header("AIBrain", "Managed runtime is incomplete")
         error("Missing required dependencies: " + ", ".join(missing) + ".")
-        instruction_list([("1.", "Repair the environment:", r"py cli\installer.py")], stream=sys.stderr)
+        instruction_list(
+            [("1.", "Repair the environment:", r"py cli\installer.py")],
+            stream=sys.stderr,
+        )
         return False
     return True

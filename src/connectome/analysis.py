@@ -8,9 +8,10 @@ import time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypedDict
+from typing import Protocol, TypedDict
 
 import numpy as _numpy
+from numpy.typing import NDArray
 
 from ..models.instrumented_backend import ActivationFrame
 from ..utils.array_api import array_api as np
@@ -29,9 +30,22 @@ MODEL_SAVE_RETRY_DELAYS = (0.025, 0.05, 0.1, 0.2, 0.4, 0.8)
 _MODEL_SAVE_LOCK = threading.RLock()
 
 
-def _normal(rng: object, mean: float, deviation: float, size: object) -> np.ndarray:
+class _NormalGenerator(Protocol):
+    """Random generator operations shared by NumPy and CuPy."""
+
+    def standard_normal(
+        self, size: int | tuple[int, ...]
+    ) -> NDArray[_numpy.float32] | NDArray[_numpy.float64]: ...
+
+
+def _normal(
+    rng: _NormalGenerator,
+    mean: float,
+    deviation: float,
+    size: int | tuple[int, ...],
+) -> NDArray[_numpy.float32] | NDArray[_numpy.float64]:
     """Sample normal values with the generator APIs shared by NumPy and CuPy."""
-    return mean + deviation * rng.standard_normal(size)  # type: ignore[union-attr]
+    return mean + deviation * rng.standard_normal(size)
 
 
 class PatternSegment(TypedDict):
@@ -40,6 +54,19 @@ class PatternSegment(TypedDict):
     dominant_channel: str
     frames: int
     mean_novelty: float
+
+
+class MaturityReport(TypedDict):
+    state: str
+    next_state: str | None
+    progress_percent: int
+    progress_detail: str
+    unmet_conditions: list[str]
+    consistency_sustained: bool
+    overfitting_sustained: bool
+    weights_frozen: bool
+    readiness: str
+    note: str
 
 
 @dataclass(slots=True)
@@ -185,8 +212,9 @@ class ConnectomeAnalyzer:
         try:
             with _numpy.load(path, allow_pickle=False) as stored:
                 feature_schema = str(
-                    _numpy.asarray(stored.get("feature_schema", _numpy.array("")))
-                    .reshape(-1)[0]
+                    _numpy.asarray(
+                        stored.get("feature_schema", _numpy.array(""))
+                    ).reshape(-1)[0]
                 )
                 if feature_schema != FEATURE_SCHEMA:
                     return False
@@ -199,7 +227,8 @@ class ConnectomeAnalyzer:
                 }
                 loaded = {name: stored[name] for name in tensors}
                 if any(
-                    value.shape != tensors[name].shape or not _numpy.isfinite(value).all()
+                    value.shape != tensors[name].shape
+                    or not _numpy.isfinite(value).all()
                     for name, value in loaded.items()
                 ):
                     return False
@@ -218,19 +247,19 @@ class ConnectomeAnalyzer:
                 ):
                     return False
                 stored_state = str(
-                    _numpy.asarray(stored.get("maturity_state", _numpy.array("Baby"))).reshape(
-                        -1
-                    )[0]
+                    _numpy.asarray(
+                        stored.get("maturity_state", _numpy.array("Baby"))
+                    ).reshape(-1)[0]
                 )
                 transition_count = int(
-                    _numpy.asarray(stored.get("transition_count", _numpy.array(0))).reshape(-1)[
-                        0
-                    ]
+                    _numpy.asarray(
+                        stored.get("transition_count", _numpy.array(0))
+                    ).reshape(-1)[0]
                 )
                 weights_frozen = bool(
-                    _numpy.asarray(stored.get("weights_frozen", _numpy.array(False))).reshape(
-                        -1
-                    )[0]
+                    _numpy.asarray(
+                        stored.get("weights_frozen", _numpy.array(False))
+                    ).reshape(-1)[0]
                 )
         except (OSError, KeyError, TypeError, ValueError):
             return False
@@ -331,7 +360,7 @@ class ConnectomeAnalyzer:
         """Wait out short Windows reader locks while retaining atomic replacement."""
         for delay in (*MODEL_SAVE_RETRY_DELAYS, None):
             try:
-                os.replace(temporary_path, self.model_path)
+                temporary_path.replace(self.model_path)
                 return
             except OSError as exc:
                 sharing_violation = isinstance(exc, PermissionError) or getattr(
@@ -342,7 +371,10 @@ class ConnectomeAnalyzer:
                 time.sleep(delay)
 
     def _train(
-        self, features: np.ndarray, embedding: np.ndarray, reconstruction: np.ndarray
+        self,
+        features: NDArray[_numpy.floating],
+        embedding: NDArray[_numpy.floating],
+        reconstruction: NDArray[_numpy.floating],
     ) -> float:
         """One gradient-descent step for tanh encoder + sigmoid decoder."""
         if self.weights_frozen:
@@ -443,7 +475,7 @@ class ConnectomeAnalyzer:
                 True,
             )
 
-    def maturity_report(self) -> dict[str, object]:
+    def maturity_report(self) -> MaturityReport:
         """Expose transparent state requirements; this is not an accuracy score."""
         consistent = self._sustained_consistency()
         overfitting = self._sustained_overfitting()
@@ -571,7 +603,10 @@ class ConnectomeAnalyzer:
             del key_events[24:]
             if segments_complete:
                 continue
-            if not segments or segments[-1]["dominant_channel"] != record.dominant_channel:
+            if (
+                not segments
+                or segments[-1]["dominant_channel"] != record.dominant_channel
+            ):
                 if len(segments) >= 40:
                     segments_complete = True
                     continue

@@ -5,11 +5,15 @@ import os
 import unittest
 from unittest.mock import patch
 
+import numpy as np
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QScrollArea
 
 from src.app.main_window import MainWindow
+from src.app.visualizer_panel import PlaybackStep
+from src.models.instrumented_backend import ActivationFrame, ActivitySource
 
 
 class MainLayoutTests(unittest.TestCase):
@@ -92,7 +96,13 @@ class MainLayoutTests(unittest.TestCase):
             window._assistant_bubble = window.chat.add_message(
                 "assistant", "Partial response"
             )
-            window.visualizer._playback.append(object())  # type: ignore[arg-type]
+            window.visualizer._playback.append(
+                PlaybackStep(
+                    ActivationFrame("Partial", 1, ActivitySource.REAL_TIME),
+                    np.zeros(1, dtype=np.float32),
+                    np.zeros(1, dtype=np.float32),
+                )
+            )
 
             window._finished(
                 {
@@ -112,7 +122,7 @@ class MainLayoutTests(unittest.TestCase):
 
     def test_world_tokens_do_not_drive_connectome_rendering(self) -> None:
         window = MainWindow([])
-        frame = object()
+        frame = ActivationFrame("test", 1, ActivitySource.REAL_TIME)
         try:
             with patch.object(window.visualizer, "apply_frame") as apply_frame:
                 window._simulation_token("world", 1, "weather", frame)

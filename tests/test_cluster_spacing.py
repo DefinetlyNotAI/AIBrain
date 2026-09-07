@@ -1,4 +1,5 @@
 """Cluster-spacing graph contract."""
+
 from __future__ import annotations
 
 import unittest
@@ -19,7 +20,9 @@ class ClusterSpacingTests(unittest.TestCase):
         self.assertEqual(graph.regions.shape, (11000,))
         self.assertGreater(len(graph.edges), 0)
 
-    def test_activity_mapping_uses_measured_channels_without_token_randomization(self) -> None:
+    def test_activity_mapping_uses_measured_channels_without_token_randomization(
+        self,
+    ) -> None:
         graph = build_connectome("activity-regression", "Low")
         field = ActivityField(graph)
         measurements = {
@@ -71,7 +74,7 @@ class ClusterSpacingTests(unittest.TestCase):
         field = ActivityField(graph)
         node = 0
         channel = graph.region_names[int(graph.regions[node])]
-        measurements = {name: 0.25 for name in graph.region_names}
+        measurements = dict.fromkeys(graph.region_names, 0.25)
         frame = ActivationFrame(
             "token",
             1,
@@ -90,10 +93,12 @@ class ClusterSpacingTests(unittest.TestCase):
         self.assertEqual(field.values[node], 0.0)
 
     def test_spacing_changes_the_deterministic_cluster_layout(self) -> None:
-        compact = build_connectome("spacing-check", "Low", .6)
+        compact = build_connectome("spacing-check", "Low", 0.6)
         spread = build_connectome("spacing-check", "Low", 1.8)
 
         self.assertTrue(np.array_equal(compact.regions, spread.regions))
         self.assertFalse(np.allclose(compact.positions, spread.positions))
-        self.assertGreater(float(np.linalg.norm(spread.positions.mean(axis=0))),
-                           float(np.linalg.norm(compact.positions.mean(axis=0))))
+        self.assertGreater(
+            float(np.linalg.norm(spread.positions.mean(axis=0))),
+            float(np.linalg.norm(compact.positions.mean(axis=0))),
+        )

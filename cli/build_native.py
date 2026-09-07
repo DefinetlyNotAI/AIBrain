@@ -8,6 +8,7 @@ The script discovers MinGW GCC, Clang, or MSVC, compiles an optimized x64 DLL,
 verifies the resulting PE library and exported symbols, then commits the
 generated DLL only when its contents have changed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -42,6 +43,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.logging import (
+    REPORTABLE_EXCEPTIONS,
     configure_cli_logging,
     log_completed_command,
     report_exception,
@@ -67,19 +69,19 @@ class Compiler:
 
 
 def line(
-        label: str,
-        text: str,
-        colour: str = Colour.CYAN,
+    label: str,
+    text: str,
+    colour: str = Colour.CYAN,
 ) -> None:
     """Render a compact build status line."""
     status(label, text, colour)
 
 
 def run_command(
-        command_line: list[str],
-        *,
-        check: bool = False,
-        show_output: bool = True,
+    command_line: list[str],
+    *,
+    check: bool = False,
+    show_output: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run an external command and render each output line as it arrives."""
     command_preview(command_line)
@@ -97,13 +99,14 @@ def run_command(
             stderr=subprocess.STDOUT,
             bufsize=1,
         )
-        if process.stdout is None:
+        stdout = process.stdout
+        if stdout is None:
             raise RuntimeError("Could not capture command output")
         output_queue: queue.Queue[str | None] = queue.Queue()
 
         def read_output() -> None:
             try:
-                for output_line in process.stdout:
+                for output_line in stdout:
                     output_queue.put(output_line)
             finally:
                 output_queue.put(None)
@@ -203,8 +206,8 @@ def discover_compiler(explicit: str | None) -> Compiler:
 
 
 def command_for(
-        compiler: Compiler,
-        debug: bool,
+    compiler: Compiler,
+    debug: bool,
 ) -> list[str]:
     """Create the compiler command for the selected toolchain."""
     if compiler.family == "msvc":
@@ -218,11 +221,7 @@ def command_for(
             f"/Fe:{OUTPUT}",
         ]
 
-        flags += (
-            ["/Od", "/Zi"]
-            if debug
-            else ["/O2", "/DNDEBUG"]
-        )
+        flags += ["/Od", "/Zi"] if debug else ["/O2", "/DNDEBUG"]
 
         return [
             str(compiler.path),
@@ -242,11 +241,7 @@ def command_for(
         str(SOURCE),
     ]
 
-    flags += (
-        ["-O0", "-g"]
-        if debug
-        else ["-O3", "-DNDEBUG", "-march=native"]
-    )
+    flags += ["-O0", "-g"] if debug else ["-O3", "-DNDEBUG", "-march=native"]
 
     return [
         str(compiler.path),
@@ -255,8 +250,8 @@ def command_for(
 
 
 def compile_library(
-        compiler: Compiler,
-        debug: bool,
+    compiler: Compiler,
+    debug: bool,
 ) -> None:
     """Compile the native connectome DLL."""
     result = run_command(
@@ -264,24 +259,18 @@ def compile_library(
     )
 
     if result.returncode:
-        raise RuntimeError(
-            f"Compiler exited with code {result.returncode}"
-        )
+        raise RuntimeError(f"Compiler exited with code {result.returncode}")
 
 
 def verify_library() -> None:
     """Verify the generated DLL and its required exports."""
     if not OUTPUT.is_file():
-        raise RuntimeError(
-            f"Compiler did not create {OUTPUT.name}"
-        )
+        raise RuntimeError(f"Compiler did not create {OUTPUT.name}")
 
     size = OUTPUT.stat().st_size
 
     if size < 1024:
-        raise RuntimeError(
-            f"Generated DLL is unexpectedly small: {size:,} bytes"
-        )
+        raise RuntimeError(f"Generated DLL is unexpectedly small: {size:,} bytes")
 
     with OUTPUT.open("rb") as library_file:
         signature = library_file.read(2)
@@ -303,8 +292,7 @@ def verify_library() -> None:
 
     if missing_exports:
         raise RuntimeError(
-            "Native library is missing required exports: "
-            + ", ".join(missing_exports)
+            "Native library is missing required exports: " + ", ".join(missing_exports)
         )
 
     line(
@@ -354,9 +342,7 @@ def commit_regenerated_library() -> bool:
         return False
 
     if diff_result.returncode != 1:
-        raise RuntimeError(
-            "Git could not determine whether the generated DLL changed"
-        )
+        raise RuntimeError("Git could not determine whether the generated DLL changed")
 
     run_command(
         [
@@ -466,9 +452,9 @@ def main() -> int:
         committed = commit_regenerated_library()
 
     except (
-            OSError,
-            RuntimeError,
-            subprocess.CalledProcessError,
+        OSError,
+        RuntimeError,
+        subprocess.CalledProcessError,
     ) as exc:
         error(str(exc))
         return 1
@@ -509,7 +495,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         report_keyboard_interrupt("the native build")
-        raise SystemExit(130)
-    except Exception as exc:
+        raise SystemExit(130) from None
+    except REPORTABLE_EXCEPTIONS as exc:
         report_exception("AIBrain native build failed", exc)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

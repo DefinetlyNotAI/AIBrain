@@ -3,9 +3,10 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
+from llama_cpp import Llama
 
 from src.models.instrumented_backend import (
     ActivitySource,
@@ -41,23 +42,24 @@ class LlamaBackendLoggingTests(unittest.TestCase):
         self.assertAlmostEqual(metrics.raw_confidence_margin, 0.0, places=6)
 
     def test_streamed_chunk_carries_live_logit_telemetry(self) -> None:
-        class FakeLlama:
-            n_tokens = 19
+        fake_llama = Mock(spec=Llama)
+        fake_llama.n_tokens = 19
 
-            @staticmethod
-            def tokenize(_text: bytes, *, add_bos: bool) -> list[int]:
-                self.assertFalse(add_bos)
-                return [27]
+        def tokenize(_text: bytes, *, add_bos: bool) -> list[int]:
+            self.assertFalse(add_bos)
+            return [27]
 
-            @staticmethod
-            def create_chat_completion(**kwargs):  # type: ignore[no-untyped-def]
-                processor = kwargs["logits_processor"][0]
-                scores = np.array([0.0, 1.0, 2.0], dtype=np.float32)
-                processor(np.array([4, 5], dtype=np.int32), scores)
-                return iter([{"choices": [{"delta": {"content": "hello"}}]}])
+        def create_chat_completion(**kwargs):
+            processor = kwargs["logits_processor"][0]
+            scores = np.array([0.0, 1.0, 2.0], dtype=np.float32)
+            processor(np.array([4, 5], dtype=np.int32), scores)
+            return iter([{"choices": [{"delta": {"content": "hello"}}]}])
+
+        fake_llama.tokenize.side_effect = tokenize
+        fake_llama.create_chat_completion.side_effect = create_chat_completion
 
         backend = LlamaBackend()
-        backend._llm = FakeLlama()  # type: ignore[assignment]
+        backend._llm = fake_llama
 
         chunks = list(backend.stream_chat([], GenerationConfig()))
 
@@ -79,7 +81,9 @@ class LlamaBackendLoggingTests(unittest.TestCase):
         self.assertIs(returned, scores)
         self.assertIsNone(probe.take())
 
-    def test_realtime_frame_keeps_session_step_separate_from_reply_progress(self) -> None:
+    def test_realtime_frame_keeps_session_step_separate_from_reply_progress(
+        self,
+    ) -> None:
         chunk = GenerationChunk(
             "token",
             (8,),
@@ -123,7 +127,9 @@ class LlamaBackendLoggingTests(unittest.TestCase):
         with self.assertLogs("src.models.llama_runtime", level="ERROR") as logs:
             _handle_native_log(4, b"model load failed", None)
 
-        self.assertEqual(logs.output, ["ERROR:src.models.llama_runtime:llama.cpp: model load failed"])
+        self.assertEqual(
+            logs.output, ["ERROR:src.models.llama_runtime:llama.cpp: model load failed"]
+        )
 
     def test_native_log_handler_ignores_empty_and_non_error_messages(self) -> None:
         with self.assertNoLogs("src.models.llama_runtime", level="ERROR"):
@@ -135,7 +141,7 @@ class LlamaBackendLoggingTests(unittest.TestCase):
         calls: list[int] = []
 
         class FakeLlama:
-            def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            def __init__(self, **kwargs) -> None:
                 calls.append(kwargs["n_gpu_layers"])
                 if kwargs["n_gpu_layers"] != 0:
                     raise RuntimeError("GPU offload unavailable")

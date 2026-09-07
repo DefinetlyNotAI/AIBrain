@@ -19,7 +19,7 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QDesktopServices, QTextCursor
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -109,7 +109,10 @@ class DiagnosticsWorker(QObject):
                 cancelled=self._cancelled,
                 progress=self.progress.emit,
             )
-            LOG.info("Background Ollama model diagnostics completed (%s models)", len(diagnostics))
+            LOG.info(
+                "Background Ollama model diagnostics completed (%s models)",
+                len(diagnostics),
+            )
             self.completed.emit(diagnostics)
         except Exception as exc:
             LOG.exception("Background Ollama model diagnostics failed")
@@ -124,7 +127,9 @@ class DiagnosticsWindow(QMainWindow):
     inspection_finished = Signal(bool)
     inspection_progress = Signal(int, int, str)
 
-    def __init__(self, parent=None, *, auto_refresh: bool = True) -> None:  # type: ignore[no-untyped-def]
+    def __init__(
+        self, parent: QWidget | None = None, *, auto_refresh: bool = True
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("AIBrain Repair and Diagnostics")
         self.resize(1280, 780)
@@ -379,7 +384,7 @@ class DiagnosticsWindow(QMainWindow):
         prefix = f"{current}/{total}" if total else "…"
         self.system_status.setText(f"Model compatibility check {prefix}: {message}")
         if message.startswith("Hashing "):
-            if message.endswith("(start)") or message.endswith("(complete)"):
+            if message.endswith(("(start)", "(complete)")):
                 self._log("CHECK", f"{prefix} {message}")
             else:
                 self._set_live_progress("CHECK", f"{prefix} {message}")
@@ -400,23 +405,24 @@ class DiagnosticsWindow(QMainWindow):
         self._set_refreshing(False)
         self._update_actions()
         if self._closing:
-            LOG.info("Diagnostics window closed while background inspection was stopping")
+            LOG.info(
+                "Diagnostics window closed while background inspection was stopping"
+            )
             QTimer.singleShot(0, self.close)
             return
-        LOG.info("Diagnostics inspection cycle finished (healthy=%s)", self._last_refresh_succeeded)
+        LOG.info(
+            "Diagnostics inspection cycle finished (healthy=%s)",
+            self._last_refresh_succeeded,
+        )
         self.inspection_finished.emit(self._last_refresh_succeeded)
 
     def _set_refreshing(self, refreshing: bool) -> None:
+        diagnostic = self.selected_diagnostic()
         self.refresh_button.setEnabled(not refreshing)
         self.repair_button.setEnabled(
-            not refreshing
-            and bool(
-                self.selected_diagnostic() and self.selected_diagnostic().can_repair
-            )
+            not refreshing and diagnostic is not None and diagnostic.can_repair
         )
-        self.remove_button.setEnabled(
-            not refreshing and bool(self.selected_diagnostic())
-        )
+        self.remove_button.setEnabled(not refreshing and diagnostic is not None)
 
     def selected_diagnostic(self) -> ModelDiagnostic | None:
         item = self.table.currentItem()
@@ -518,9 +524,8 @@ class DiagnosticsWindow(QMainWindow):
     def _append_repair_output(self) -> None:
         if self._repair_process is None:
             return
-        output = bytes(self._repair_process.readAllStandardOutput()).decode(
-            "utf-8", errors="replace"
-        )
+        raw_output = self._repair_process.readAllStandardOutput().data()
+        output = bytes(raw_output).decode("utf-8", errors="replace")
         if not output:
             return
         visible_lines = [
@@ -546,14 +551,18 @@ class DiagnosticsWindow(QMainWindow):
             message,
         )
         self._live_output.current_line = ""
-        line = f"[{datetime.now().strftime('%H:%M:%S')}] {level:<7} {message}"
+        line = (
+            f"[{datetime.now().astimezone().strftime('%H:%M:%S')}] {level:<7} {message}"
+        )
         self._live_output.feed(line + "\n")
         self.output.setPlainText(self._live_output.render())
         self.output.moveCursor(QTextCursor.MoveOperation.End)
 
     def _set_live_progress(self, level: str, message: str) -> None:
         """Update one hashing-progress row without persisting each percentage."""
-        line = f"[{datetime.now().strftime('%H:%M:%S')}] {level:<7} {message}"
+        line = (
+            f"[{datetime.now().astimezone().strftime('%H:%M:%S')}] {level:<7} {message}"
+        )
         self._live_output.current_line = line
         self.output.setPlainText(self._live_output.render())
         self.output.moveCursor(QTextCursor.MoveOperation.End)
@@ -718,7 +727,7 @@ class DiagnosticsWindow(QMainWindow):
                 labels[0].setText(value)
                 labels[1].setText(detail)
 
-    def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+    def closeEvent(self, event: QCloseEvent) -> None:
         if self._repair_process is not None:
             self._repair_heartbeat.stop()
             self._repair_process.kill()

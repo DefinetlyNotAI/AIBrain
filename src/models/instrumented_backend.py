@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from time import monotonic
 
-REALTIME_REGIONS = (
+REALTIME_REGIONS: tuple[str, ...] = (
     "Context utilisation",
     "Requested output progress",
     "Stream latency",
@@ -73,28 +73,21 @@ def realtime_activation_frame(
     entropy_bits = chunk.logits.raw_entropy_bits if chunk.logits else 0.0
     regions = {
         "Context utilisation": min(1.0, context_tokens / max(1, context_limit)),
-        "Requested output progress": min(
-            1.0, output_token_count / max(1, max_tokens)
-        ),
+        "Requested output progress": min(1.0, output_token_count / max(1, max_tokens)),
         # These caps are display scales. Raw values remain in frame.metrics.
         "Stream latency": min(1.0, latency_ms / 500.0),
-        "Retokenized throughput": min(
-            1.0, retokenized_tokens_per_second / 50.0
-        ),
+        "Retokenized throughput": min(1.0, retokenized_tokens_per_second / 50.0),
         "Raw-logit entropy": (
             chunk.logits.raw_normalized_entropy if chunk.logits else 0.0
         ),
         "Raw top probability": (
             chunk.logits.raw_top_probability if chunk.logits else 0.0
         ),
-        "Raw top-5 mass": (
-            chunk.logits.raw_top_five_mass if chunk.logits else 0.0
-        ),
+        "Raw top-5 mass": (chunk.logits.raw_top_five_mass if chunk.logits else 0.0),
         "Raw confidence margin": (
             chunk.logits.raw_confidence_margin if chunk.logits else 0.0
         ),
-        "Recent output rarity": 1.0
-        / (1.0 + max(0, recent_output_occurrences)),
+        "Recent output rarity": 1.0 / (1.0 + max(0, recent_output_occurrences)),
     }
     metrics = {
         "context_tokens": float(context_tokens),
@@ -102,18 +95,14 @@ def realtime_activation_frame(
         "output_tokens": float(output_token_count),
         "chunk_tokens": float(token_count),
         "stream_latency_ms": latency_ms,
-        "retokenized_tokens_per_second": max(
-            0.0, retokenized_tokens_per_second
-        ),
+        "retokenized_tokens_per_second": max(0.0, retokenized_tokens_per_second),
         "vocabulary_size": float(chunk.logits.vocabulary_size if chunk.logits else 0),
         "raw_logits_available": 1.0 if chunk.logits else 0.0,
         "raw_logit_entropy_bits": entropy_bits,
         "raw_top_probability": (
             chunk.logits.raw_top_probability if chunk.logits else 0.0
         ),
-        "raw_top_five_mass": (
-            chunk.logits.raw_top_five_mass if chunk.logits else 0.0
-        ),
+        "raw_top_five_mass": (chunk.logits.raw_top_five_mass if chunk.logits else 0.0),
         "raw_confidence_margin": (
             chunk.logits.raw_confidence_margin if chunk.logits else 0.0
         ),

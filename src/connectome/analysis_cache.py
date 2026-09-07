@@ -9,8 +9,10 @@ import json
 import os
 import shutil
 from collections.abc import Iterator
+from ctypes import wintypes
 from dataclasses import asdict
 from pathlib import Path
+from typing import NotRequired, TypedDict
 from uuid import uuid4
 
 from .analysis import AnalysisRecord
@@ -19,7 +21,36 @@ CACHE_ROOT = Path(__file__).resolve().parents[2] / ".cache" / "temp"
 DEFAULT_CACHE_BYTES = 1024 * 1024 * 1024
 
 
-def _decode_record(payload: dict[str, object]) -> AnalysisRecord:
+class SerializedAnalysisRecord(TypedDict):
+    """JSON representation of one cached analysis record."""
+
+    step: int
+    output_text: str
+    active_channels: int
+    mean_signal: float
+    peak_signal: float
+    dominant_channel: str
+    novelty: float
+    reconstruction_error: float
+    coherence: float
+    embedding: list[float]
+    channel_values: list[float]
+    source: NotRequired[str]
+    telemetry: NotRequired[dict[str, float]]
+
+
+class AnalysisCacheStatus(TypedDict):
+    """Storage counts and limits reported alongside Analysis+ exports."""
+
+    paged_records: int
+    resident_records: int
+    cache_bytes: int
+    cache_limit_bytes: int
+    cache_enabled: bool
+    oldest_pages_discarded: bool
+
+
+def _decode_record(payload: SerializedAnalysisRecord) -> AnalysisRecord:
     return AnalysisRecord(
         step=int(payload["step"]),
         output_text=str(payload["output_text"]),
@@ -30,14 +61,12 @@ def _decode_record(payload: dict[str, object]) -> AnalysisRecord:
         novelty=float(payload["novelty"]),
         reconstruction_error=float(payload["reconstruction_error"]),
         coherence=float(payload["coherence"]),
-        embedding=tuple(float(value) for value in payload["embedding"]),  # type: ignore[union-attr]
-        channel_values=tuple(
-            float(value) for value in payload["channel_values"]  # type: ignore[union-attr]
-        ),
+        embedding=tuple(float(value) for value in payload["embedding"]),
+        channel_values=tuple(float(value) for value in payload["channel_values"]),
         source=str(payload.get("source", "Real-time")),
         telemetry={
             str(name): float(value)
-            for name, value in dict(payload.get("telemetry", {})).items()  # type: ignore[arg-type]
+            for name, value in payload.get("telemetry", {}).items()
         },
     )
 
@@ -69,9 +98,7 @@ class AnalysisPageCache:
 
     @property
     def record_count(self) -> int:
-        return sum(count for _path, count, _size in self._pages) + len(
-            self._pending
-        )
+        return sum(count for _path, count, _size in self._pages) + len(self._pending)
 
     @property
     def disk_bytes(self) -> int:
@@ -110,7 +137,7 @@ class AnalysisPageCache:
                         yield _decode_record(json.loads(line))
         yield from self._pending
 
-    def status(self, resident_records: int) -> dict[str, object]:
+    def status(self, resident_records: int) -> AnalysisCacheStatus:
         return {
             "paged_records": self.record_count,
             "resident_records": resident_records,
@@ -139,9 +166,7 @@ class AnalysisPageCache:
         if not self._pending or not self.enabled:
             return
         if self._directory is None:
-            self._directory = self.root / (
-                f"analysis-{os.getpid()}-{uuid4().hex[:10]}"
-            )
+            self._directory = self.root / (f"analysis-{os.getpid()}-{uuid4().hex[:10]}")
             self._directory.mkdir(parents=True, exist_ok=True)
         page = self._directory / f"page-{self._next_page:08d}.jsonl.gz"
         temporary = page.with_suffix(page.suffix + ".tmp")
@@ -187,12 +212,17 @@ class AnalysisPageCache:
             return True
         if os.name == "nt":
             process_query_limited_information = 0x1000
-            handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
-                process_query_limited_information, False, pid
-            )
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            open_process = kernel32.OpenProcess
+            open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            open_process.restype = wintypes.HANDLE
+            close_handle = kernel32.CloseHandle
+            close_handle.argtypes = [wintypes.HANDLE]
+            close_handle.restype = wintypes.BOOL
+            handle = open_process(process_query_limited_information, False, pid)
             if not handle:
                 return False
-            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+            close_handle(handle)
             return True
         try:
             os.kill(pid, 0)

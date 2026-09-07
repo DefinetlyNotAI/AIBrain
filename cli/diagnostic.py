@@ -20,7 +20,11 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.gpu import configure_opengl_surface, prepare_gpu_launch
-from src.utils.logging import configure_cli_logging, report_exception
+from src.utils.logging import (
+    REPORTABLE_EXCEPTIONS,
+    configure_cli_logging,
+    report_exception,
+)
 from src.utils.runtime import require_managed_runtime
 
 LOG = logging.getLogger(__name__)
@@ -32,8 +36,11 @@ def _consume_preserve_console_flag() -> bool:
     """Remove the desktop-launch marker before Qt parses command-line options."""
     preserve_console = PRESERVE_CONSOLE_FLAG in sys.argv[1:]
     if preserve_console:
-        sys.argv[:] = [argument for argument in sys.argv if argument != PRESERVE_CONSOLE_FLAG]
+        sys.argv[:] = [
+            argument for argument in sys.argv if argument != PRESERVE_CONSOLE_FLAG
+        ]
     return preserve_console
+
 
 def main() -> int:
     runtime_log, _ = configure_cli_logging("diagnostic")
@@ -116,7 +123,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         report_keyboard_interrupt("AIBrain Diagnostics")
-        raise SystemExit(130)
-    except Exception as exc:
+        raise SystemExit(130) from None
+    except REPORTABLE_EXCEPTIONS as exc:
         report_exception("AIBrain Diagnostics launcher failed", exc)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

@@ -7,12 +7,14 @@ import struct
 import sys
 import tempfile
 import unittest
+from collections.abc import Sequence
 from pathlib import Path
-from unittest.mock import Mock, patch
+from typing import ClassVar
+from unittest.mock import MagicMock, Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QByteArray, QProcess
 from PySide6.QtWidgets import QApplication, QDialog, QPlainTextEdit, QPushButton
 
 from src.app.analysis_window import AnalysisWindow
@@ -28,9 +30,14 @@ from src.models.model_info import ModelInfo
 
 
 class ModelDiagnosticsTests(unittest.TestCase):
+    app: ClassVar[QApplication]
+
     @classmethod
     def setUpClass(cls) -> None:
-        cls.app = QApplication.instance() or QApplication([])
+        application = QApplication.instance()
+        cls.app = (
+            application if isinstance(application, QApplication) else QApplication([])
+        )
 
     def test_loader_is_compact_and_centred_instead_of_maximized(self) -> None:
         loader = LoadingWindow()
@@ -60,11 +67,16 @@ class ModelDiagnosticsTests(unittest.TestCase):
             )
             window._diagnostics_ready([broken, healthy])
 
-            self.assertEqual(window.table.topLevelItem(0).text(3), "Open")
-            self.assertEqual(window.table.topLevelItem(1).text(3), "N/A")
+            broken_item = window.table.topLevelItem(0)
+            healthy_item = window.table.topLevelItem(1)
+            self.assertIsNotNone(broken_item)
+            self.assertIsNotNone(healthy_item)
+            assert broken_item is not None and healthy_item is not None
+            self.assertEqual(broken_item.text(3), "Open")
+            self.assertEqual(healthy_item.text(3), "N/A")
             self.assertIn(
                 "Traceback",
-                window.table.topLevelItem(0).data(3, window._TRACE_ROLE),
+                broken_item.data(3, window._TRACE_ROLE),
             )
         finally:
             window.close()
@@ -99,7 +111,9 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertIn("itemClicked.connect(self._open_table_item)", source)
         self.assertNotIn("itemDoubleClicked", source)
 
-    def test_backend_repair_uses_the_current_noninteractive_installer_flags(self) -> None:
+    def test_backend_repair_uses_the_current_noninteractive_installer_flags(
+        self,
+    ) -> None:
         source = inspect.getsource(DiagnosticsWindow.repair_selected)
 
         self.assertIn('"--repair",', source)
@@ -120,6 +134,8 @@ class ModelDiagnosticsTests(unittest.TestCase):
             )
             window._diagnostics_ready([diagnostic])
             item = window.table.topLevelItem(0)
+            self.assertIsNotNone(item)
+            assert item is not None
             window.table.setCurrentItem(item)
             window._update_actions()
 
@@ -135,14 +151,13 @@ class ModelDiagnosticsTests(unittest.TestCase):
             self.app.processEvents()
 
     def test_live_repair_output_resets_heartbeat_and_tracks_exact_status(self) -> None:
-        class OutputProcess:
-            @staticmethod
-            def readAllStandardOutput() -> bytes:
-                return b"Downloading llama.cpp wheel 42%\n"
+        class OutputProcess(QProcess):
+            def readAllStandardOutput(self) -> QByteArray:
+                return QByteArray(b"Downloading llama.cpp wheel 42%\n")
 
         window = DiagnosticsWindow(auto_refresh=False)
         try:
-            window._repair_process = OutputProcess()  # type: ignore[assignment]
+            window._repair_process = OutputProcess()
             with patch.object(window._repair_heartbeat, "start") as restart:
                 window._append_repair_output()
 
@@ -150,7 +165,9 @@ class ModelDiagnosticsTests(unittest.TestCase):
             self.assertEqual(
                 window._last_repair_status, "Downloading llama.cpp wheel 42%"
             )
-            self.assertIn("Downloading llama.cpp wheel 42%", window.output.toPlainText())
+            self.assertIn(
+                "Downloading llama.cpp wheel 42%", window.output.toPlainText()
+            )
         finally:
             window._repair_process = None
             window.close()
@@ -160,11 +177,14 @@ class ModelDiagnosticsTests(unittest.TestCase):
         window = DiagnosticsWindow(auto_refresh=False)
         try:
             logged: list[tuple[str, str]] = []
-            window._log = lambda level, message: logged.append((level, message))  # type: ignore[method-assign]
-
-            window._diagnostics_progress(1, 1, "Hashing demo:latest (start)")
-            window._diagnostics_progress(1, 1, "Hashing demo:latest (50%)")
-            window._diagnostics_progress(1, 1, "Hashing demo:latest (complete)")
+            with patch.object(
+                window,
+                "_log",
+                side_effect=lambda level, message: logged.append((level, message)),
+            ):
+                window._diagnostics_progress(1, 1, "Hashing demo:latest (start)")
+                window._diagnostics_progress(1, 1, "Hashing demo:latest (50%)")
+                window._diagnostics_progress(1, 1, "Hashing demo:latest (complete)")
 
             self.assertEqual(
                 logged,
@@ -193,6 +213,8 @@ class ModelDiagnosticsTests(unittest.TestCase):
                 ]
             )
             item = window.table.topLevelItem(0)
+            self.assertIsNotNone(item)
+            assert item is not None
             with patch("src.app.diagnostics_window.QDialog.open") as show_dialog:
                 window._open_table_item(item, 3)
 
@@ -200,28 +222,30 @@ class ModelDiagnosticsTests(unittest.TestCase):
             dialog = window.findChildren(QDialog)[-1]
             viewer = dialog.findChild(QPlainTextEdit)
             self.assertIsNotNone(viewer)
+            assert viewer is not None
             self.assertTrue(viewer.isReadOnly())
             self.assertIn("unsupported architecture", viewer.toPlainText())
             report = viewer.toPlainText()
             self.assertLess(report.index("Explanation"), report.index("Trace dump"))
             self.assertIn("Model: broken:latest", report)
             self.assertIn("Manifest: broken-manifest", report)
-            self.assertIsNotNone(dialog.findChild(QPushButton, "copyTraceButton"))
-            dialog.findChild(QPushButton, "copyTraceButton").click()
+            copy_button = dialog.findChild(QPushButton, "copyTraceButton")
+            self.assertIsNotNone(copy_button)
+            assert copy_button is not None
+            copy_button.click()
             self.assertEqual(self.app.clipboard().text(), report)
         finally:
             window.close()
             self.app.processEvents()
 
     def test_failed_repair_start_releases_the_action_lock(self) -> None:
-        class FailedProcess:
-            @staticmethod
-            def errorString() -> str:
+        class FailedProcess(QProcess):
+            def errorString(self) -> str:
                 return "The managed Python executable could not be started"
 
         window = DiagnosticsWindow(auto_refresh=False)
         try:
-            window._repair_process = FailedProcess()  # type: ignore[assignment]
+            window._repair_process = FailedProcess()
             window._repair_error(QProcess.ProcessError.FailedToStart)
 
             self.assertIsNone(window._repair_process)
@@ -237,12 +261,20 @@ class ModelDiagnosticsTests(unittest.TestCase):
         except ValueError:
             raw = traceback.format_exc().rstrip()
         diagnostic = ModelDiagnostic(
-            "broken:latest", Path("manifest"), Path("model.gguf"), False,
+            "broken:latest",
+            Path("manifest"),
+            Path("model.gguf"),
+            False,
             f"The model header could not be read.\n{raw}",
         )
         report = diagnostic.trace_report
-        self.assertTrue(report.startswith("Explanation\nThe model header could not be read."))
-        self.assertLess(report.index("Trace dump"), report.index("Traceback (most recent call last):"))
+        self.assertTrue(
+            report.startswith("Explanation\nThe model header could not be read.")
+        )
+        self.assertLess(
+            report.index("Trace dump"),
+            report.index("Traceback (most recent call last):"),
+        )
         self.assertTrue(report.endswith(raw))
 
     def test_manifest_parse_failure_keeps_python_traceback(self) -> None:
@@ -264,16 +296,22 @@ class ModelDiagnosticsTests(unittest.TestCase):
                 "src.app.diagnostics_window.OllamaDiagnostics.compute_health",
                 return_value=("Ready", "CUDA device operation passed"),
             ),
-            patch("src.app.diagnostics_window.OllamaDiagnostics.inspect", return_value=[]),
+            patch(
+                "src.app.diagnostics_window.OllamaDiagnostics.inspect", return_value=[]
+            ),
             self.assertLogs("src.app.diagnostics_window", level="INFO") as captured,
         ):
             worker.run()
 
-        self.assertIn("Starting background Ollama model diagnostics", captured.output[0])
+        self.assertIn(
+            "Starting background Ollama model diagnostics", captured.output[0]
+        )
         self.assertIn("completed (0 models)", captured.output[1])
         self.assertEqual(compute_results, [("Ready", "CUDA device operation passed")])
 
-    def test_compute_card_waits_for_runtime_probe_and_is_independent_of_opengl(self) -> None:
+    def test_compute_card_waits_for_runtime_probe_and_is_independent_of_opengl(
+        self,
+    ) -> None:
         window = DiagnosticsWindow(auto_refresh=False)
         try:
             with patch.object(OllamaDiagnostics, "subsystem_health", return_value={}):
@@ -286,7 +324,9 @@ class ModelDiagnosticsTests(unittest.TestCase):
             self.assertEqual(cuda_card[0].text(), "Ready")
             self.assertIn("NVIDIA RTX", cuda_card[1].text())
             self.assertIn("Intel", window.subsystem_cards["OpenGL rendering"][1].text())
-            self.assertRegex(window.output.toPlainText(), r"CUDA\s+Ready: CUDA: NVIDIA RTX")
+            self.assertRegex(
+                window.output.toPlainText(), r"CUDA\s+Ready: CUDA: NVIDIA RTX"
+            )
         finally:
             window.close()
             self.app.processEvents()
@@ -295,15 +335,31 @@ class ModelDiagnosticsTests(unittest.TestCase):
         cases = (
             (1, None, True, None, "Ready", "device operation passed"),
             (0, None, False, None, "CPU fallback", "No CUDA devices found"),
-            (1, RuntimeError("device failed"), True, None, "CPU fallback", "device failed"),
+            (
+                1,
+                RuntimeError("device failed"),
+                True,
+                None,
+                "CPU fallback",
+                "device failed",
+            ),
             (1, None, False, None, "CPU fallback", "CPU-only backend"),
             (1, None, True, OSError("missing DLL"), "Needs repair", "missing DLL"),
         )
-        for count, device_error, offload, load_error, expected_state, expected_detail in cases:
+        for (
+            count,
+            device_error,
+            offload,
+            load_error,
+            expected_state,
+            expected_detail,
+        ) in cases:
             with self.subTest(state=expected_state, detail=expected_detail):
                 cupy = Mock()
                 cupy.cuda.runtime.getDeviceCount.return_value = count
-                cupy.cuda.runtime.getDeviceProperties.return_value = {"name": b"NVIDIA RTX"}
+                cupy.cuda.runtime.getDeviceProperties.return_value = {
+                    "name": b"NVIDIA RTX"
+                }
                 cupy.ones.return_value.sum.return_value.item.return_value = 1
                 cupy.ones.side_effect = device_error
                 backend = Mock()
@@ -423,8 +479,9 @@ class ModelDiagnosticsTests(unittest.TestCase):
         self.assertNotEqual(diagnostic.reason, diagnostic.detail)
 
     def test_corrupt_blob_is_quarantined_before_redownload(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, patch.dict(
-            "os.environ", {"LOCALAPPDATA": directory}
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict("os.environ", {"LOCALAPPDATA": directory}),
         ):
             root = Path(directory)
             manifest = root / "manifest"
@@ -438,18 +495,21 @@ class ModelDiagnosticsTests(unittest.TestCase):
             quarantined = OllamaDiagnostics.quarantine_for_redownload(diagnostic)
 
             self.assertIsNotNone(quarantined)
+            assert quarantined is not None
             self.assertFalse(blob.exists())
             self.assertEqual(quarantined.read_bytes(), b"broken")
 
     @patch("src.models.model_validator.ModelValidator.validate")
     def test_backend_diagnostics_report_a_model_that_cannot_load(
-        self, validate
-    ) -> None:  # type: ignore[no-untyped-def]
+        self, validate: MagicMock
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._write_manifest(root, blob_data=b"GGUF" + struct.pack("<IQQ", 3, 1, 1))
 
-            def failed_validation(models, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+            def failed_validation(
+                models: Sequence[ModelInfo], *_args: object, **_kwargs: object
+            ) -> list[ModelInfo]:
                 model = models[0]
                 return [
                     ModelInfo(

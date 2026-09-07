@@ -26,6 +26,7 @@ from src.utils.console_ui import (
     status,
 )
 from src.utils.logging import (
+    REPORTABLE_EXCEPTIONS,
     configure_cli_logging,
     log_completed_command,
     report_exception,
@@ -115,6 +116,7 @@ def run_command(command_line: list[str]) -> subprocess.CompletedProcess[str]:
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            check=False,
         )
     except KeyboardInterrupt:
         log_completed_command(command_line, "", return_code=None, interrupted=True)
@@ -231,10 +233,7 @@ def choose_suite() -> str | None:
         footer="Choose a suite number, A, or Q and press Enter.",
     )
 
-    choices = {
-        key: title
-        for key, (title, _modules) in SUITES.items()
-    }
+    choices = {key: title for key, (title, _modules) in SUITES.items()}
     choices.update({"a": "Run every suite", "q": "Exit"})
     try:
         choice = ask_choice("Selection", choices, show_choices=False)
@@ -264,6 +263,7 @@ def main() -> int:
         result = subprocess.run(
             [str(managed_python), str(Path(__file__).resolve()), *sys.argv[1:]],
             cwd=ROOT,
+            check=False,
         )
         return result.returncode
     runtime_log, _ = configure_cli_logging("test")
@@ -332,7 +332,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         report_keyboard_interrupt("the test run")
-        raise SystemExit(130)
-    except Exception as exc:
+        raise SystemExit(130) from None
+    except REPORTABLE_EXCEPTIONS as exc:
         report_exception("AIBrain test runner failed", exc)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

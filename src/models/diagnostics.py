@@ -72,16 +72,22 @@ class ModelDiagnostic:
     @property
     def trace_report(self) -> str:
         """Put the explanation before the full exception or validation dump."""
-        explanation, marker, exception = self.detail.partition("Traceback (most recent call last):")
+        explanation, marker, exception = self.detail.partition(
+            "Traceback (most recent call last):"
+        )
         context = (
             f"Model: {self.reference}\n"
             f"Reason: {self.reason}\n"
             f"Manifest: {self.manifest_path}\n"
             f"Blob: {self.blob_path or 'Unavailable'}"
         )
-        raw = marker + exception if marker else (
-            "No Python exception was raised; this finding was returned by validation.\n"
-            f"Validation result: {self.detail}"
+        raw = (
+            marker + exception
+            if marker
+            else (
+                "No Python exception was raised; this finding was returned by validation.\n"
+                f"Validation result: {self.detail}"
+            )
         )
         return f"Explanation\n{explanation.strip() or self.reason}\n\nTrace dump\n{context}\n\n{raw}"
 
@@ -116,8 +122,11 @@ class OllamaDiagnostics:
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 diagnostics.append(
                     ModelDiagnostic(
-                        reference, manifest, None, False,
-                        f"Invalid manifest: {exc}\n{traceback.format_exc().rstrip()}"
+                        reference,
+                        manifest,
+                        None,
+                        False,
+                        f"Invalid manifest: {exc}\n{traceback.format_exc().rstrip()}",
                     )
                 )
         models = [model for _reference, _manifest, model in parsed]
@@ -135,7 +144,9 @@ class OllamaDiagnostics:
             checked = models
         diagnostics.extend(
             self._from_model(reference, manifest, model)
-            for (reference, manifest, _original), model in zip(parsed, checked)
+            for (reference, manifest, _original), model in zip(
+                parsed, checked, strict=True
+            )
         )
         return sorted(diagnostics, key=lambda item: item.reference)
 
@@ -190,7 +201,7 @@ class OllamaDiagnostics:
             if isinstance(name, bytes):
                 name = name.decode("utf-8", errors="replace")
             array_detail = f"CuPy / CUDA: {name}; device operation passed."
-        except Exception as exc:
+        except (AttributeError, ImportError, OSError, RuntimeError, TypeError) as exc:
             state = "CPU fallback"
             array_detail = f"CuPy / CUDA unavailable: {type(exc).__name__}: {exc}."
 
@@ -199,11 +210,13 @@ class OllamaDiagnostics:
 
             backend = load_llama_cpp()
             if backend.llama_supports_gpu_offload():
-                backend_detail = "llama.cpp GPU offload supported; model inference not tested."
+                backend_detail = (
+                    "llama.cpp GPU offload supported; model inference not tested."
+                )
             else:
                 state = "CPU fallback"
                 backend_detail = "llama.cpp uses a CPU-only backend."
-        except Exception as exc:
+        except (AttributeError, ImportError, OSError, RuntimeError, TypeError) as exc:
             state = "Needs repair"
             backend_detail = f"llama.cpp failed to load: {type(exc).__name__}: {exc}."
         return state, f"{array_detail} {backend_detail}"

@@ -28,7 +28,10 @@ class ThemeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "aibrain.color.json"
             with patch("src.app.theme.COLOUR_FILE", target):
-                colours = DEFAULT_COLOURS | {"background": "#112233", "renderer_background": "#445566"}
+                colours = DEFAULT_COLOURS | {
+                    "background": "#112233",
+                    "renderer_background": "#445566",
+                }
                 save_colours(colours)
 
                 self.assertEqual(load_colours()["background"], "#112233")
@@ -42,11 +45,13 @@ class ThemeTests(unittest.TestCase):
     def test_colour_settings_use_two_columns_in_a_bounded_scroll_area(self) -> None:
         dialog = ColourSettingsDialog(DEFAULT_COLOURS)
         try:
-            positions = {
-                (dialog._palette_grid.getItemPosition(index)[0],
-                 dialog._palette_grid.getItemPosition(index)[1])
-                for index in range(dialog._palette_grid.count())
-            }
+            positions: set[tuple[int, int]] = set()
+            for index in range(dialog._palette_grid.count()):
+                position = dialog._palette_grid.getItemPosition(index)
+                if not isinstance(position, tuple) or len(position) != 4:
+                    self.fail("QGridLayout returned an invalid item position")
+                row, column, _row_span, _column_span = position
+                positions.add((row, column))
 
             self.assertEqual({column for _row, column in positions}, {0, 1})
             self.assertTrue(dialog._palette_scroll.widgetResizable())

@@ -1,4 +1,5 @@
 """Follow-output policy does not override a user's scroll position."""
+
 from __future__ import annotations
 
 import unittest

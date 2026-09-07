@@ -25,8 +25,8 @@ def load_generation_settings() -> GenerationConfig:
     settings = QSettings()
 
     return GenerationConfig(
-        temperature=_setting_float(settings, "temperature", .7),
-        top_p=_setting_float(settings, "top_p", .9),
+        temperature=_setting_float(settings, "temperature", 0.7),
+        top_p=_setting_float(settings, "top_p", 0.9),
         max_tokens=_setting_int(settings, "max_tokens", 256),
         context_length=_setting_int(settings, "context_length", 4096),
         gpu_layers=_setting_int(settings, "gpu_layers", -1),
